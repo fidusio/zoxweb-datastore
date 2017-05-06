@@ -1,0 +1,58 @@
+.class
+
+# Package Files #
+*.jar
+*.war
+
+# gwt caches and compiled units #
+war/gwt_bree/
+gwt-unitCache/
+
+# boilerplate generated classes #
+.apt_generated/
+
+# more caches and things from deploy #
+war/WEB-INF/deploy/
+war/WEB-INF/classes/
+war/WEB-INF/lib/
+war/WEB-INF/favicon.ico
+
+#compilation logs
+.gwt/
+
+#caching for already compiled files
+
+
+#gwt junit compilation files
+www-test/
+
+#test classes
+test-classes/
+
+#.settings
+.settings/
+
+.project
+
+
+#project
+*.project
+*.classpath
+
+#old GWT (1.5) created this dir
+.gwt-tmp/
+/bin/
+/target/
+
+# idea
+*.idea/
+*.iml
+*.log
+*.logs
+*.swp
+
+/src/main/java/META-INF/
+#old GWT (1.5) created this dir
+.gwt-tmp/
+/bin/
+/target/
