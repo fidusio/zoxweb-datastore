@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE hibernate-configuration PUBLIC
+        "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+<hibernate-configuration>
+    <session-factory>
+        <!-- Connection settings -->
+        <!--  
+        <property name="hibernate.connection.driver_class">org.apache.derby.jdbc.ClientDriver</property>
+        <property name="hibernate.connection.url">jdbc:derby://localhost:1527/test;create=true</property>
+     	-->
+        <property name="hibernate.connection.driver_class">org.apache.derby.jdbc.EmbeddedDriver</property>
+        <property name="hibernate.connection.url">jdbc:derby:memory:test;create=true</property>
+     
+        <!--<property name="hibernate.connection.username">admin</property>-->
+        <!--<property name="hibernate.connection.password">admin</property>-->
+        <property name="hibernate.connection.pool_size">10</property>
+
+        <property name="hibernate.dialect">org.hibernate.dialect.DerbyTenSevenDialect</property>
+
+        <!-- Print executed SQL to stdout -->
+        <property name="show_sql">true</property>
+
+        <!-- Drop and re-create all database on startup -->
+        <property name="hibernate.hbm2ddl.auto">create-drop</property>
+        <!-- Create the schema if it doesn't exist -->
+        <property name="hibernate.hbm2ddl.auto">create</property>
+        <!--Update schema (if present) (should be removed for production) -->
+        <property name="hibernate.hbm2ddl.auto">update</property>
+
+        <!-- Annotated entity DAO classes -->
+        <mapping class="org.zoxweb.shared.data.AddressDAO"/>
+
+    </session-factory>
+</hibernate-configuration>

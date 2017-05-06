@@ -11,4 +11,111 @@
   <url>http://maven.apache.org</url>
   
   
+  <properties>
+        <jdk.version>1.8</jdk.version>
+        <zoxweb.core.version>2.0.5</zoxweb.core.version>
+        <maven-plugin.version>3.6.1</maven-plugin.version>
+		<maven-plugin-source.version>3.0.1</maven-plugin-source.version>
+		<maven-javadoc.version>2.10.4</maven-javadoc.version>
+		<servlet.version>3.1.0</servlet.version>
+		<junit.version>4.8.2</junit.version>
+		<hibernate.version>5.2.9.Final</hibernate.version>
+        <apache.derby.version>10.13.1.1</apache.derby.version>
+    </properties>    
+    
+    
+    
+    
+    
+    <build>
+    	    <directory>target</directory>
+    		<resources>
+                	<resource>
+                	 <directory>src/main/java/</directory>
+                	</resource>
+             </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-plugin.version}</version>
+                <configuration>
+                		
+                    <source>${jdk.version}</source>
+                    <target>${jdk.version}</target>
+                </configuration>
+                
+            </plugin>
+            
+                <plugin>
+			      <groupId>org.apache.maven.plugins</groupId>
+			      <artifactId>maven-source-plugin</artifactId>
+			       <version>${maven-plugin-source.version}</version>
+			      <executions>
+			        <execution>
+			          <id>attach-sources</id>
+			          <goals>
+			            <goal>jar</goal>
+			          </goals>
+			        </execution>
+			      </executions>
+			    </plugin>
+			    
+		        <plugin>
+			      <groupId>org.apache.maven.plugins</groupId>
+			      <artifactId>maven-javadoc-plugin</artifactId>
+			      <version>${maven-javadoc.version}</version>
+			      <configuration>
+			      	 <failOnError>true</failOnError>
+			      </configuration>
+			      
+			      <executions>
+			        <execution>
+			          <id>attach-javadocs</id>
+			          <goals>
+			            <goal>jar</goal>
+			          </goals>
+			         
+			        </execution>
+			      </executions>
+			    </plugin>
+		        
+        </plugins>
+        
+    </build>
+
+
+    <dependencies>
+    	<dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    
+    
+        <dependency>
+            <groupId>org.zoxweb</groupId>
+            <artifactId>zoxweb-core</artifactId>
+            <version>${zoxweb.core.version}</version>
+            <scope>provided</scope>
+        </dependency>    
+         <dependency>
+            <groupId>org.hibernate</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.derby</groupId>
+            <artifactId>derby</artifactId>
+            <version>${apache.derby.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+
+    </dependencies>
+  
+  
+  
 </project>
