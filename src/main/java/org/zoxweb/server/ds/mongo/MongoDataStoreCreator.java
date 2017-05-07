@@ -63,9 +63,7 @@ public class MongoDataStoreCreator
 		
 	}
 
-	/**
-	 * This method creates a list of empty configuration information parameters.
-	 */
+	
 	@Override
 	public APIConfigInfo createEmptyConfigInfo() 
 	{
@@ -84,10 +82,7 @@ public class MongoDataStoreCreator
 		return configInfo;
 	}
 
-	/**
-	 * This method creates an API based on configuration information parameters.
-	 * @param apiConfig
-	 */
+	
 	@Override
 	public MongoDataStore createAPI(APIDataStore<?> ds, APIConfigInfo apiConfig) 
 			throws APIException
@@ -100,9 +95,7 @@ public class MongoDataStoreCreator
 		return mongoDS;
 	}
 
-	/**
-	 * This method returns the exception handler.
-	 */
+	
 	@Override
 	public APIExceptionHandler getExceptionHandler() 
 	{
@@ -111,13 +104,13 @@ public class MongoDataStoreCreator
 
 	@Override
 	public String getName() {
-		// TODO Auto-generated method stub
+		
 		return API_NAME;
 	}
 
 	@Override
 	public APITokenManager getAPITokenManager() {
-		// TODO Auto-generated method stub
+	
 		return null;
 	}
 	

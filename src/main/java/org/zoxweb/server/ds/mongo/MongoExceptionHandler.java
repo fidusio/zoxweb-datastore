@@ -89,7 +89,7 @@ public class MongoExceptionHandler
 
 	/**
 	 * This method throws an API exception.
-	 * @param e
+	 * @param e to be thrown
 	 */
 	@Override
 	public void throwException(Exception e) 
@@ -103,7 +103,7 @@ public class MongoExceptionHandler
 
 	/**
 	 * This method maps an exception to an API exception.
-	 * @param e
+	 * @param e to be mapped 
 	 */
 	@Override
 	public APIException mapException(Exception e) 

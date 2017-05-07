@@ -81,13 +81,13 @@ public class MongoQueryFormatter
 	}
 	
 	
-	//private static final transient Logger log = Logger.getLogger("MongoQueryFormatter");
+	
 	/**
 	 * This method formats a query request for MongoDB based on NVConfigEntity and specified
 	 * query criteria.
-	 * @param nvce
-	 * @param queryCriteria
-	 * @return
+	 * @param nvce the meta class descriptor
+	 * @param queryCriteria list 
+	 * @return DBOject formated based on the criteria
 	 */
 	public static DBObject formatQuery(NVConfigEntity nvce, QueryMarker ... queryCriteria)
 	{

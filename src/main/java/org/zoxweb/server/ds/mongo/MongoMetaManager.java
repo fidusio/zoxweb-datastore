@@ -77,8 +77,8 @@ public class MongoMetaManager
 	
 	/**
 	 * 
-	 * @param collection
-	 * @return
+	 * @param collection to check
+	 * @return true if indexed
 	 */
 	public boolean isIndexed(DBCollection collection)
 	{
@@ -89,8 +89,8 @@ public class MongoMetaManager
 	
 	/**
 	 * 
-	 * @param collectionFullName
-	 * @return
+	 * @param collectionFullName to look for
+	 * @return the mapped value
 	 */
 	private synchronized Object lookupCollectionByFullName(String collectionFullName)
 	{
@@ -101,8 +101,8 @@ public class MongoMetaManager
 	
 	/**
 	 * 
-	 * @param collection
-	 * @param nvce
+	 * @param collection to be added to
+	 * @param nvce to be added
 	 */
 	public synchronized void addCollectionInfo(DBCollection collection, NVConfigEntity nvce)
 	{
@@ -117,8 +117,8 @@ public class MongoMetaManager
 	}
 	
 	/**
-	 * 
-	 * @param collectionFullName
+	 * Delete a collection
+	 * @param collectionFullName to be delete
 	 */
 	public synchronized void removeCollectionInfo(String collectionFullName)
 	{
@@ -153,9 +153,10 @@ public class MongoMetaManager
 		return nvce;
 	}
 	
+	
 	/**
-	 * 
-	 * @param collection
+	 * Delete a collection
+	 * @param collection to be deleted
 	 */
 	public synchronized void removeCollectionInfo(DBCollection collection)
 	{
@@ -225,8 +226,8 @@ public class MongoMetaManager
 	
 	/**
 	 * 
-	 * @param collection
-	 * @param nvce
+	 * @param collection to be indexed
+	 * @param nvce the met config info
 	 */
 	private synchronized void addUniqueIndexes(DBCollection collection, NVConfigEntity nvce)
 	{

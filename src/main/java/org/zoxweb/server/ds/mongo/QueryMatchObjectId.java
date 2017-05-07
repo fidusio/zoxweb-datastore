@@ -14,9 +14,9 @@ public class QueryMatchObjectId
 	/**
 	 * This constructor instantiates QueryMatch object based on name, value, and operator
 	 * parameters.
-	 * @param name
-	 * @param value
-	 * @param operator
+	 * @param operator to be used
+	 * @param id reference id
+	 * @param names to be collected
 	 */
 	public QueryMatchObjectId(RelationalOperator operator, String id, String ...names)
 	{
@@ -26,9 +26,9 @@ public class QueryMatchObjectId
 	/**
 	 * This constructor instantiates QueryMatch object based on name, value, and operator
 	 * parameters.
-	 * @param name
-	 * @param value
-	 * @param operator
+	 * @param operator to be used
+	 * @param id reference id
+	 * @param names to be collected
 	 */
 	public QueryMatchObjectId(RelationalOperator operator, String id, GetName ...names)
 	{
@@ -38,9 +38,9 @@ public class QueryMatchObjectId
 	/**
 	 * This constructor instantiates QueryMatch object based on name, GetNVConfig value, and operator
 	 * parameters.
-	 * @param operator
-	 * @param id
-	 * @param gnvc
+	 * @param operator to be used
+	 * @param id reference id
+	 * @param gnvc to be collected
 	 */
 	public QueryMatchObjectId(RelationalOperator operator, String id, GetNVConfig ...gnvc)
 	{
