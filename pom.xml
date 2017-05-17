@@ -13,7 +13,7 @@
   
   <properties>
         <jdk.version>1.8</jdk.version>
-        <zoxweb.core.version>2.0.5</zoxweb.core.version>
+        <zoxweb.core.version>2.0.6</zoxweb.core.version>
         <maven-plugin.version>3.6.1</maven-plugin.version>
 		<maven-plugin-source.version>3.0.1</maven-plugin-source.version>
 		<maven-javadoc.version>2.10.4</maven-javadoc.version>
