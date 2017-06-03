@@ -77,7 +77,7 @@ public class MongoDataStoreCreator
 		configInfo.setServiceTypes(types);
 		configInfo.setAPITypeName(API_NAME);
 		configInfo.setDescription("MongoDB Configuration Info.");
-		configInfo.setVersion("3.0.3");
+		configInfo.setVersion("3.4.2");
 			
 		return configInfo;
 	}
