@@ -60,8 +60,7 @@ import org.zoxweb.shared.util.ArrayValues;
 import org.zoxweb.shared.util.SharedStringUtil;
 import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.TimeStampInterface;
-
-
+import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
 
 
@@ -87,7 +86,7 @@ import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 import org.zoxweb.server.io.IOUtil;
-import org.zoxweb.server.shiro.SecurityManagerAPI;
+
 import org.zoxweb.shared.api.APIBatchResult;
 
 import org.zoxweb.shared.api.APIDataStore;
@@ -95,6 +94,7 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIFileInfoMap;
 import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -126,7 +126,7 @@ extends APIServiceProviderBase<DB>
 	private Lock updateLock = new ReentrantLock();
 	
 	private KeyMaker keyMaker;
-	private SecurityManagerAPI securityManagerAPI;
+	private APISecurityManager<Subject> apiSecurityManager;
 	
 	//private LockQueue updateLock = new LockQueue(5);
 	
@@ -313,7 +313,7 @@ extends APIServiceProviderBase<DB>
 		if (container != null && (ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT_MASK)))
 		{
 			keyMaker.createNVEntityKey(this, container, keyMaker.getKey(this, keyMaker.getMasterKey(), container.getUserID()));
-			value = securityManagerAPI.encryptValue(this, container, null, nvp, null);
+			value = apiSecurityManager.encryptValue(this, container, null, nvp, null);
 		}
 		
 		db.append(MetaToken.NAME.getName(), nvp.getName());
@@ -780,7 +780,7 @@ extends APIServiceProviderBase<DB>
 				tempValue = fromDB(userID, db, (BasicDBObject) tempValue, EncryptedDAO.class);	
 			}
 		
-			((NVPair)nvb).setValue((String)securityManagerAPI.decryptValue(this, container, nvb, tempValue, null));
+			((NVPair)nvb).setValue((String)apiSecurityManager.decryptValue(this, container, nvb, tempValue, null));
 			
 			return;
 		}
@@ -860,7 +860,7 @@ extends APIServiceProviderBase<DB>
 				//log.info("userID:" + userID);
 				try 
 				{
-					value = securityManagerAPI.decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
+					value = apiSecurityManager.decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
 				} catch ( InstantiationException
 						| IllegalAccessException e)
 				{
@@ -1233,7 +1233,7 @@ extends APIServiceProviderBase<DB>
 		BasicDBObject doc = new BasicDBObject();
 		
 		NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
-		securityManagerAPI.associateNVEntityToSubjectUserID(nve, null);
+		apiSecurityManager.associateNVEntityToSubjectUserID(nve, null);
 		if (nve.getReferenceID() == null)
 		{
 			nve.setReferenceID(ObjectId.get().toHexString());
@@ -1381,7 +1381,7 @@ extends APIServiceProviderBase<DB>
 			{	
 				//if (nvc.getMetaTypeBase() == String.class)
 				{
-					Object tempValue = securityManagerAPI.encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = apiSecurityManager.encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
 						doc.append(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, false, false));
@@ -1821,7 +1821,7 @@ extends APIServiceProviderBase<DB>
 			{
 				updateLock.lock();
 			}
-			securityManagerAPI.associateNVEntityToSubjectUserID(nve, null);
+			apiSecurityManager.associateNVEntityToSubjectUserID(nve, null);
 			
 			if (nve.lookupValue(MetaToken.REFERENCE_ID) == null)
 			{
@@ -1992,7 +1992,7 @@ extends APIServiceProviderBase<DB>
 				}
 				else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName()))
 				{
-					Object tempValue = securityManagerAPI.encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = apiSecurityManager.encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
 						updatedDoc.put(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, sync, updateReferenceOnly));
@@ -3048,7 +3048,7 @@ extends APIServiceProviderBase<DB>
 					ObjectId refID = (ObjectId) dbObject.get(ReservedID.REFERENCE_ID.getValue());
 					ObjectId userID = (ObjectId) dbObject.get("_user_id");
 					
-					if (refID != null && userID != null && securityManagerAPI.isNVEntityAccessible(refID.toHexString(), userID.toHexString(), CRUD.READ))
+					if (refID != null && userID != null && apiSecurityManager.isNVEntityAccessible(refID.toHexString(), userID.toHexString(), CRUD.READ))
 					{
 						list.add((T) refID);
 					}
@@ -3153,16 +3153,16 @@ extends APIServiceProviderBase<DB>
 	}
 
 
-	public SecurityManagerAPI getSecurityManagerAPI()
+	public APISecurityManager<Subject> getAPISecurityManager()
 	{
-		return securityManagerAPI;
+		return apiSecurityManager;
 	}
 
 
 
-	public void setSecurityManagerAPI(SecurityManagerAPI securityManagerAPI)
+	public void setAPISecurityManager(APISecurityManager<Subject> securityManagerAPI)
 	{
-		this.securityManagerAPI = securityManagerAPI;
+		this.apiSecurityManager = securityManagerAPI;
 	}
 
 
