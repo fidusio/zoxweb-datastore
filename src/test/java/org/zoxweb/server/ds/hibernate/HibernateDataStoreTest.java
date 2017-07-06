@@ -15,11 +15,12 @@
  */
 package org.zoxweb.server.ds.hibernate;
 
-import junit.framework.Assert;
+
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import static org.junit.Assert.*;
 
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
@@ -63,9 +64,9 @@ public class HibernateDataStoreTest {
         addressDAO.setCountry("USA");
 
         addressDAO = (AddressDAO) dataStore.insert(addressDAO);
-        Assert.assertNotNull(addressDAO);
-        Assert.assertNotNull(addressDAO.getReferenceID());
-    }
+        assertNotNull(addressDAO);
+        assertNotNull(addressDAO.getReferenceID());
+   }
 
     @Test
     public void testRead() {
@@ -76,7 +77,7 @@ public class HibernateDataStoreTest {
         addressDAO = (AddressDAO) dataStore.insert(addressDAO);
 
         AddressDAO result = (AddressDAO) dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID());
-        Assert.assertNotNull(result);
+        assertNotNull(result);
 
         System.out.println("Result: " + result);
     }
@@ -108,7 +109,7 @@ public class HibernateDataStoreTest {
 
         dataStore.delete(addressDAO, true);
         addressDAO = (AddressDAO) dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID());
-        Assert.assertNull(addressDAO);
+        assertNull(addressDAO);
     }
 
 }
