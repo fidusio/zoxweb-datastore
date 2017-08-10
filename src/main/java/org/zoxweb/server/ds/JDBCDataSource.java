@@ -34,13 +34,12 @@ public class JDBCDataSource
 	private Properties properties = new Properties();
 	private String driverName;
 
-
 	public JDBCDataSource()
 	{
 
 	}
 
-	public JDBCDataSource( String driverName,
+	public JDBCDataSource(String driverName,
 						   Properties driverProperties, 
 						   String url, 
 						   String defaultUser,
@@ -142,7 +141,6 @@ public class JDBCDataSource
 	}
 
 	public String getDriverName()
-
 	{
 		return driverName;
 	}
@@ -158,7 +156,6 @@ public class JDBCDataSource
 	{
 		return user;
 	}
-
 
 	public void setUser(String user)
 	{

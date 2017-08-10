@@ -21,12 +21,6 @@ import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
 
-
-/**
- * 
- * @author mzebib
- *
- */
 public class MongoMetaManager 
 {
 	private static final transient Logger log = Logger.getLogger(MongoMetaManager.class.getName());
@@ -37,9 +31,7 @@ public class MongoMetaManager
 	private HashMap<String, Object> map = new HashMap<String, Object>();
 	private DBCollection nvConfigEntities = null;
 	
-	
-	
-	
+
 	public enum MetaCollections
 		implements GetName
 	{
@@ -55,10 +47,8 @@ public class MongoMetaManager
 		@Override
 		public String getName()
 		{
-			// TODO Auto-generated method stub
 			return name;
 		}
-		
 	}
 	
 	/**

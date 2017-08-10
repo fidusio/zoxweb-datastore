@@ -11,17 +11,14 @@ import org.zoxweb.shared.api.APIExceptionHandler;
 
 /**
  * This class handles exceptions in MongoDB.
- * @author mzebib
- *
  */
 public class MongoExceptionHandler
 	implements APIExceptionHandler
 {
-	/**
-	 * This enum contains Monogo error codes.
-	 * @author mzebib
-	 *
-	 */
+
+    /**
+     * Contains Monogo error codes.
+     */
 	public enum MongoError 
 		implements GetValue<Integer>
 	{
@@ -44,21 +41,17 @@ public class MongoExceptionHandler
 			this.code = code;
 		}
 
-		
-		
 		public String getMessage() 
 		{
 			return message;
 		}
-		
-		
+
 		@Override
 		public Integer getValue() 
 		{
 			return value;
 		}
 
-		
 		public Category getCategory()
 		{
 			return category;
@@ -68,8 +61,6 @@ public class MongoExceptionHandler
 		{
 			return code;
 		}
-
-		
 	}
 	
 	
@@ -88,7 +79,7 @@ public class MongoExceptionHandler
 	}
 
 	/**
-	 * This method throws an API exception.
+	 * Throws an API exception.
 	 * @param e to be thrown
 	 */
 	@Override
@@ -102,7 +93,7 @@ public class MongoExceptionHandler
 	}
 
 	/**
-	 * This method maps an exception to an API exception.
+	 * Maps an exception to an API exception.
 	 * @param e to be mapped 
 	 */
 	@Override

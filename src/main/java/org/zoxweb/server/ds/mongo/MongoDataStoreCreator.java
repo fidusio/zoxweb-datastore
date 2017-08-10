@@ -14,22 +14,15 @@ import org.zoxweb.shared.api.APIServiceProviderCreator;
 import org.zoxweb.shared.api.APIServiceType;
 import org.zoxweb.shared.api.APITokenManager;
 
-/**
- * 
- * @author mzebib
- *
- */
 public class MongoDataStoreCreator 
 	implements APIServiceProviderCreator
 {
 	
 	public final static String API_NAME = "MongoDB";
-	
-	/**
-	 * This enum contains parameters needed to create the Mongo database.
-	 * @author mzebib
-	 *
-	 */
+
+    /**
+     * Contains parameters needed to create the Mongo database.
+     */
 	public enum MongoParam 
 		implements GetNameValue<String>
 	{
@@ -63,7 +56,6 @@ public class MongoDataStoreCreator
 		
 	}
 
-	
 	@Override
 	public APIConfigInfo createEmptyConfigInfo() 
 	{
@@ -81,7 +73,6 @@ public class MongoDataStoreCreator
 			
 		return configInfo;
 	}
-
 	
 	@Override
 	public MongoDataStore createAPI(APIDataStore<?> ds, APIConfigInfo apiConfig) 
@@ -103,18 +94,15 @@ public class MongoDataStoreCreator
 	}
 
 	@Override
-	public String getName() {
-		
+	public String getName()
+    {
 		return API_NAME;
 	}
 
 	@Override
-	public APITokenManager getAPITokenManager() {
-	
+	public APITokenManager getAPITokenManager()
+    {
 		return null;
 	}
-	
-	
-	
 
 }

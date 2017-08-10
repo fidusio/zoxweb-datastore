@@ -2,6 +2,7 @@ package org.zoxweb.server.ds.mongo;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
+
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APICredentialsDAO;
 import org.zoxweb.shared.filters.ValueFilter;
@@ -9,7 +10,7 @@ import org.zoxweb.shared.util.NVEntity;
 
 @SuppressWarnings("serial")
 public class UpdateFilterClass
-implements ValueFilter<Class<?>, Boolean>
+    implements ValueFilter<Class<?>, Boolean>
 {
 	public static final UpdateFilterClass SINGLETON = new UpdateFilterClass();
 	private static final Class<?> array[] =

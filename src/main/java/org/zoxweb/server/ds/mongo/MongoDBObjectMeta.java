@@ -24,15 +24,9 @@ public class MongoDBObjectMeta
 		this.content = content;
 	}
 
-	
 	public NVConfigEntity getNVConfigEntity()
 	{
 		return nvce;
 	}
-	
 
-	
-	
-	
-	
 }

@@ -18,18 +18,13 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
 
 /**
- * This class includes utility methods to format Mongo query requests.
- * @author mzebib
- *
+ * Includes utility methods to format Mongo query requests.
  */
 public class MongoQueryFormatter 
 {
 
-	
-	
 	private static QueryBuilder formatQueryMatch(QueryBuilder qb, NVConfigEntity nvce, QueryMarker  qm)
 	{
-		
 		if (qm != null && qm instanceof QueryMatch)
 		{
 			QueryMatch<?> queryMatch = (QueryMatch<?>) qm; 
@@ -38,10 +33,11 @@ public class MongoQueryFormatter
 			//ReservedID resID = ReservedID.lookupByName(queryMatch.getName());
 			String queryKey =  ReservedID.map(nvc, queryMatch.getName());//(resID != null ? resID.getValue() : queryMatch.getName());
 			
-			if ( qb == null)
+			if (qb == null)
 			{
 				qb = new QueryBuilder();
 			}
+
 			qb = qb.put(queryKey);
 		
 			//System.out.println(querykey+":" + resID + ":" + queryMatch.getValue());
@@ -52,38 +48,36 @@ public class MongoQueryFormatter
 			}
 			else
 			{
-					switch(queryMatch.getOperator())
-					{
-					case EQUAL:
-						//System.out.println(querykey + ":" + map(nvc, resID, queryMatch).getClass().getName());
-						qb.is(map(nvc, queryMatch));
-						break;
-					case GT:
-						qb.greaterThan(map(nvc, queryMatch));
-						break;
-					case GTE:
-						qb.greaterThanEquals(map(nvc, queryMatch));
-						break;
-					case LT:
-						qb.lessThan(map(nvc, queryMatch));
-						break;
-					case LTE:
-						qb.lessThanEquals(map(nvc, queryMatch));
-						break;
-					case NOT_EQUAL:
-						qb.notEquals(map(nvc, queryMatch));
-						break;
-					
-					}
+                switch(queryMatch.getOperator())
+                {
+                case EQUAL:
+                    //System.out.println(querykey + ":" + map(nvc, resID, queryMatch).getClass().getName());
+                    qb.is(map(nvc, queryMatch));
+                    break;
+                case GT:
+                    qb.greaterThan(map(nvc, queryMatch));
+                    break;
+                case GTE:
+                    qb.greaterThanEquals(map(nvc, queryMatch));
+                    break;
+                case LT:
+                    qb.lessThan(map(nvc, queryMatch));
+                    break;
+                case LTE:
+                    qb.lessThanEquals(map(nvc, queryMatch));
+                    break;
+                case NOT_EQUAL:
+                    qb.notEquals(map(nvc, queryMatch));
+                    break;
+                }
 			}
 		}
+
 		return qb;
 	}
-	
-	
-	
+
 	/**
-	 * This method formats a query request for MongoDB based on NVConfigEntity and specified
+	 * Formats a query request for MongoDB based on NVConfigEntity and specified
 	 * query criteria.
 	 * @param nvce the meta class descriptor
 	 * @param queryCriteria list 
@@ -212,8 +206,5 @@ public class MongoQueryFormatter
 		
 		return queryMatch.getValue();
 	}
-	
-	
-	
-	
+
 }
