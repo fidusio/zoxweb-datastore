@@ -163,7 +163,9 @@ extends APIServiceProviderBase<DB>
 			for (ReservedID ri : ReservedID.values())
 			{
 				if (ri.getName().equals(name))
-					return ri;
+                {
+                    return ri;
+                }
 			}
 			
 			return null;
@@ -173,7 +175,9 @@ extends APIServiceProviderBase<DB>
 		{
 			ReservedID resID = lookupByName(name);
 			if (resID != null)
-				return resID.getValue();
+            {
+                return resID.getValue();
+            }
 			
 			if (name != null && nvc != null && nvc.isTypeReferenceID())
 			{
@@ -184,9 +188,7 @@ extends APIServiceProviderBase<DB>
 		}
 		
 	}
-	
-	
-	
+
 	/**
 	 * The default constructor.
 	 */
@@ -194,35 +196,29 @@ extends APIServiceProviderBase<DB>
 	{
 		
 	}
-	
-	
-	
+
 	/**
-	 * This method returns the MongoDB client.
+	 * Returns the MongoDB client.
 	 * @return mongoClient
 	 */
 	public MongoClient getMongoClient()
 	{
 		return mongoClient;
 	}
-		
-	
-
-
 
 	/**
-	 * This method connects to the database.
+	 * Connects to the database.
 	 * @return mongoDB
 	 * @throws UnknownHostException
 	 */
 	public DB connect() 
 			throws APIException
 	{
-		if(mongoDB == null)
+		if (mongoDB == null)
 		{
 			synchronized(this)
 			{
-				if(mongoDB == null)
+				if (mongoDB == null)
 				{
 					if (configInfo == null)
 					{
@@ -274,11 +270,9 @@ extends APIServiceProviderBase<DB>
 		return mongoDB;
 		
 	}
-	
 
-	
 	/**
-	 * This method closes all connections to the database.
+	 * Closes all connections to the database.
 	 */
 	public synchronized void close()
 	{
@@ -286,9 +280,6 @@ extends APIServiceProviderBase<DB>
 		mongoClient = null;
 		
 	}
-	
-
-	
 
 	private DBObject mapNVPair(NVEntity container, NVPair nvp, boolean sync)
 	{
@@ -352,13 +343,8 @@ extends APIServiceProviderBase<DB>
 		return listOfDBObject;		
 	}
 
-	
-	
-	
-	
-	
 	/**
-	 * This method maps an enum list to an array list of strings.
+	 * Maps an enum list to an array list of strings.
 	 * @param enumList
 	 * @return enumNames
 	 */
@@ -451,10 +437,9 @@ extends APIServiceProviderBase<DB>
 		entryElement.put(MetaToken.REFERENCE_ID.getName(), new ObjectId(nve.getReferenceID()));
 		return entryElement;
 	}
-	
-	
+
 	/**
-	 * This method maps an object from the database to NVEntity type.
+	 * Maps an object from the database to NVEntity type.
 	 * @param db
 	 * @param dbObject
 	 * @param clazz
@@ -483,8 +468,6 @@ extends APIServiceProviderBase<DB>
 		
 		return (V)nve;
 	}
-	
-
 
 	/**
 	 * 
@@ -732,7 +715,6 @@ extends APIServiceProviderBase<DB>
 				{
 					((NVEntityReference) nvb).setValue(fromDB(userID, db, obj, (Class<? extends NVEntity>) Class.forName((String)className)));
 				} catch (ClassNotFoundException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 				return;
@@ -829,7 +811,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method converts a database object to NVPair.
+	 * Converts a database object to NVPair.
 	 * @param dbObject
 	 * @return
 	 */
@@ -847,16 +829,14 @@ extends APIServiceProviderBase<DB>
 				try 
 				{
 					value = apiSecurityManager.decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
-				} catch ( InstantiationException
-						| IllegalAccessException e)
+				}
+				catch (InstantiationException | IllegalAccessException e)
 				{
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
 		}
-		
-		
+
 		nvp.setName(dbObject.getString(MetaToken.NAME.getName()));
 		nvp.setValue((String) value);
 		nvp.setValueFilter(getValueFilter(dbObject));
@@ -873,9 +853,7 @@ extends APIServiceProviderBase<DB>
 		
 		return nvp;
 	}
-	
 
-	
 	
 	@SuppressWarnings("unchecked")
 	private ValueFilter<String, String> getValueFilter(BasicDBObject dbObject)
@@ -885,14 +863,13 @@ extends APIServiceProviderBase<DB>
 		
 		if (valueFilterValue != null)
 		{
-			
 			if (valueFilterValue instanceof String)
 			{
 				String filterTypeName = (String) valueFilterValue;
 				
 				if (!SharedStringUtil.isEmpty(filterTypeName))
 				{
-					 return ((ValueFilter<String, String>) SharedUtil.lookupEnum(FilterType.values(), filterTypeName));
+				    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(FilterType.values(), filterTypeName));
 				}
 			}
 			
@@ -916,16 +893,9 @@ extends APIServiceProviderBase<DB>
 		
 		return null;
 	}
-	
-	
-	
-	
-	
-	
-	
-	
+
 	/**
-	 * This method returns all the documents in the collection. After using this function,
+	 * Returns all the documents in the collection. After using this function,
 	 * the cursor must be closed.
 	 * @param db
 	 * @param nve
@@ -955,7 +925,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method returns the database name.
+	 * Returns the database name.
 	 * @return
 	 */
 	@Override
@@ -1142,7 +1112,7 @@ extends APIServiceProviderBase<DB>
 	
 
 	/**
-	 * This method formats a list of field names used for search criteria.
+	 * Formats a list of field names used for search criteria.
 	 * @param fieldNames
 	 * @return
 	 */
@@ -1169,8 +1139,9 @@ extends APIServiceProviderBase<DB>
 	{
 		return userSearch(null, className, fieldNames, queryCriteria);
 	}
+
 	/**
-	 * This method is used to search and read a document from the collection based on certain 
+	 * Used to search and read a document from the collection based on certain
 	 * criteria and specified fields.
 	 * @param nvce
 	 * @param fieldNames
@@ -1182,10 +1153,9 @@ extends APIServiceProviderBase<DB>
 	{
 		return userSearch(null, nvce, fieldNames, queryCriteria);
 	}
-	
-	
+
 	/**
-	 * This method inserts a document into the database.
+	 * Inserts a document into the database.
 	 * @param nve
 	 * @return
 	 */
@@ -1206,18 +1176,19 @@ extends APIServiceProviderBase<DB>
 		{
 			nve.setReferenceID(ObjectId.get().toHexString());
 		}
-		if(nve.getGlobalID() == null)
+
+		if (nve.getGlobalID() == null)
 		{
 			nve.setGlobalID(UUID.randomUUID().toString());
 		}
+
 		if (nve instanceof TimeStampInterface)
 		{
 			SharedUtil.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
 		}
+
 		for (NVConfig nvc : nvce.getAttributes())
 		{
-			
-			
 			if (ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT_MASK))
 			{
 				keyMaker.createNVEntityKey(this, nve, keyMaker.getKey(this, keyMaker.getMasterKey(), nve.getUserID()));
@@ -1243,12 +1214,10 @@ extends APIServiceProviderBase<DB>
 			{
 				doc.append(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
 			}
-			
 			else if (nvb instanceof NVEnumList)
 			{
 				doc.append(nvc.getName(), mapEnumList((NVEnumList) nvb));
 			}
-			
 			else if (nvb instanceof NVEntityReference)
 			{
 				NVEntity temp = (NVEntity) nvb.getValue();
@@ -1259,17 +1228,14 @@ extends APIServiceProviderBase<DB>
 				
 				doc.append(nvc.getName(), mapComplexNVEntityReference(connect(), nve, temp, false, false, false));
 			}
-			
 			else if (nvb instanceof NVEntityReferenceList || nvb instanceof NVEntityGetNameMap || nvb instanceof NVEntityReferenceIDMap)
 			{
 				doc.append(nvc.getName(), mapArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, false, false, false));
 			}
-			
 			else if (nvb instanceof NVBigDecimal)
 			{
 				doc.append(nvc.getName(), nvb.getValue().toString());	
 			}
-			
 			else if (nvb instanceof NVBigDecimalList)
 			{
 				List<String> values = new ArrayList<>();
@@ -1282,7 +1248,6 @@ extends APIServiceProviderBase<DB>
 				
 				doc.append(nvc.getName(), values);
 			}
-			
 			else if (nvb instanceof NVBlob)
 			{
 				doc.append(nvc.getName(), nvb.getValue());
@@ -2011,7 +1976,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method deletes a document from the database.
+	 * Deletes a document from the database.
 	 * @param nve
 	 * @param withReference
 	 * @return
@@ -2095,9 +2060,6 @@ extends APIServiceProviderBase<DB>
 		return false;
 	}
 	
-	
-	
-	
 	public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
 		throws NullPointerException, IllegalArgumentException, APIException, AccessException
 	{
@@ -2108,7 +2070,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method deletes all the documents in the collection. Use with caution.
+	 * Deletes all the documents in the collection. Use with caution.
 	 * @param nve
 	 * @return
 	 * @throws NullPointerException
@@ -2142,7 +2104,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method returns the API service information.
+	 * Returns the API service information.
 	 * @return
 	 */
 	@Override
@@ -2152,7 +2114,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method sets the API service information.
+	 * Sets the API service information.
 	 * @param configInfo
 	 */
 	@Override
@@ -2162,7 +2124,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method returns the number of matches found based on query criteria.
+	 * Returns the number of matches found based on query criteria.
 	 * @param nvce
 	 * @param queryCriteria
 	 * @return
@@ -2177,7 +2139,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method creates and stores a file into the database.
+	 * Creates and stores a file into the database.
 	 * @param file
 	 * @param is
 	 * @return
@@ -2234,7 +2196,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method reads a file from the database.
+	 * Reads a file from the database.
 	 * @param file
 	 * @param os
 	 * @return
@@ -2284,7 +2246,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method updates and overwrites an existing file in the database.
+	 * Updates and overwrites an existing file in the database.
 	 * @param file
 	 * @param is
 	 * @return
@@ -2327,7 +2289,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method deletes a file in the database.
+	 * Deletes a file in the database.
 	 * @param file
 	 */
 	@Override
@@ -2343,7 +2305,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method searches and returns a list of files in the database.
+	 * Searches and returns a list of files in the database.
 	 * @param args
 	 */
 	@Override
@@ -2360,7 +2322,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method sets the description.
+	 * Sets the description.
 	 * @param str
 	 */
 	@Override
@@ -2370,7 +2332,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method returns the description.
+	 * Returns the description.
 	 */
 	@Override
 	public String getDescription()
@@ -2380,7 +2342,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method sets the name.
+	 * Sets the name.
 	 * @param name
 	 */
 	@Override
@@ -2390,7 +2352,7 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method returns the name.
+	 * Returns the name.
 	 */
 	@Override
 	public String getName() 
@@ -2399,17 +2361,16 @@ extends APIServiceProviderBase<DB>
 	}
 
 	/**
-	 * This method returns a string representation of the class.
+	 * Returns a string representation of the class.
 	 */
 	@Override
 	public String toCanonicalID() 
 	{
-
 		return null;
 	}
 
 	/**
-	 * This method searches by ID.
+	 * Searches by ID.
 	 * @param nvce
 	 * @param ids
 	 */
@@ -2424,26 +2385,18 @@ extends APIServiceProviderBase<DB>
 	public <V extends NVEntity> List<V> searchByID(String className, String... ids) 
 			throws NullPointerException, IllegalArgumentException, APIException 
 	{
-
-		
 		NVEntity tempNVE;
+
 		try 
 		{
 			tempNVE = (NVEntity) Class.forName(className).newInstance();
 			return userSearchByID(null, (NVConfigEntity)tempNVE.getNVConfig(), ids);
-		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e)
+		}
+		catch (InstantiationException | IllegalAccessException | ClassNotFoundException e)
 		{
-			// TODO Auto-generated catch block
 			throw new APIException("Invalid class name " + className);
 		}
-			
-		
-
 	}
-
-
-
-	
 
 	public DynamicEnumMap insertDynamicEnumMap(DynamicEnumMap dynamicEnumMap)
 			throws NullPointerException, IllegalArgumentException, APIException
@@ -2521,7 +2474,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method looks up the database object in the collection by name.
+	 * Looks up the database object in the collection by name.
 	 * @param collectionName
 	 * @param name
 	 * @return
@@ -2549,7 +2502,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method converts the database object to dynamic enum type.
+	 * Converts the database object to dynamic enum type.
 	 * @param obj
 	 * @return
 	 */
@@ -2589,7 +2542,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method searches for the dynamic enum by reference ID.
+	 * Searches for the dynamic enum by reference ID.
 	 * @param refID
 	 * @return
 	 */
@@ -2601,7 +2554,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method searches for the dynamic enum by reference ID.
+	 * Searches for the dynamic enum by reference ID.
 	 * @param refID
 	 * @param clazz
 	 * @return
@@ -2641,7 +2594,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method searches for the dynamic enum by name.
+	 * Searches for the dynamic enum by name.
 	 * @param name
 	 * @return
 	 */
@@ -2653,7 +2606,7 @@ extends APIServiceProviderBase<DB>
 	
 
 	/**
-	 * This method searches for the dynamic enum by name.
+	 * Searches for the dynamic enum by name.
 	 * @param name
 	 * @param clazz
 	 * @return
@@ -2689,7 +2642,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method deletes a dynamic enum based on name.
+	 * Deletes a dynamic enum based on name.
 	 * @param name
 	 */
 	public void deleteDynamicEnumMap(String name)
@@ -2700,7 +2653,7 @@ extends APIServiceProviderBase<DB>
 	
 	
 	/**
-	 * This method deletes a dynamic enum based on name.
+	 * Deletes a dynamic enum based on name.
 	 * @param name
 	 * @param clazz
 	 */
@@ -2735,7 +2688,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method returns a list of dynamic enum map in the dynamic enum map collection.
+	 * Returns a list of dynamic enum map in the dynamic enum map collection.
 	 * @param domainID
 	 * @param userID
 	 * @return
@@ -2747,7 +2700,7 @@ extends APIServiceProviderBase<DB>
 	}
 	
 	/**
-	 * This method returns a list of dynamic enum map in the dynamic enum map collection.
+	 * Returns a list of dynamic enum map in the dynamic enum map collection.
 	 * @param domainID
 	 * @param userID
 	 * @param clazz
@@ -2789,8 +2742,8 @@ extends APIServiceProviderBase<DB>
 	}
 
 	@Override
-	public Map<String, APIFileInfoMap> discover() {
-		// TODO Auto-generated method stub
+	public Map<String, APIFileInfoMap> discover()
+    {
 		return null;
 	}
 
@@ -2809,9 +2762,7 @@ extends APIServiceProviderBase<DB>
 		}
 		
 	}
-	
-	
-	
+
 	private static ServerAddress getDBAddress(APIConfigInfo aci) throws NumberFormatException, UnknownHostException
 	{
 		return new ServerAddress(SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.HOST.getName())), 
@@ -2821,13 +2772,10 @@ extends APIServiceProviderBase<DB>
 
 	@Override
 	public APIFileInfoMap createFolder(String folderFullPath)
-			throws NullPointerException, IllegalArgumentException, IOException,
-			AccessException {
-		// TODO Auto-generated method stub
+			throws NullPointerException, IllegalArgumentException, IOException, AccessException
+    {
 		return null;
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
@@ -2868,8 +2816,6 @@ extends APIServiceProviderBase<DB>
 		}
 		return list;
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
@@ -2924,8 +2870,6 @@ extends APIServiceProviderBase<DB>
 		return list;
 	}
 
-
-
 	@Override
 	public <V extends NVEntity> List<V> userSearch(String userID,
 			String className, List<String> fieldNames,
@@ -2946,8 +2890,6 @@ extends APIServiceProviderBase<DB>
 		
 		return userSearch(userID, nvce, fieldNames, queryCriteria);
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
@@ -2978,15 +2920,11 @@ extends APIServiceProviderBase<DB>
 		return null;
 	}
 
-
-
 	@Override
 	public boolean isBusy() 
 	{
 		return true;
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
