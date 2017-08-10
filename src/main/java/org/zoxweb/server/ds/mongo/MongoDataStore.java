@@ -79,16 +79,11 @@ import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
 //import com.zoxweb.fidusstore.server.data.DataCacheMonitor;
 
-
-
-
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 import org.zoxweb.server.io.IOUtil;
-
 import org.zoxweb.shared.api.APIBatchResult;
-
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
@@ -107,14 +102,15 @@ import org.zoxweb.shared.db.QueryMarker;
  * This class is used to define the MongoDB object for data storage. This object primarily contains methods 
  * used to store, retrieve, update, and delete documents in the database.
  * @author mzebib
- *
  */
 @SuppressWarnings("serial")
 public class MongoDataStore
 extends APIServiceProviderBase<DB>
 	implements APIDataStore<DB>, APIDocumentStore<DB>
 {
-	private MongoClient mongoClient;
+    private static final transient Logger log = Logger.getLogger("MongoDataStore");
+
+    private MongoClient mongoClient;
 	//private DBAddress dbAddress;
 	private DB mongoDB;
 	private APIConfigInfo configInfo;
@@ -129,18 +125,10 @@ extends APIServiceProviderBase<DB>
 	private APISecurityManager<Subject> apiSecurityManager;
 	
 	//private LockQueue updateLock = new LockQueue(5);
-	
-	
 
-
-
-	private static final transient Logger log = Logger.getLogger("MongoDataStore");
-	
-	/**
-	 * This enum contains reference ID, account ID, and user ID.
-	 * @author mzebib
-	 *
-	 */
+    /**
+     * Contains reference ID, account ID, and user ID.
+     */
 	public enum ReservedID 
 		implements GetNameValue<String>
 	{
@@ -180,9 +168,7 @@ extends APIServiceProviderBase<DB>
 			
 			return null;
 		}
-		
-		
-		
+
 		public static String map(NVConfig nvc, String name)
 		{
 			ReservedID resID = lookupByName(name);
@@ -991,13 +977,6 @@ extends APIServiceProviderBase<DB>
 		return connect().getCollectionNames();
 	}
 	
-	/**
-	 * This method looks up and returns the database object based on the reference id.
-	 * @param db
-	 * @param collectionName
-	 * @param refID
-	 * @return
-	 */
 
 //	public BasicDBObject lookupByReferenceID(String collectionName, ObjectId objectId)
 //	{
@@ -1008,21 +987,15 @@ extends APIServiceProviderBase<DB>
 //	{
 //		return lookupByReferenceID(metaTypeName, objectId, null);
 //	}
-	
-	
-	
+
 	@Override
 	public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId) {
-		// TODO Auto-generated method stub
 		return lookupByReferenceID(metaTypeName, objectId, null);
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
 	public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT objectId, NIT projection) {
-		// TODO Auto-generated method stubmetaTypeName
 		DBCollection collection = connect().getCollection(metaTypeName);
 		BasicDBObject query = new BasicDBObject(); 
 		//query.put("_id", new ObjectId(refID)); 
@@ -1064,19 +1037,14 @@ extends APIServiceProviderBase<DB>
 //		
 //		return (BasicDBObject) dbObj;	
 //	}
-	
-	
-	
-	
-	
-	/**
-	 * This method looks up and returns a list of database objects based on a list of 
-	 * reference id's.
-	 * @param db
-	 * @param collectionName
-	 * @param listOfRefID
-	 * @return
-	 */
+
+    /**
+     * Looks up and returns a list of database objects based on a list of
+     * reference id's.
+     * @param collectionName
+     * @param listOfObjectId
+     * @return
+     */
 	public List<BasicDBObject> lookupByReferenceIDs(String collectionName, List<ObjectId> listOfObjectId)
 	{
 		if (listOfObjectId != null && !listOfObjectId.isEmpty())
@@ -2185,7 +2153,7 @@ extends APIServiceProviderBase<DB>
 
 	/**
 	 * This method sets the API service information.
-	 * @param service
+	 * @param configInfo
 	 */
 	@Override
 	public void setAPIConfigInfo(APIConfigInfo configInfo) 
@@ -3076,8 +3044,6 @@ extends APIServiceProviderBase<DB>
 		return results;
 	}
 
-
-
 	@Override
 	public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria) 
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException 
@@ -3096,8 +3062,6 @@ extends APIServiceProviderBase<DB>
 		
 		return batchSearch((NVConfigEntity) nve.getNVConfig(), queryCriteria);
 	}
-
-
 
 	@SuppressWarnings("unchecked")
 	@Override
@@ -3152,33 +3116,24 @@ extends APIServiceProviderBase<DB>
 		return batch;
 	}
 
-
 	public APISecurityManager<Subject> getAPISecurityManager()
 	{
 		return apiSecurityManager;
 	}
-
-
 
 	public void setAPISecurityManager(APISecurityManager<Subject> securityManagerAPI)
 	{
 		this.apiSecurityManager = securityManagerAPI;
 	}
 
-
-
 	public KeyMaker getKeyMaker()
 	{
 		return keyMaker;
 	}
 
-
-
 	public void setKeyMaker(KeyMaker keyMaker) 
 	{
 		this.keyMaker = keyMaker;
 	}
-
-
 	
 }
