@@ -105,7 +105,7 @@ import org.zoxweb.shared.db.QueryMarker;
  */
 @SuppressWarnings("serial")
 public class MongoDataStore
-extends APIServiceProviderBase<DB>
+    extends APIServiceProviderBase<DB>
 	implements APIDataStore<DB>, APIDocumentStore<DB>
 {
     private static final transient Logger log = Logger.getLogger("MongoDataStore");
