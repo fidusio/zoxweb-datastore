@@ -2,104 +2,84 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-
    <parent>
         <groupId>org.zoxweb</groupId>
         <artifactId>zoxweb-mvn</artifactId>
         <version>LATEST</version>
     </parent>
 
-  <artifactId>zoxweb-datastore</artifactId>
-  <version>1.0.0</version>
-  <packaging>jar</packaging>
+    <artifactId>zoxweb-datastore</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>zoxweb-datastore</name>
+    <url>http://maven.apache.org</url>
 
-  <name>zoxweb-datastore</name>
-  <url>http://maven.apache.org</url>
-  
-  
-  <properties>
-		<hibernate.version>5.2.9.Final</hibernate.version>
+    <properties>
+        <hibernate.version>5.2.9.Final</hibernate.version>
         <apache.derby.version>10.13.1.1</apache.derby.version>
         <mongo.version>3.4.2</mongo.version>
-  </properties>    
-    
-    
-    
-    
-    
+    </properties>
+
     <build>
-    	    <directory>target</directory>
-    		<resources>
-                	<resource>
-                	 <directory>src/main/java/</directory>
-                	</resource>
-             </resources>
+        <directory>target</directory>
+        <resources>
+            <resource>
+                <directory>src/main/java/</directory>
+            </resource>
+         </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven-plugin.version}</version>
                 <configuration>
-                		
                     <source>${jdk.version}</source>
                     <target>${jdk.version}</target>
                 </configuration>
-                
             </plugin>
-            
-                <plugin>
-			      <groupId>org.apache.maven.plugins</groupId>
-			      <artifactId>maven-source-plugin</artifactId>
-			      
-			      <executions>
-			        <execution>
-			          <id>attach-sources</id>
-			          <goals>
-			            <goal>jar</goal>
-			          </goals>
-			        </execution>
-			      </executions>
-			    </plugin>
-			    
-		        <plugin>
-			      <groupId>org.apache.maven.plugins</groupId>
-			      <artifactId>maven-javadoc-plugin</artifactId>
-			      
-			      <configuration>
-			      	 <failOnError>false</failOnError>
-			      </configuration>
-			      
-			      <executions>
-			        <execution>
-			          <id>attach-javadocs</id>
-			          <goals>
-			            <goal>jar</goal>
-			          </goals>
-			         
-			        </execution>
-			      </executions>
-			    </plugin>
-		        
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <failOnError>false</failOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
-        
     </build>
 
-
     <dependencies>
-    	<dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-           
             <scope>test</scope>
         </dependency>
-    
-    
+
         <dependency>
             <groupId>org.zoxweb</groupId>
             <artifactId>zoxweb-core</artifactId>
-           
             <scope>provided</scope>
-        </dependency>    
+        </dependency>
+
          <dependency>
             <groupId>org.hibernate</groupId>
             <artifactId>hibernate-core</artifactId>
@@ -113,20 +93,19 @@
             <version>${apache.derby.version}</version>
             <scope>provided</scope>
         </dependency>
+
         <dependency>
 	        <groupId>org.mongodb</groupId>
 	        <artifactId>mongo-java-driver</artifactId>
 	        <version>${mongo.version}</version>
 	        <scope>provided</scope>
     	</dependency>
+
     	<dependency>
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-core</artifactId>
         </dependency>
 
-
     </dependencies>
-  
-  
-  
+
 </project>
