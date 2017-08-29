@@ -2900,7 +2900,7 @@ public class MongoDataStore
 		NVConfigEntity nvce = null;
 		try 
 		{
-			nvce = MetaUtil.SINGLETON.fromClass( className);
+			nvce = MetaUtil.SINGLETON.fromClass(className);
 		} catch (ClassNotFoundException | InstantiationException
 				| IllegalAccessException e) 
 		{
