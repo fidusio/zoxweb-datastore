@@ -64,6 +64,7 @@ import org.zoxweb.shared.util.NVEnum;
 import org.zoxweb.shared.util.NVEnumList;
 import org.zoxweb.shared.util.NVFloat;
 import org.zoxweb.shared.util.NVFloatList;
+import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.NVIntList;
 import org.zoxweb.shared.util.NVLong;
@@ -344,6 +345,11 @@ public class MongoDataStore
 		}
 		
 		return db;
+	}
+	
+	private DBObject mapNVGenericMap(NVEntity container, NVGenericMap nvgm)
+	{
+		return null;
 	}
 	
 	private ArrayList<DBObject> mapArrayValuesNVPair(NVEntity container, ArrayValues<NVPair> listOfNVPair, boolean sync)
