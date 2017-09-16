@@ -3094,5 +3094,62 @@ public class MongoDataStore
 	{
 		this.keyMaker = keyMaker;
 	}
+
+	@Override
+	public void createSequence(String sequenceName, long startValue, long defaultIncrement)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		sequenceName = SharedStringUtil.trimOrNull(sequenceName);
+		sequenceName = SharedStringUtil.toLowerCase(sequenceName);
+		// TODO Auto-generated method stub
+		SharedUtil.checkIfNulls("Null sequence name", sequenceName);
+		if (startValue < 0)
+			throw new IllegalArgumentException("Sequence start value can't be negative:" + startValue);
+		
+		if (defaultIncrement < 1)
+			throw new IllegalArgumentException("Sequence default increment can't < 1:" + startValue);
+		
+		
+	}
+
+	@Override
+	public long currentSequenceValue(String sequenceName)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long nextSequenceValue(String sequenceName)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long nextSequenceValue(String sequenceName, long increment)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public void createSequence(String sequenceName)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		// TODO Auto-generated method stub
+		createSequence(sequenceName, 0, 1);
+	}
+
+	@Override
+	public void deleteSequence(String sequenceName)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		// TODO Auto-generated method stub
+		
+	}
 	
 }

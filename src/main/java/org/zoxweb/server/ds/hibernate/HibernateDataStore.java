@@ -503,4 +503,40 @@ public class HibernateDataStore
         return null;
     }
 
+	@Override
+	public void createSequence(String sequenceName, long stratValue, long increment) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public long currentSequenceValue(String sequenceName) {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long nextSequenceValue(String sequenceName) {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long nextSequenceValue(String sequenceName, long increment) {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public void createSequence(String sequenceName) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void deleteSequence(String sequenceName) {
+		// TODO Auto-generated method stub
+		
+	}
+
 }
