@@ -35,11 +35,13 @@ import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.filters.ChainedFilter;
 import org.zoxweb.shared.filters.FilterType;
+import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.KeyMaker;
 import org.zoxweb.shared.util.CRUD;
 import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.DynamicEnumMapManager;
 import org.zoxweb.shared.util.GetName;
@@ -112,7 +114,10 @@ import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
+import org.zoxweb.shared.data.DataConst.DataParam;
+import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
+import org.zoxweb.shared.db.QueryMatchString;
 
 /**
  * This class is used to define the MongoDB object for data storage. This object primarily contains methods 
@@ -3099,8 +3104,7 @@ public class MongoDataStore
 	public void createSequence(String sequenceName, long startValue, long defaultIncrement)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		sequenceName = SharedStringUtil.trimOrNull(sequenceName);
-		sequenceName = SharedStringUtil.toLowerCase(sequenceName);
+		sequenceName = LowerCaseFilter.SINGLETON.validate(sequenceName);
 		// TODO Auto-generated method stub
 		SharedUtil.checkIfNulls("Null sequence name", sequenceName);
 		if (startValue < 0)
@@ -3110,14 +3114,31 @@ public class MongoDataStore
 			throw new IllegalArgumentException("Sequence default increment can't < 1:" + startValue);
 		
 		
+		List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(), 
+				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
+		if (result== null || result.size() == 0)
+		{
+			LongSequence ls = new LongSequence();
+			ls.setName(sequenceName);
+			ls.setSequenceValue(startValue);
+			ls.setDefaultIncrement(defaultIncrement);
+			insert(ls);
+		}
+		
+		
 	}
 
 	@Override
 	public long currentSequenceValue(String sequenceName)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		// TODO Auto-generated method stub
-		return 0;
+		List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(), 
+				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
+		if (result== null || result.size() != 1)
+		{
+			throw new APIException(sequenceName + " not found");
+		}
+		return result.get(0).getSequenceValue();
 	}
 
 	@Override
@@ -3125,15 +3146,38 @@ public class MongoDataStore
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		// TODO Auto-generated method stub
-		return 0;
+		return localNextSequenceValue(sequenceName, 0, true);
 	}
 
 	@Override
-	public long nextSequenceValue(String sequenceName, long increment)
+	public synchronized long nextSequenceValue(String sequenceName, long increment)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		// TODO Auto-generated method stub
-		return 0;
+		return localNextSequenceValue(sequenceName, increment, false);
+	}
+	
+	private synchronized long localNextSequenceValue(String sequenceName, long increment, boolean defaultIncrement)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		if (!defaultIncrement && increment < 1)
+			throw new IllegalArgumentException("wrong increment");
+		List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(), 
+				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
+		if (result== null || result.size() != 1)
+		{
+			throw new APIException(sequenceName + " not found");
+		}
+		
+		if (defaultIncrement)
+		{
+			increment = result.get(0).getDefualtIncrement();
+		}
+		
+		long nextValue = result.get(0).getSequenceValue() + increment;
+		result.get(0).setSequenceValue(nextValue);
+		update(result.get(0));
+		
+		return nextValue;
 	}
 
 	@Override
@@ -3145,11 +3189,11 @@ public class MongoDataStore
 	}
 
 	@Override
-	public void deleteSequence(String sequenceName)
+	public synchronized void deleteSequence(String sequenceName)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		// TODO Auto-generated method stub
-		
+		delete(LongSequence.NVC_LONG_SEQUENCE, new QueryMatchString(DataParam.NAME.getNVConfig(), 
+				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
 	}
 	
 }
