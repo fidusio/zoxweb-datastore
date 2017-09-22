@@ -18,13 +18,16 @@ package org.zoxweb.server.ds.mongo;
 import java.util.List;
 
 import org.zoxweb.shared.util.GetNameValue;
+import org.zoxweb.shared.util.NVECRUDMonitor;
 import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.SharedUtil;
+
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIExceptionHandler;
+
 import org.zoxweb.shared.api.APIServiceProviderCreator;
 import org.zoxweb.shared.api.APIServiceType;
 import org.zoxweb.shared.api.APITokenManager;
@@ -89,6 +92,7 @@ public class MongoDataStoreCreator
 		return configInfo;
 	}
 	
+	
 	@Override
 	public MongoDataStore createAPI(APIDataStore<?> ds, APIConfigInfo apiConfig) 
 			throws APIException
@@ -97,6 +101,27 @@ public class MongoDataStoreCreator
 		
 		mongoDS.setAPIConfigInfo(apiConfig);
 		mongoDS.setAPIExceptionHandler(MongoExceptionHandler.SINGLETON);
+		
+		NVPair dcParam = mongoDS.getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE.getName());
+		
+		if (dcParam != null && dcParam.getValue() != null && Boolean.parseBoolean(dcParam.getValue()))
+		{
+			NVPair dcClassNameParam = mongoDS.getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
+			try
+			{
+				mongoDS.setDataCacheMonitor((NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).newInstance());
+				//log.info("Data Cache monitor created " + dcClassNameParam);
+			}
+			catch(Exception e)
+			{
+				e.printStackTrace();
+			}
+		}
+		//log.info("Connect finished");
+		// set the key
+//		mongoDS.setKeyMaker(apiConfig.getKeyMaker());
+//		mongoDS.setAPISecurityManager((APISecurityManager<Subject>) apiConfig.getAPISecurityManager());
+		
 		
 		return mongoDS;
 	}

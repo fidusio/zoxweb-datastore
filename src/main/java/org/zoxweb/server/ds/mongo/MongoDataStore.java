@@ -38,7 +38,7 @@ import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessException;
-import org.zoxweb.shared.security.KeyMaker;
+//import org.zoxweb.shared.security.KeyMaker;
 import org.zoxweb.shared.util.CRUD;
 import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.Const.RelationalOperator;
@@ -78,7 +78,7 @@ import org.zoxweb.shared.util.ArrayValues;
 import org.zoxweb.shared.util.SharedStringUtil;
 import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.TimeStampInterface;
-import org.apache.shiro.subject.Subject;
+//import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
 
 
@@ -99,7 +99,7 @@ import com.mongodb.gridfs.GridFSInputFile;
 
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
-import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
+//import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIDataStore;
@@ -107,7 +107,6 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIFileInfoMap;
 import org.zoxweb.shared.api.APISearchResult;
-import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -142,8 +141,8 @@ public class MongoDataStore
 	
 	private Lock updateLock = new ReentrantLock();
 	
-	private KeyMaker keyMaker;
-	private APISecurityManager<Subject> apiSecurityManager;
+	//private KeyMaker keyMaker;
+	//private APISecurityManager<Subject> apiSecurityManager;
 	
 	//private LockQueue updateLock = new LockQueue(5);
 
@@ -267,22 +266,22 @@ public class MongoDataStore
 					{
 						getAPIExceptionHandler().throwException(e);			
 					}
-					NVPair dcParam = getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE.getName());
-					
-					if (dcParam != null && dcParam.getValue() != null && Boolean.parseBoolean(dcParam.getValue()))
-					{
-						NVPair dcClassNameParam = getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
-						try
-						{
-							dataCacheMonitor = (NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).newInstance();
-							log.info("Data Cache monitor created " + dcClassNameParam);
-						}
-						catch(Exception e)
-						{
-							e.printStackTrace();
-						}
-					}
-					log.info("Connect finished");
+//					NVPair dcParam = getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE.getName());
+//					
+//					if (dcParam != null && dcParam.getValue() != null && Boolean.parseBoolean(dcParam.getValue()))
+//					{
+//						NVPair dcClassNameParam = getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
+//						try
+//						{
+//							dataCacheMonitor = (NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).newInstance();
+//							log.info("Data Cache monitor created " + dcClassNameParam);
+//						}
+//						catch(Exception e)
+//						{
+//							e.printStackTrace();
+//						}
+//					}
+//					log.info("Connect finished");
 					
 					getAllDynamicEnumMap(null, null);
 				}
@@ -310,8 +309,8 @@ public class MongoDataStore
 		
 		if (container != null && (ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT_MASK)))
 		{
-			keyMaker.createNVEntityKey(this, container, keyMaker.getKey(this, keyMaker.getMasterKey(), container.getUserID()));
-			value = apiSecurityManager.encryptValue(this, container, null, nvp, null);
+			configInfo.getKeyMaker().createNVEntityKey(this, container, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), container.getUserID()));
+			value = configInfo.getAPISecurityManager().encryptValue(this, container, null, nvp, null);
 		}
 		
 		db.append(MetaToken.NAME.getName(), nvp.getName());
@@ -352,6 +351,7 @@ public class MongoDataStore
 		return db;
 	}
 	
+	@SuppressWarnings("unused")
 	private DBObject mapNVGenericMap(NVEntity container, NVGenericMap nvgm)
 	{
 		return null;
@@ -774,7 +774,7 @@ public class MongoDataStore
 				tempValue = fromDB(userID, db, (BasicDBObject) tempValue, EncryptedDAO.class);	
 			}
 		
-			((NVPair)nvb).setValue((String)apiSecurityManager.decryptValue(this, container, nvb, tempValue, null));
+			((NVPair)nvb).setValue((String)configInfo.getAPISecurityManager().decryptValue(this, container, nvb, tempValue, null));
 			
 			return;
 		}
@@ -854,7 +854,7 @@ public class MongoDataStore
 				//log.info("userID:" + userID);
 				try 
 				{
-					value = apiSecurityManager.decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
+					value = configInfo.getAPISecurityManager().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
 				}
 				catch (InstantiationException | IllegalAccessException e)
 				{
@@ -1197,7 +1197,7 @@ public class MongoDataStore
 		BasicDBObject doc = new BasicDBObject();
 		
 		NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
-		apiSecurityManager.associateNVEntityToSubjectUserID(nve, null);
+		configInfo.getAPISecurityManager().associateNVEntityToSubjectUserID(nve, null);
 		if (nve.getReferenceID() == null)
 		{
 			nve.setReferenceID(ObjectId.get().toHexString());
@@ -1217,7 +1217,7 @@ public class MongoDataStore
 		{
 			if (ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT_MASK))
 			{
-				keyMaker.createNVEntityKey(this, nve, keyMaker.getKey(this, keyMaker.getMasterKey(), nve.getUserID()));
+				configInfo.getKeyMaker().createNVEntityKey(this, nve, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), nve.getUserID()));
 			}
 			
 			NVBase<?> nvb = nve.lookup(nvc.getName());
@@ -1340,7 +1340,7 @@ public class MongoDataStore
 			{	
 				//if (nvc.getMetaTypeBase() == String.class)
 				{
-					Object tempValue = apiSecurityManager.encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = configInfo.getAPISecurityManager().encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
 						doc.append(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, false, false));
@@ -1780,7 +1780,7 @@ public class MongoDataStore
 			{
 				updateLock.lock();
 			}
-			apiSecurityManager.associateNVEntityToSubjectUserID(nve, null);
+			configInfo.getAPISecurityManager().associateNVEntityToSubjectUserID(nve, null);
 			
 			if (nve.lookupValue(MetaToken.REFERENCE_ID) == null)
 			{
@@ -1951,7 +1951,7 @@ public class MongoDataStore
 				}
 				else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName()))
 				{
-					Object tempValue = apiSecurityManager.encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = configInfo.getAPISecurityManager().encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
 						updatedDoc.put(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, sync, updateReferenceOnly));
@@ -2980,7 +2980,7 @@ public class MongoDataStore
 					ObjectId refID = (ObjectId) dbObject.get(ReservedID.REFERENCE_ID.getValue());
 					ObjectId userID = (ObjectId) dbObject.get("_user_id");
 					
-					if (refID != null && userID != null && apiSecurityManager.isNVEntityAccessible(refID.toHexString(), userID.toHexString(), CRUD.READ))
+					if (refID != null && userID != null && configInfo.getAPISecurityManager().isNVEntityAccessible(refID.toHexString(), userID.toHexString(), CRUD.READ))
 					{
 						list.add((T) refID);
 					}
@@ -3080,25 +3080,25 @@ public class MongoDataStore
 		return batch;
 	}
 
-	public APISecurityManager<Subject> getAPISecurityManager()
-	{
-		return apiSecurityManager;
-	}
-
-	public void setAPISecurityManager(APISecurityManager<Subject> securityManagerAPI)
-	{
-		this.apiSecurityManager = securityManagerAPI;
-	}
-
-	public KeyMaker getKeyMaker()
-	{
-		return keyMaker;
-	}
-
-	public void setKeyMaker(KeyMaker keyMaker) 
-	{
-		this.keyMaker = keyMaker;
-	}
+//	public APISecurityManager<Subject> getAPISecurityManager()
+//	{
+//		return apiSecurityManager;
+//	}
+//
+//	public void setAPISecurityManager(APISecurityManager<Subject> securityManagerAPI)
+//	{
+//		this.apiSecurityManager = securityManagerAPI;
+//	}
+//
+//	public KeyMaker getKeyMaker()
+//	{
+//		return keyMaker;
+//	}
+//
+//	public void setKeyMaker(KeyMaker keyMaker) 
+//	{
+//		this.keyMaker = keyMaker;
+//	}
 
 	@Override
 	public void createSequence(String sequenceName, long startValue, long defaultIncrement)
@@ -3196,4 +3196,9 @@ public class MongoDataStore
 				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
 	}
 	
+	
+	protected void setDataCacheMonitor(NVECRUDMonitor dcm)
+	{
+		dataCacheMonitor = dcm;
+	}
 }

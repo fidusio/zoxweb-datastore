@@ -17,7 +17,7 @@
     <properties>
         <hibernate.version>5.2.9.Final</hibernate.version>
         <apache.derby.version>10.13.1.1</apache.derby.version>
-        <mongo.version>3.4.2</mongo.version>
+        <mongo.version>3.5.0</mongo.version>
     </properties>
 
     <build>
