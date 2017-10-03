@@ -18,6 +18,7 @@
         <hibernate.version>5.2.9.Final</hibernate.version>
         <apache.derby.version>10.13.1.1</apache.derby.version>
         <mongo.version>3.5.0</mongo.version>
+        <zoxweb.shiro>1.0.0</zoxweb.shiro>
     </properties>
 
     <build>
@@ -98,6 +99,14 @@
 	        <groupId>org.mongodb</groupId>
 	        <artifactId>mongo-java-driver</artifactId>
 	        <version>${mongo.version}</version>
+	        <scope>provided</scope>
+    	</dependency>
+    	
+    	
+    	 <dependency>
+	        <groupId>org.zoxweb</groupId>
+	        <artifactId>zoxweb-shiro</artifactId>
+	        <version>${zoxweb.shiro}</version>
 	        <scope>provided</scope>
     	</dependency>
 
