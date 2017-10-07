@@ -18,6 +18,7 @@ package org.zoxweb.server.ds.mongo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -2907,7 +2908,8 @@ public class MongoDataStore
 		{
 			nvce = MetaUtil.SINGLETON.fromClass(className);
 		} catch (ClassNotFoundException | InstantiationException
-				| IllegalAccessException e) 
+				| IllegalAccessException | InvocationTargetException 
+				| NoSuchMethodException | SecurityException e) 
 		{
 			e.printStackTrace();
 			throw new APIException("Class name not found:" + className);
