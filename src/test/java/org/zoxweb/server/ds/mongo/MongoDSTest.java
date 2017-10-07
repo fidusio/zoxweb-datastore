@@ -31,7 +31,7 @@ public class MongoDSTest
 		log.severe("Maniac");
 		try
 		{
-			int index = 0;
+			//int index = 0;
 			// get the app config file name
 			
 			
