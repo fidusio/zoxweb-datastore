@@ -4,7 +4,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.zoxweb.server.ds.mongo.MongoQueryFormatter;
-import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.shared.api.APITokenDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.util.MetaToken;
@@ -21,7 +20,7 @@ import org.zoxweb.shared.util.Const.RelationalOperator;
 
 public class JTestMongoQueryFormatter {
 
-	private UserInfoDAO user;
+
 	private NVConfigEntity nvce;
 	private DBObject query;
 	
