@@ -18,7 +18,6 @@ package org.zoxweb.server.ds.mongo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -2904,17 +2903,16 @@ public class MongoDataStore
 			IllegalArgumentException, AccessException, APIException
 	{
 		NVConfigEntity nvce = null;
+		SharedUtil.checkIfNulls("null class name", className);
 		try 
 		{
 			nvce = MetaUtil.SINGLETON.fromClass(className);
-		} catch (ClassNotFoundException | InstantiationException
-				| IllegalAccessException | InvocationTargetException 
-				| NoSuchMethodException | SecurityException e) 
+		} catch (Exception e) 
 		{
 			e.printStackTrace();
 			throw new APIException("Class name not found:" + className);
 			
-		}
+		} 
 		
 		return userSearch(userID, nvce, fieldNames, queryCriteria);
 	}
