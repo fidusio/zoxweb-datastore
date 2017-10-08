@@ -4,8 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.KeyStore;
-import java.util.logging.Level;
-import java.util.logging.LogManager;
+
 import java.util.logging.Logger;
 
 import org.zoxweb.server.security.CryptoUtil;
@@ -26,9 +25,9 @@ public class MongoDSTest
 	{
 		log.info("started");
 		
-		LogManager.getLogManager().getLogger("").setLevel(Level.OFF);
-		log.info("after update");
-		log.severe("Maniac");
+//		LogManager.getLogManager().getLogger("").setLevel(Level.OFF);
+//		log.info("after update");
+//		log.severe("Maniac");
 		try
 		{
 			//int index = 0;

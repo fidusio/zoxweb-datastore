@@ -21,6 +21,7 @@ import org.bson.types.ObjectId;
 
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVConfigEntity;
+import org.zoxweb.shared.util.SharedStringUtil;
 
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
@@ -214,6 +215,13 @@ public class MongoQueryFormatter
 		}
 		
 		if (nvc != null && nvc.isTypeReferenceID() && queryMatch.getValue() instanceof String)
+		{
+			ObjectId toRet = new ObjectId((String)queryMatch.getValue());
+			return toRet;
+		}
+		
+		if (nvc == null && ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == ReservedID.REFERENCE_ID 
+			&& queryMatch.getValue() instanceof String)
 		{
 			ObjectId toRet = new ObjectId((String)queryMatch.getValue());
 			return toRet;
