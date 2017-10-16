@@ -20,6 +20,7 @@ import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
+import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.ApplicationConfigManager;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
@@ -107,7 +108,7 @@ public class MongoDSTest
 		        //collect user principals and credentials in a gui specific manner
 		        //such as username/password html form, X509 certificate, OpenID, etc.
 		        //We'll use the username/password example here since it is the most common.
-		        UsernamePasswordToken token = new UsernamePasswordToken(subjectID, password);
+		        UsernamePasswordToken token = new DomainUsernamePasswordToken(subjectID, password, false, null, null, null);
 
 		        //this is all you have to do to support 'remember me' (no config - built in!):
 		        token.setRememberMe(true);
