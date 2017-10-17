@@ -28,7 +28,7 @@ import com.mongodb.DBObject;
 import com.mongodb.QueryBuilder;
 
 import org.zoxweb.server.ds.mongo.MongoDataStore.ReservedID;
-import org.zoxweb.server.util.DateFilter;
+import org.zoxweb.server.filters.TimestampFilter;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
@@ -211,7 +211,7 @@ public class MongoQueryFormatter
 	{
 		if (nvc != null && nvc.getMetaTypeBase() == Date.class && queryMatch.getValue() instanceof String)
 		{
-			return DateFilter.SINGLETON.validate((String) queryMatch.getValue());
+			return TimestampFilter.SINGLETON.validate((String) queryMatch.getValue());
 		}
 		
 		if (nvc != null && nvc.isTypeReferenceID() && queryMatch.getValue() instanceof String)
