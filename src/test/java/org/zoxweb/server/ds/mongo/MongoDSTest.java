@@ -16,15 +16,18 @@ import org.apache.shiro.realm.Realm;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
+import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
+import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.ApplicationConfigManager;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
+import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.StatCounter;
 
@@ -78,7 +81,8 @@ public class MongoDSTest
 			// load the mongo config file
 			// create the data store
 			dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-			dsConfig.setAPISecurityManager(new DefaultAPISecurityManager());
+			APISecurityManager<Subject> apiSecurityManager = new DefaultAPISecurityManager();
+			dsConfig.setAPISecurityManager(apiSecurityManager);
 			
 			
 			
@@ -89,15 +93,29 @@ public class MongoDSTest
 			String filename = args[index++];
 			File file = new File(classLoader.getResource(filename).getFile());
 			System.out.println(IOUtil.inputStreamToString(file));
+			
+			
 	
 			//1.
 		    Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:" + filename);
 
 		    //2.
 		    SecurityManager securityManager = factory.getInstance();
+		    log.info("security manager " + securityManager);
 
 		    //3.
 		    SecurityUtils.setSecurityManager(securityManager);
+		    
+		    
+		    ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
+			
+			MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
+			APIDataStore<?> ds = mdsc.createAPI(null, dsConfig);
+			
+			realm.setAPISecurityManager(apiSecurityManager);
+			realm.setDataStore(ds);
+		    
+		    
 		    Subject currentUser = SecurityUtils.getSubject();
 		    Session session = currentUser.getSession();
 		    session.setAttribute( "someKey", "aValue" );
@@ -138,14 +156,23 @@ public class MongoDSTest
 		    		System.out.println(permission + " stat:" + currentUser.isPermitted(permission));
 		    }
 		    System.out.println(sc.deltaSinceCreation());
+		    
 			
+		    log.info(""+SecurityUtils.getSubject().getPrincipals().getClass());
 			
-			
-			
-			MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
-			APIDataStore<?> ds = mdsc.createAPI(null, dsConfig);
+		
 			ds.createSequence("mz");
-			System.out.println(ds.nextSequenceValue("MZ"));
+			StatCounter stat = new StatCounter();
+			for (int i=0; i<100; i++)
+			{
+				ds.nextSequenceValue("MZ");
+				stat.increment();
+			}
+			
+			
+			
+			
+			System.out.println("it took:" + stat.deltaSinceCreation() + " " + ds.currentSequenceValue("MZ"));
 			
 			
 			
@@ -155,5 +182,7 @@ public class MongoDSTest
 		{
 			e.printStackTrace();
 		}
+		
+		System.exit(0);
 	}
 }
