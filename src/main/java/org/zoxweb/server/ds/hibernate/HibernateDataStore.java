@@ -27,6 +27,7 @@ import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIExceptionHandler;
 import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.DynamicEnumMap;
@@ -504,9 +505,9 @@ public class HibernateDataStore
     }
 
 	@Override
-	public void createSequence(String sequenceName, long stratValue, long increment) {
+	public LongSequence createSequence(String sequenceName, long stratValue, long increment) {
 		// TODO Auto-generated method stub
-		
+		return null;
 	}
 
 	@Override
@@ -528,9 +529,9 @@ public class HibernateDataStore
 	}
 
 	@Override
-	public void createSequence(String sequenceName) {
+	public LongSequence createSequence(String sequenceName) {
 		// TODO Auto-generated method stub
-		
+		return createSequence(sequenceName, 0, 1);
 	}
 
 	@Override

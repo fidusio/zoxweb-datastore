@@ -20,6 +20,7 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
+import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
@@ -30,6 +31,8 @@ import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.StatCounter;
+import org.zoxweb.shared.data.UserIDDAO;
+import org.zoxweb.shared.data.UserInfoDAO;
 
 public class MongoDSTest 
 {
@@ -115,13 +118,23 @@ public class MongoDSTest
 			realm.setAPISecurityManager(apiSecurityManager);
 			realm.setDataStore(ds);
 		    
+			String subjectID = args[index++];
+			String password  = args[index++];
+			UserIDDAO userID = new UserIDDAO();
+			
+			userID.setPrimaryEmail(subjectID);
+			UserInfoDAO userInfo = new UserInfoDAO();
+			userInfo.setFirstName("N/S");
+			userInfo.setLastName("N/S");
+			userID.setUserInfo(userInfo);
+			realm.createUser(userID, UserStatus.ACTIVE, password);
+			
 		    
 		    Subject currentUser = SecurityUtils.getSubject();
 		    Session session = currentUser.getSession();
 		    session.setAttribute( "someKey", "aValue" );
 
-		    String subjectID = args[index++];
-		    String password  = args[index++];
+		  
 		    if ( !currentUser.isAuthenticated() ) {
 		        //collect user principals and credentials in a gui specific manner
 		        //such as username/password html form, X509 certificate, OpenID, etc.

@@ -141,6 +141,8 @@ public class MongoDataStore
 	
 	private Lock updateLock = new ReentrantLock();
 	
+	//private Set<String> sequenceSet = new HashSet<String>();
+	
 	//private KeyMaker keyMaker;
 	//private APISecurityManager<Subject> apiSecurityManager;
 	
@@ -3101,7 +3103,7 @@ public class MongoDataStore
 //	}
 
 	@Override
-	public void createSequence(String sequenceName, long startValue, long defaultIncrement)
+	public LongSequence createSequence(String sequenceName, long startValue, long defaultIncrement)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		sequenceName = LowerCaseFilter.SINGLETON.validate(sequenceName);
@@ -3116,14 +3118,17 @@ public class MongoDataStore
 		
 		List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(), 
 				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
-		if (result== null || result.size() == 0)
+		if (result == null || result.size() == 0)
 		{
 			LongSequence ls = new LongSequence();
 			ls.setName(sequenceName);
 			ls.setSequenceValue(startValue);
 			ls.setDefaultIncrement(defaultIncrement);
 			insert(ls);
+			
+			return ls;
 		}
+		return result.get(0);
 		
 		
 	}
@@ -3170,7 +3175,7 @@ public class MongoDataStore
 		
 		if (defaultIncrement)
 		{
-			increment = result.get(0).getDefualtIncrement();
+			increment = result.get(0).getDefaultIncrement();
 		}
 		
 		long nextValue = result.get(0).getSequenceValue() + increment;
@@ -3181,11 +3186,11 @@ public class MongoDataStore
 	}
 
 	@Override
-	public void createSequence(String sequenceName)
+	public LongSequence createSequence(String sequenceName)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		// TODO Auto-generated method stub
-		createSequence(sequenceName, 0, 1);
+		return createSequence(sequenceName, 0, 1);
 	}
 
 	@Override

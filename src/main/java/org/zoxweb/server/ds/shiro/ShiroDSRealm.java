@@ -259,7 +259,7 @@ public class ShiroDSRealm
 		}
 	
 	
-	public void registerNewUser(UserIDDAO userID, UserStatus userIDstatus, String password)
+	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		SharedUtil.checkIfNulls("UserIDDAO object is null.", userID, userIDstatus);
