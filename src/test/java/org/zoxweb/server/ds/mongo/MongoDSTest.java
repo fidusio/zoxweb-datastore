@@ -33,6 +33,7 @@ import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.security.KeyStoreInfoDAO;
 
 public class MongoDSTest 
 {
@@ -50,7 +51,7 @@ public class MongoDSTest
 		{
 			//int index = 0;
 			// get the app config file name
-			
+			int index = 0;
 			
 			
 			//String configFile = args[index++];
@@ -64,7 +65,8 @@ public class MongoDSTest
 			
 			APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(ApplicationConfigManager.SINGLETON.readConfigurationContent(appConfig, mongoConfigName), APIConfigInfoDAO.class);
 			
-			
+			KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), KeyStoreInfoDAO.class);
+			System.out.println(ksid);
 			
 			
 			File keyStoreFile = ApplicationConfigManager.SINGLETON.locateFile(null, "key_store");
@@ -72,14 +74,21 @@ public class MongoDSTest
 			{
 				throw new IOException("cache dir " + keyStoreFile + " is not a directory");
 			}
-			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(keyStoreFile),
-				 	  CryptoUtil.KEY_STORE_TYPE,
-				 	  ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("key_store_password").toCharArray());
+//			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(keyStoreFile),
+//				 	  CryptoUtil.KEY_STORE_TYPE,
+//				 	  ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("key_store_password").toCharArray());
 			
+			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
+				 	  CryptoUtil.KEY_STORE_TYPE,
+				 	  ksid.getKeyStorePassword().toCharArray());
+			
+			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
 
 			
-			KeyMakerProvider.SINGLETON.setMasterKey(ks, ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias"),
-					 ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias_password"));
+//			KeyMakerProvider.SINGLETON.setMasterKey(ks, ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias"),
+//					 ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias_password"));
+			
+			KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getKeyPassword());
 			// setup the ms
 			// load the mongo config file
 			// create the data store
@@ -91,7 +100,7 @@ public class MongoDSTest
 			
 			
 			
-			int index = 0;
+			
 			ClassLoader classLoader = MongoDSTest.class.getClassLoader();
 			String filename = args[index++];
 			File file = new File(classLoader.getResource(filename).getFile());

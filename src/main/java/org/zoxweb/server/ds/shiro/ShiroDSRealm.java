@@ -41,6 +41,7 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.GetValue;
 import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.SetName;
 import org.zoxweb.shared.util.SharedStringUtil;
 import org.zoxweb.shared.util.SharedUtil;
 
@@ -48,6 +49,7 @@ import com.mongodb.BasicDBObject;
 
 public class ShiroDSRealm
 	extends ShiroBaseRealm
+	implements SetName
 {
 
 	
@@ -264,6 +266,12 @@ public class ShiroDSRealm
 	{
 		SharedUtil.checkIfNulls("UserIDDAO object is null.", userID, userIDstatus);
 		password = FilterType.PASSWORD.validate(password);
+		
+		
+		if (lookupUserID(userID.getSubjectID()) != null)
+		{
+			throw new APIException("User already exist");
+		}
 			
 		log.info("User Name: " + userID.getPrimaryEmail());
 		log.info("First Name: " + userID.getUserInfo().getFirstName());
