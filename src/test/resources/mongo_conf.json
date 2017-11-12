@@ -1,0 +1,23 @@
+{
+  "description": "MongoDB Configuration Info.",
+  "api_type_name": "MongoDB",
+  "service_type": [
+    "DATA_STORAGE",
+    "DOCUMENT_STORAGE"
+  ],
+  "api_version": "3.4.9",
+  "configuration_parameters": [
+    {
+      "name": "db_name",
+      "value": "xlogistx"
+    },
+    {
+      "name": "host",
+      "value": "localhost"
+    },
+    {
+      "name": "port",
+      "value": "27017"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.security.CryptoUtil;
+import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
@@ -343,6 +344,8 @@ public class ShiroDSRealm
 			dataStore.insert(userIDCredentials);
 			userIDCredentials.getPassword().setReferenceID(userIDCredentials.getReferenceID());
 			dataStore.update(userIDCredentials);
+			// create the user master key
+			dataStore.insert(KeyMakerProvider.SINGLETON.createUserIDKey(userID, KeyMakerProvider.SINGLETON.getMasterKey()));
 			
 			// removed for now created during login
 			// MN 2014-12-23

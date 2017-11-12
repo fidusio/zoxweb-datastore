@@ -2,11 +2,10 @@ package org.zoxweb.server.ds.mongo;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
+
 import java.security.KeyStore;
 import java.util.Collection;
 import java.util.logging.Logger;
-
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.config.IniSecurityManagerFactory;
@@ -24,12 +23,10 @@ import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
-import org.zoxweb.server.util.ApplicationConfigManager;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
-import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
@@ -44,49 +41,23 @@ public class MongoDSTest
 	{
 		log.info("started");
 		
-//		LogManager.getLogManager().getLogger("").setLevel(Level.OFF);
-//		log.info("after update");
-//		log.severe("Maniac");
+
 		try
 		{
-			//int index = 0;
-			// get the app config file name
+		
 			int index = 0;
 			
+			// load the mongo db config file
+			APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), APIConfigInfoDAO.class);
 			
-			//String configFile = args[index++];
-			
-			ApplicationConfigDAO appConfig = ApplicationConfigManager.SINGLETON.loadDefault();
-			System.out.println(appConfig);
-		
-			// load the keystore for MS
-			String mongoConfigName = appConfig.lookupValue("mongod_xlogistx_conf");
-			System.out.println(":" + mongoConfigName);
-			
-			APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(ApplicationConfigManager.SINGLETON.readConfigurationContent(appConfig, mongoConfigName), APIConfigInfoDAO.class);
-			
+			// load the Master Key
 			KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), KeyStoreInfoDAO.class);
-			System.out.println(ksid);
-			
-			
-			File keyStoreFile = ApplicationConfigManager.SINGLETON.locateFile(null, "key_store");
-			if (keyStoreFile == null || !keyStoreFile.isFile())
-			{
-				throw new IOException("cache dir " + keyStoreFile + " is not a directory");
-			}
-//			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(keyStoreFile),
-//				 	  CryptoUtil.KEY_STORE_TYPE,
-//				 	  ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("key_store_password").toCharArray());
 			
 			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
 				 	  CryptoUtil.KEY_STORE_TYPE,
 				 	  ksid.getKeyStorePassword().toCharArray());
 			
 			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
-
-			
-//			KeyMakerProvider.SINGLETON.setMasterKey(ks, ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias"),
-//					 ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("mk_alias_password"));
 			
 			KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getKeyPassword());
 			// setup the ms
