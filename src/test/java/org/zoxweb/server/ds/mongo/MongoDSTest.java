@@ -164,6 +164,12 @@ public class MongoDSTest
 			
 			
 			
+			if (index + 1 < args.length && args[index++].equals("-d"))
+			{
+				// we need to delete a user
+				realm.deleteUser(args[index++]);
+			}
+			
 			
 			System.out.println("it took:" + stat.deltaSinceCreation() + " " + ds.currentSequenceValue("MZ"));
 			

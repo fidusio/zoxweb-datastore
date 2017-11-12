@@ -18,6 +18,7 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
+import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
@@ -30,6 +31,7 @@ import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.CryptoConst.MDType;
+import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -221,46 +223,51 @@ public class ShiroDSRealm
 	
 	
 	
-	public  UserIDDAO lookupUserID(String user, String ...params)
-			throws NullPointerException, IllegalArgumentException, AccessException
+	public  UserIDDAO lookupUserID(String subjectID, String ...params)
+			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		SharedUtil.checkIfNulls("subjectID null", subjectID);
+		QueryMatch<?> query = null;
+		if (FilterType.EMAIL.isValid(subjectID))
 		{
-			SharedUtil.checkIfNulls("DB or user ID null", dataStore, user);
-			//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
-			QueryMatch<?> query = null;
-			if (FilterType.EMAIL.isValid(user))
-			{
-				// if we have an email
-				query = new QueryMatch<String>(RelationalOperator.EQUAL, user, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
-			}
-			else
-			{
-				query = new QueryMatch<String>(RelationalOperator.EQUAL, user, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
-			}
-		
-			ArrayList<String> listParams = null;
-			if (params != null && params.length > 0)
-			{
-				listParams = new ArrayList<String>();
-				for (String str : params)
-				{
-					if (!SharedStringUtil.isEmpty(str))
-					{
-						listParams.add(str);
-					}
-				}
-			}
-			
-			List<UserIDDAO> listOfUserIDDAO = dataStore.search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
-			
-			if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
-			{
-				return null;
-			}
-			
-			return listOfUserIDDAO.get(0);
-
+			// if we have an email
+			query = new QueryMatch<String>(RelationalOperator.EQUAL, subjectID, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
+		}
+		else
+		{
+			query = new QueryMatchObjectId(RelationalOperator.EQUAL, subjectID, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
 		}
 	
+		ArrayList<String> listParams = null;
+		if (params != null && params.length > 0)
+		{
+			listParams = new ArrayList<String>();
+			for (String str : params)
+			{
+				if (!SharedStringUtil.isEmpty(str))
+				{
+					listParams.add(str);
+				}
+			}
+		}
+		
+		List<UserIDDAO> listOfUserIDDAO = dataStore.search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
+		
+		if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
+		{
+			return null;
+		}
+		
+		return listOfUserIDDAO.get(0);
+
+	}
+	
+	public  UserIDDAO lookupUserID(GetValue<String> subjectID, String ...params)
+			throws NullPointerException, IllegalArgumentException, AccessException
+	{
+		SharedUtil.checkIfNulls("DB or user ID null", dataStore, subjectID);
+		return lookupUserID(subjectID.getValue(), params);
+	}
 	
 	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
@@ -285,20 +292,7 @@ public class ShiroDSRealm
 		
 		
 		
-//		Calendar dob = new GregorianCalendar();
-//		dob.setTime(new Date(userID.getUserInfo().getDOB()));
-//		
-//		Calendar yearToCheck = new GregorianCalendar();
-//		
-//		yearToCheck.set(Calendar.YEAR, yearToCheck.get(Calendar.YEAR) - 13);
-//		
-//		log.info("DOB: " + dob.getTime());
-//		log.info("Year to check: " + yearToCheck.getTime());
-//		
-//		if (dob.after(yearToCheck))
-//		{
-//			throw new IllegalArgumentException("You must be at least 13 years old to register.");
-//		}
+
 		
 			
 		
@@ -307,10 +301,14 @@ public class ShiroDSRealm
 		String userIDRef = objID.toHexString();
 		apiSecurityManager.associateNVEntityToSubjectUserID(userID, userIDRef);
 		userID.setReferenceID(userIDRef);
+		userID.getUserInfo().setReferenceID(userIDRef);
 		////////////////////////
 		
 		try
 		{
+			// insert the user_info dao first
+			dataStore.insert(userID.getUserInfo());
+			
 			dataStore.insert(userID);
 			
 			UserIDCredentialsDAO userIDCredentials = new UserIDCredentialsDAO();
@@ -350,64 +348,6 @@ public class ShiroDSRealm
 			// removed for now created during login
 			// MN 2014-12-23
 			// FidusStoreDataManager.SINGLETON.setUpUserAccount(userID, dataStore, (APIDocumentStore<?>) dataStore);
-			
-//			APINotificationMessage message = new APINotificationMessageDAO();
-//			message.setMessageType(APIServiceType.EMAIL_NOTIFICATION);
-//			message.setSenderID("do-not-reply@zoxweb.com");
-//			String [] recipients = {userID.getPrimaryEmail()};
-//			message.setRecipientIDs(recipients);
-//			
-//			//	TBD: mn find solution for static NVConfig creation for classes.
-//			//MessageTemplateDAO mtd = new MessageTemplateDAO();
-//			
-//			List<MessageTemplateDAO> messageTemplateList = dataStore.search(MessageTemplateDAO.NVC_MESSAGE_TEMPLATE_DAO, null, 
-//					new QueryMatch<String>(DataParam.NAME.getNVConfig().getName(), "fidus_store_registration", RelationalOperator.EQUAL)
-//					);
-//			
-//			MessageTemplateDAO messageTemplate = null;
-//			
-//			if (messageTemplateList.size() == 0)
-//			{
-//				throw new APIException("Template missing.");
-//			}
-//			
-//			messageTemplate = messageTemplateList.get(0);
-//			message.setTitle(messageTemplate.getTitle());
-//			message.setPreTag(messageTemplate.getPreTag());
-//			message.setPostTag(messageTemplate.getPostTag());
-//			//List<NVPair> tagList = messageTemplate.getBodyTags();
-//			//HttpServletResponse resp = getThreadLocalResponse();	
-//			String baseUrl = ApplicationConfigManager.SINGLETON.loadDefault().lookupValue(ApplicationConfigDAO.ApplicationDefaultParam.APPLICATION_URL) + 
-//							 ApplicationConfigManager.SINGLETON.loadDefault().lookupValue("application_start_uri") + "/activation";
-//			
-//			//System.out.println("baseurl:" + baseUrl);
-//			log.info("URL: " + baseUrl);
-//			
-//			for (NVPair nvp : messageTemplate.getBodyTags().values())
-//			{
-//				switch(nvp.getName())
-//				{
-//				case "name":
-//					nvp.setValue(userID.getUserInfo().getFirstName());
-//					break;
-//				case "last_name":
-//					nvp.setValue(userID.getUserInfo().getLastName());
-//					break;
-//				case "token":
-//					nvp.setValue(userIDCredentials.getPendingToken());
-//					break;
-//				case "activation_url":
-//					nvp.setValue(baseUrl);
-//				}
-//			}
-//			
-//			message.setBodyTags(messageTemplate.getBodyTags());
-//			message.setBodyTemplate(messageTemplate.getBodyContent());
-//			
-//			message.getExtraAttribues().add(new NVPair(SMTPMessageParam.SENDER_ID_NAME.getValue(), "Fidus Store"));
-//
-//			SMTPProvider smtpProvider = (SMTPProvider) FidusStoreAPIManager.SINGLETON.lookupAPINotification(FidusStoreAPIManager.FIDUS_STORE_EMAIL);
-//			smtpProvider.sendAPIMessage(message, APINotificationDelivery.QUEUED);
 		}
 		catch (Exception e)
 		{
@@ -415,6 +355,32 @@ public class ShiroDSRealm
 			throw new AccessException(e.getMessage());			
 		}
 	}
+	
+	
+	public void deleteUser(String subjectID)
+		throws NullPointerException, IllegalArgumentException, AccessException, APIException
+	{
+		
+		// crutial permission check
+		// of the super admin can delete user
+		
+		SharedUtil.checkIfNulls("subjectID null", subjectID);
+		UserIDDAO userID = lookupUserID(subjectID);
+		if (userID == null)
+		{
+			throw new APIException("subjectID " + subjectID + " not found.");
+		}
+		// delete a user requires the following
+		// delete the associated UserInfoDOA, UserIDCredentialsDAO and the encrypted key dao associated with the user id
+		dataStore.delete(userID, true);
+		dataStore.delete(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
+		dataStore.delete(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
+		
+		// TODO check if a user is logged in and invalidate his current session
+		
+		
+	}
+	
 	
 	public Set<String> getRecusiveNVEReferenceIDFromForm(String formReferenceID)
 	{
@@ -512,63 +478,24 @@ public class ShiroDSRealm
 	
 	public  UserIDCredentialsDAO lookupUserIDCredentials(String user)
 			throws NullPointerException, IllegalArgumentException, AccessException
-		{
-			UserIDDAO userIDDAO = lookupUserID( user, "_id");
-			
-			if (userIDDAO != null)
-			{
-				//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
-				List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = dataStore.searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
-				
-				if (listOfUserIDCredentialsDAO != null && listOfUserIDCredentialsDAO.size() == 1)
-				{
-					return listOfUserIDCredentialsDAO.get(0);
-				}
-				
-			}
-			
-			throw new AccessException("User credentials not found.");
-		}
-	
-	public  UserIDDAO lookupUserID(GetValue<String> userValue, String ...params)
-			throws NullPointerException, IllegalArgumentException, AccessException
-		{
-			SharedUtil.checkIfNulls("DB or user ID null", dataStore, userValue);
-			//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
-			String user = userValue.getValue();
-			QueryMatch<?> query = null;
-			if (FilterType.EMAIL.isValid(user))
-			{
-				// if we have an email
-				query = new QueryMatch<String>(RelationalOperator.EQUAL, user, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
-			}
-			else
-			{
-				query = new QueryMatch<String>(RelationalOperator.EQUAL, user, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
-			}
+	{
+		UserIDDAO userIDDAO = lookupUserID( user, "_id");
 		
-			ArrayList<String> listParams = null;
-			if (params != null && params.length > 0)
+		if (userIDDAO != null)
+		{
+			//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
+			List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = dataStore.searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
+			
+			if (listOfUserIDCredentialsDAO != null && listOfUserIDCredentialsDAO.size() == 1)
 			{
-				listParams = new ArrayList<String>();
-				for (String str : params)
-				{
-					if (!SharedStringUtil.isEmpty(str))
-					{
-						listParams.add(str);
-					}
-				}
+				return listOfUserIDCredentialsDAO.get(0);
 			}
 			
-			List<UserIDDAO> listOfUserIDDAO = dataStore.search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
-			
-			if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
-			{
-				return null;
-			}
-			
-			return listOfUserIDDAO.get(0);
-
 		}
+		
+		throw new AccessException("User credentials not found.");
+	}
+	
+	
 
 }
