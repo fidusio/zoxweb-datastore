@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -46,6 +47,7 @@ import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.DynamicEnumMapManager;
 import org.zoxweb.shared.util.GetName;
 import org.zoxweb.shared.util.GetNameValue;
+import org.zoxweb.shared.util.IDGenerator;
 import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.NVBase;
 import org.zoxweb.shared.util.NVBigDecimal;
@@ -101,6 +103,7 @@ import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 //import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 import org.zoxweb.server.io.IOUtil;
+
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIConfigInfo;
@@ -129,6 +132,23 @@ public class MongoDataStore
 	implements APIDataStore<DB>, APIDocumentStore<DB>
 {
     private static final transient Logger log = Logger.getLogger("MongoDataStore");
+    
+    public static final IDGenerator<String> MongoIDGenerator = new IDGenerator<String>()
+	{
+		
+		@Override
+		public String generateID() 
+		{
+			return ObjectId.get().toHexString();
+		}
+
+		@Override
+		public String getName() 
+		{
+			// TODO Auto-generated method stub
+			return "MongoIDGenerator";
+		}
+	};
 
     private MongoClient mongoClient;
 	//private DBAddress dbAddress;
@@ -3199,6 +3219,12 @@ public class MongoDataStore
 	{
 		delete(LongSequence.NVC_LONG_SEQUENCE, new QueryMatchString(DataParam.NAME.getNVConfig(), 
 				LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
+	}
+	
+	
+	public IDGenerator<String> getIDGenerator()
+	{
+		return MongoIDGenerator;
 	}
 	
 	

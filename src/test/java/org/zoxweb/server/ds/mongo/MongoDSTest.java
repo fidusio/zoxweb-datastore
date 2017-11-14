@@ -15,6 +15,7 @@ import org.apache.shiro.realm.Realm;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
+import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
@@ -31,11 +32,15 @@ import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.SubjectAPIKey;
 
 public class MongoDSTest 
 {
 	
 	private static final transient Logger log = Logger.getLogger(MongoDSTest.class.getName());
+	
+	
+	
 	
 	public static  void main(String ...args)
 	{
@@ -97,6 +102,15 @@ public class MongoDSTest
 			
 			realm.setAPISecurityManager(apiSecurityManager);
 			realm.setDataStore(ds);
+			
+			APIAppManagerProvider appManager = new APIAppManagerProvider();
+			
+			appManager.setAPIDataStore(ds);
+			appManager.setAPISecurityManager(apiSecurityManager);
+			
+			
+			
+			
 		    
 			String subjectID = args[index++];
 			String password  = args[index++];
@@ -107,7 +121,7 @@ public class MongoDSTest
 			userInfo.setFirstName("N/S");
 			userInfo.setLastName("N/S");
 			userID.setUserInfo(userInfo);
-			realm.createUser(userID, UserStatus.ACTIVE, password);
+			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
 			
 		    
 		    Subject currentUser = SecurityUtils.getSubject();
@@ -153,7 +167,7 @@ public class MongoDSTest
 			
 		    log.info(""+SecurityUtils.getSubject().getPrincipals().getClass());
 			
-		
+		    appManager.createSubjectAPIKey(new SubjectAPIKey());
 			ds.createSequence("mz");
 			StatCounter stat = new StatCounter();
 			for (int i=0; i<100; i++)
@@ -167,7 +181,7 @@ public class MongoDSTest
 			if (index + 1 < args.length && args[index++].equals("-d"))
 			{
 				// we need to delete a user
-				realm.deleteUser(args[index++]);
+				appManager.deleteUser(args[index++]);
 			}
 			
 			

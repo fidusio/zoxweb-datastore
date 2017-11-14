@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
+
 import java.util.logging.Logger;
 
 import org.apache.shiro.authc.AccountException;
@@ -19,10 +19,9 @@ import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
-import org.zoxweb.server.security.CryptoUtil;
-import org.zoxweb.server.security.KeyMakerProvider;
+
 import org.zoxweb.server.security.UserIDCredentialsDAO;
-import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
+
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
 import org.zoxweb.server.security.shiro.authc.DomainAuthenticationInfo;
 import org.zoxweb.server.security.shiro.authc.DomainPrincipalCollection;
@@ -30,8 +29,7 @@ import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISecurityManager;
-import org.zoxweb.shared.crypto.CryptoConst.MDType;
-import org.zoxweb.shared.crypto.EncryptedKeyDAO;
+
 import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -269,117 +267,117 @@ public class ShiroDSRealm
 		return lookupUserID(subjectID.getValue(), params);
 	}
 	
-	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
-			throws NullPointerException, IllegalArgumentException, AccessException, APIException
-	{
-		SharedUtil.checkIfNulls("UserIDDAO object is null.", userID, userIDstatus);
-		password = FilterType.PASSWORD.validate(password);
-		
-		
-		if (lookupUserID(userID.getSubjectID()) != null)
-		{
-			throw new APIException("User already exist");
-		}
-			
-		log.info("User Name: " + userID.getPrimaryEmail());
-		log.info("First Name: " + userID.getUserInfo().getFirstName());
-		log.info("Middle Name: " + userID.getUserInfo().getMiddleName());
-		log.info("Last Name: " + userID.getUserInfo().getLastName());
-		log.info("Birthday: " + userID.getUserInfo().getDOB());
-		
-		userID.setReferenceID(null);
-		SharedUtil.validate(userID, true, true);
-		
-		
-		
-
-		
-			
-		
-		// special case to avoid chicken and egg situation
-		ObjectId objID = ObjectId.get();
-		String userIDRef = objID.toHexString();
-		apiSecurityManager.associateNVEntityToSubjectUserID(userID, userIDRef);
-		userID.setReferenceID(userIDRef);
-		userID.getUserInfo().setReferenceID(userIDRef);
-		////////////////////////
-		
-		try
-		{
-			// insert the user_info dao first
-			dataStore.insert(userID.getUserInfo());
-			
-			dataStore.insert(userID);
-			
-			UserIDCredentialsDAO userIDCredentials = new UserIDCredentialsDAO();
-			userIDCredentials.setReferenceID(userID.getReferenceID());
-			userIDCredentials.setUserID(userID.getReferenceID());
-			userIDCredentials.setLastStatusUpdateTimestamp(System.currentTimeMillis());
-			userIDCredentials.setUserStatus(userIDstatus);
-			PasswordDAO passwordDAO = CryptoUtil.hashedPassword(MDType.SHA_512, 0, 8196, password);
-			passwordDAO.setUserID(userID.getReferenceID());
-			userIDCredentials.setPassword(passwordDAO);
-			
-			
-			
-			switch(userIDstatus)
-			{
-			case ACTIVE:
-				break;
-			case DEACTIVATED:
-				break;
-			case INACTIVE:
-				break;
-			case PENDING_ACCOUNT_ACTIVATION:
-			case PENDING_RESET_PASSWORD:
-				userIDCredentials.setPendingToken(UUID.randomUUID().toString());
-				break;
-
-			
-			}
-			
-			
-			dataStore.insert(userIDCredentials);
-			userIDCredentials.getPassword().setReferenceID(userIDCredentials.getReferenceID());
-			dataStore.update(userIDCredentials);
-			// create the user master key
-			dataStore.insert(KeyMakerProvider.SINGLETON.createUserIDKey(userID, KeyMakerProvider.SINGLETON.getMasterKey()));
-			
-			// removed for now created during login
-			// MN 2014-12-23
-			// FidusStoreDataManager.SINGLETON.setUpUserAccount(userID, dataStore, (APIDocumentStore<?>) dataStore);
-		}
-		catch (Exception e)
-		{
-			e.printStackTrace();
-			throw new AccessException(e.getMessage());			
-		}
-	}
-	
-	
-	public void deleteUser(String subjectID)
-		throws NullPointerException, IllegalArgumentException, AccessException, APIException
-	{
-		
-		// crutial permission check
-		// of the super admin can delete user
-		
-		SharedUtil.checkIfNulls("subjectID null", subjectID);
-		UserIDDAO userID = lookupUserID(subjectID);
-		if (userID == null)
-		{
-			throw new APIException("subjectID " + subjectID + " not found.");
-		}
-		// delete a user requires the following
-		// delete the associated UserInfoDOA, UserIDCredentialsDAO and the encrypted key dao associated with the user id
-		dataStore.delete(userID, true);
-		dataStore.delete(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
-		dataStore.delete(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
-		
-		// TODO check if a user is logged in and invalidate his current session
-		
-		
-	}
+//	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
+//			throws NullPointerException, IllegalArgumentException, AccessException, APIException
+//	{
+//		SharedUtil.checkIfNulls("UserIDDAO object is null.", userID, userIDstatus);
+//		password = FilterType.PASSWORD.validate(password);
+//		
+//		
+//		if (lookupUserID(userID.getSubjectID()) != null)
+//		{
+//			throw new APIException("User already exist");
+//		}
+//			
+//		log.info("User Name: " + userID.getPrimaryEmail());
+//		log.info("First Name: " + userID.getUserInfo().getFirstName());
+//		log.info("Middle Name: " + userID.getUserInfo().getMiddleName());
+//		log.info("Last Name: " + userID.getUserInfo().getLastName());
+//		log.info("Birthday: " + userID.getUserInfo().getDOB());
+//		
+//		userID.setReferenceID(null);
+//		SharedUtil.validate(userID, true, true);
+//		
+//		
+//		
+//
+//		
+//			
+//		
+//		// special case to avoid chicken and egg situation
+//		ObjectId objID = ObjectId.get();
+//		String userIDRef = objID.toHexString();
+//		apiSecurityManager.associateNVEntityToSubjectUserID(userID, userIDRef);
+//		userID.setReferenceID(userIDRef);
+//		userID.getUserInfo().setReferenceID(userIDRef);
+//		////////////////////////
+//		
+//		try
+//		{
+//			// insert the user_info dao first
+//			dataStore.insert(userID.getUserInfo());
+//			
+//			dataStore.insert(userID);
+//			
+//			UserIDCredentialsDAO userIDCredentials = new UserIDCredentialsDAO();
+//			userIDCredentials.setReferenceID(userID.getReferenceID());
+//			userIDCredentials.setUserID(userID.getReferenceID());
+//			userIDCredentials.setLastStatusUpdateTimestamp(System.currentTimeMillis());
+//			userIDCredentials.setUserStatus(userIDstatus);
+//			PasswordDAO passwordDAO = CryptoUtil.hashedPassword(MDType.SHA_512, 0, 8196, password);
+//			passwordDAO.setUserID(userID.getReferenceID());
+//			userIDCredentials.setPassword(passwordDAO);
+//			
+//			
+//			
+//			switch(userIDstatus)
+//			{
+//			case ACTIVE:
+//				break;
+//			case DEACTIVATED:
+//				break;
+//			case INACTIVE:
+//				break;
+//			case PENDING_ACCOUNT_ACTIVATION:
+//			case PENDING_RESET_PASSWORD:
+//				userIDCredentials.setPendingToken(UUID.randomUUID().toString());
+//				break;
+//
+//			
+//			}
+//			
+//			
+//			dataStore.insert(userIDCredentials);
+//			userIDCredentials.getPassword().setReferenceID(userIDCredentials.getReferenceID());
+//			dataStore.update(userIDCredentials);
+//			// create the user master key
+//			dataStore.insert(KeyMakerProvider.SINGLETON.createUserIDKey(userID, KeyMakerProvider.SINGLETON.getMasterKey()));
+//			
+//			// removed for now created during login
+//			// MN 2014-12-23
+//			// FidusStoreDataManager.SINGLETON.setUpUserAccount(userID, dataStore, (APIDocumentStore<?>) dataStore);
+//		}
+//		catch (Exception e)
+//		{
+//			e.printStackTrace();
+//			throw new AccessException(e.getMessage());			
+//		}
+//	}
+//	
+//	
+//	public void deleteUser(String subjectID)
+//		throws NullPointerException, IllegalArgumentException, AccessException, APIException
+//	{
+//		
+//		// crutial permission check
+//		// of the super admin can delete user
+//		
+//		SharedUtil.checkIfNulls("subjectID null", subjectID);
+//		UserIDDAO userID = lookupUserID(subjectID);
+//		if (userID == null)
+//		{
+//			throw new APIException("subjectID " + subjectID + " not found.");
+//		}
+//		// delete a user requires the following
+//		// delete the associated UserInfoDOA, UserIDCredentialsDAO and the encrypted key dao associated with the user id
+//		dataStore.delete(userID, true);
+//		dataStore.delete(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
+//		dataStore.delete(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO,  new QueryMatchObjectId(RelationalOperator.EQUAL, userID.getReferenceID(), MetaToken.REFERENCE_ID));
+//		
+//		// TODO check if a user is logged in and invalidate his current session
+//		
+//		
+//	}
 	
 	
 	public Set<String> getRecusiveNVEReferenceIDFromForm(String formReferenceID)

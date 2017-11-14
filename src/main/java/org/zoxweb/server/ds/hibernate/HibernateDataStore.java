@@ -32,6 +32,7 @@ import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.GetName;
+import org.zoxweb.shared.util.IDGenerator;
 import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.SharedUtil;
@@ -538,6 +539,12 @@ public class HibernateDataStore
 	public void deleteSequence(String sequenceName) {
 		// TODO Auto-generated method stub
 		
+	}
+	
+	
+	public IDGenerator<String> getIDGenerator()
+	{
+		return null;
 	}
 
 }
