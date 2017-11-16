@@ -6,6 +6,7 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 import org.apache.shiro.SecurityUtils;
@@ -125,22 +126,22 @@ public class MongoDSShiroTest
 		apiSecurityManager.login(TEST_USER, TEST_PASSWORD, DOMAIN_ID, APP_ID, false);
 	}
 	
-	@Test
-	public void testGenerateKeystoreInfo() throws NoSuchAlgorithmException, IOException
-	{
-		log.info("\n"+GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
-	}
+//	@Test
+//	public void testGenerateKeystoreInfo() throws NoSuchAlgorithmException, IOException
+//	{
+//		log.info("\n"+GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
+//	}
 
 	@Test
     public void testRegisterSubjectAPIKey() {
 
 	    UserInfoDAO userInfoDAO = new UserInfoDAO();
-	    userInfoDAO.setFirstName("John");
+	    userInfoDAO.setFirstName("marwan");
 	    userInfoDAO.setLastName("Smith");
 
 	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
         DeviceDAO deviceDAO = new DeviceDAO();
-        deviceDAO.setDeviceID("123456789");
+        deviceDAO.setDeviceID(UUID.randomUUID().toString());
         deviceDAO.setManufacturer("Apple");
         deviceDAO.setModel("7");
         deviceDAO.setVersion("10");
@@ -149,7 +150,7 @@ public class MongoDSShiroTest
         appDeviceDAO.setAppIDDAO(appIDDAO);
         appDeviceDAO.setDevice(deviceDAO);
 
-	    String subjectID = "jsmith@gmail.com";
+	    String subjectID = "toto@gmail.com";
 	    String password = "Testpwd123";
 
         apiSecurityManager.logout();

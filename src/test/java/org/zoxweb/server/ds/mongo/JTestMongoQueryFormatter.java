@@ -6,6 +6,7 @@ import org.junit.Test;
 import org.zoxweb.server.ds.mongo.MongoQueryFormatter;
 import org.zoxweb.shared.api.APITokenDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.data.UserPreferenceDAO;
 import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.NVConfigEntity;
 
@@ -101,10 +102,23 @@ public class JTestMongoQueryFormatter {
 				new QueryMatch<String>("last_name", "Zebib", RelationalOperator.EQUAL),
 				new QueryMatch<String>(RelationalOperator.EQUAL, "542c55c7ea59bfebabe370b1", "reference_id"),
 				LogicalOperator.AND, 
-				new QueryMatchString(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", APITokenDAO.Params.API_CONFIG_INFO_DAO.getNVConfig(), MetaToken.REFERENCE_ID)
+				new QueryMatchString(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_ID.getNVConfig(), MetaToken.REFERENCE_ID)
 				);
 		
 		System.out.println("Query Test5: " + query);
+	}
+	
+	
+	@Test
+	public void test7() 
+	{
+		query = MongoQueryFormatter.formatQuery(UserPreferenceDAO.NVC_USER_PREFERENCE_DAO,
+        new QueryMatch<String>(RelationalOperator.EQUAL, "542c55c7ea59bfebabe370b1", "user_id"),
+        LogicalOperator.AND,
+       
+        new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_ID.getNVConfig(), MetaToken.REFERENCE_ID)
+        );
+		System.out.println("Query Test7: " + query);
 	}
 	
 	@Test

@@ -221,13 +221,18 @@ public class MongoDataStore
                 return resID.getValue();
             }
 			
-			if (name != null && nvc != null && nvc.isTypeReferenceID())
+			if (name != null && nvc != null && nvc.isTypeReferenceID() && name.equals(nvc.getName()))
 			{
 				return "_" + nvc.getName();
 			}
 			
 			return name;
 		}
+		
+		
+		
+		
+		
 		
 	}
 

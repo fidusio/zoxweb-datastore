@@ -56,7 +56,7 @@ public class MongoQueryFormatter
 
 			qb = qb.put(queryKey);
 		
-			//System.out.println(querykey+":" + resID + ":" + queryMatch.getValue());
+			//System.out.println(queryKey+":" + queryMatch.getName() + ":" + queryMatch.getValue());
 			
 			if (nvc == null && !queryMatch.isCanonicalName())
 			{
@@ -67,8 +67,10 @@ public class MongoQueryFormatter
                 switch(queryMatch.getOperator())
                 {
                 case EQUAL:
-                    //System.out.println(querykey + ":" + map(nvc, resID, queryMatch).getClass().getName());
+                	//System.out.println(queryKey+":" + queryMatch.getName() + ":" + queryMatch.getValue() + " " + map(nvc, queryMatch));
+                	//Object val = map(nvc, queryMatch);
                     qb.is(map(nvc, queryMatch));
+                    //System.out.println(""+val + " " + val.getClass());
                     break;
                 case GT:
                     qb.greaterThan(map(nvc, queryMatch));
