@@ -7,12 +7,11 @@ import java.security.KeyStore;
 import java.util.Collection;
 import java.util.logging.Logger;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.Realm;
-import org.apache.shiro.session.Session;
+
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -23,7 +22,7 @@ import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
 import org.zoxweb.server.security.shiro.ShiroUtil;
-import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
+
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
@@ -124,22 +123,24 @@ public class MongoDSTest
 			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
 			
 		    
-		    Subject currentUser = SecurityUtils.getSubject();
-		    Session session = currentUser.getSession();
-		    session.setAttribute( "someKey", "aValue" );
-
-		  
-		    if ( !currentUser.isAuthenticated() ) {
-		        //collect user principals and credentials in a gui specific manner
-		        //such as username/password html form, X509 certificate, OpenID, etc.
-		        //We'll use the username/password example here since it is the most common.
-		        UsernamePasswordToken token = new DomainUsernamePasswordToken(subjectID, password, false, null, null, null);
-
-		        //this is all you have to do to support 'remember me' (no config - built in!):
-		        token.setRememberMe(true);
-
-		        currentUser.login(token);
-		    }
+			Subject currentUser = apiSecurityManager.login(subjectID, password, null, null, false);
+//		    Session session = currentUser.getSession();
+//		    session.setAttribute( "someKey", "aValue" );
+//
+//		  
+//		    if (!currentUser.isAuthenticated() ) {
+//		        //collect user principals and credentials in a gui specific manner
+//		        //such as username/password html form, X509 certificate, OpenID, etc.
+//		        //We'll use the username/password example here since it is the most common.
+//		    	DomainUsernamePasswordToken token = new DomainUsernamePasswordToken(subjectID, password, false, null, null, null);
+//		        //token.setAutoAuthenticationEnabled(true);
+//
+//		        //this is all you have to do to support 'remember me' (no config - built in!):
+//		        token.setRememberMe(true);
+//
+//		        currentUser.login(token);
+//		        log.info(""+SecurityUtils.getSubject().getPrincipals().getClass());
+//		    }
 		    
 		    
 		    Collection<Realm> realms =  ((RealmSecurityManager)SecurityUtils.getSecurityManager()).getRealms();
@@ -165,7 +166,7 @@ public class MongoDSTest
 		    System.out.println(sc.deltaSinceCreation());
 		    
 			
-		    log.info(""+SecurityUtils.getSubject().getPrincipals().getClass());
+		    
 			
 		    appManager.createSubjectAPIKey(new SubjectAPIKey());
 			ds.createSequence("mz");
