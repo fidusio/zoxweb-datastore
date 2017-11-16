@@ -28,9 +28,13 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
+import org.zoxweb.shared.data.AppDeviceDAO;
+import org.zoxweb.shared.data.AppIDDAO;
+import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.SubjectAPIKey;
 
 public class MongoDSShiroTest
 {
@@ -50,7 +54,7 @@ public class MongoDSShiroTest
 	private static final String SUPER_ADMIN = "superadmid@xlogistx.io";
 	private static final String SUPER_PASSWORD = "T!st2s3r";
 	private static final String DOMAIN_ID = "test.com";
-	private static final String APP_ID = "testApp";
+	private static final String APP_ID = "testapp";
 	
 	APIConfigInfoDAO dsConfig;
 	APISecurityManager<Subject> apiSecurityManager;
@@ -119,8 +123,6 @@ public class MongoDSShiroTest
 		
 		
 		apiSecurityManager.login(TEST_USER, TEST_PASSWORD, DOMAIN_ID, APP_ID, false);
-	   
-		
 	}
 	
 	@Test
@@ -128,9 +130,31 @@ public class MongoDSShiroTest
 	{
 		log.info("\n"+GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
 	}
-	
-	
-	
+
+	@Test
+    public void testRegisterSubjectAPIKey() {
+
+	    UserInfoDAO userInfoDAO = new UserInfoDAO();
+	    userInfoDAO.setFirstName("John");
+	    userInfoDAO.setLastName("Smith");
+
+	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
+        DeviceDAO deviceDAO = new DeviceDAO();
+        deviceDAO.setDeviceID("123456789");
+        deviceDAO.setManufacturer("Apple");
+        deviceDAO.setModel("7");
+        deviceDAO.setVersion("10");
+
+        AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
+        appDeviceDAO.setAppIDDAO(appIDDAO);
+        appDeviceDAO.setDevice(deviceDAO);
+
+	    String subjectID = "jsmith@gmail.com";
+	    String password = "Testpwd123";
+
+        apiSecurityManager.logout();
+        appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
+    }
 	
 	private void createUser()
 	{
@@ -173,4 +197,5 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		
 	}
+
 }
