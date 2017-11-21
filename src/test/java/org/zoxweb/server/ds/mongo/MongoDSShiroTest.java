@@ -27,7 +27,6 @@ import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.data.AppDeviceDAO;
 import org.zoxweb.shared.data.AppIDDAO;
@@ -35,7 +34,7 @@ import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
-import org.zoxweb.shared.security.SubjectAPIKey;
+
 
 public class MongoDSShiroTest
 {
@@ -57,7 +56,7 @@ public class MongoDSShiroTest
 	private static final String DOMAIN_ID = "test.com";
 	private static final String APP_ID = "testapp";
 	
-	APIConfigInfoDAO dsConfig;
+	
 	APISecurityManager<Subject> apiSecurityManager;
 	APIAppManagerProvider appManager;
 
@@ -66,7 +65,7 @@ public class MongoDSShiroTest
 	public void start() throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
 	{
 		
-		dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(MONGO_CONF)), APIConfigInfoDAO.class);
+		APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(MONGO_CONF)), APIConfigInfoDAO.class);
 		
 		// load the Master Key
 		KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
@@ -97,14 +96,15 @@ public class MongoDSShiroTest
 	    ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
 		
 		MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
-		APIDataStore<?> ds = mdsc.createAPI(null, dsConfig);
+		
+		DefaultMongoDS.SIGLETON.setDataStore((MongoDataStore) mdsc.createAPI(null, dsConfig));
 		
 		realm.setAPISecurityManager(apiSecurityManager);
-		realm.setDataStore(ds);
+		realm.setDataStore(DefaultMongoDS.SIGLETON.getDataStore());
 		
 		appManager = new APIAppManagerProvider();
 		
-		appManager.setAPIDataStore(ds);
+		appManager.setAPIDataStore(DefaultMongoDS.SIGLETON.getDataStore());
 		appManager.setAPISecurityManager(apiSecurityManager);
 		
 		
