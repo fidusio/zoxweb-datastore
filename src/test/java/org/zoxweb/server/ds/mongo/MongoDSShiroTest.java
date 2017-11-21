@@ -34,6 +34,8 @@ import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.util.ResourceManager;
+import org.zoxweb.shared.util.ResourceManager.Resource;
 
 
 public class MongoDSShiroTest
@@ -97,14 +99,17 @@ public class MongoDSShiroTest
 		
 		MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
 		
-		DefaultMongoDS.SIGLETON.setDataStore((MongoDataStore) mdsc.createAPI(null, dsConfig));
+		
+		ResourceManager.SINGLETON.map(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, dsConfig));
+		
+		
 		
 		realm.setAPISecurityManager(apiSecurityManager);
-		realm.setDataStore(DefaultMongoDS.SIGLETON.getDataStore());
+		realm.setDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
 		
 		appManager = new APIAppManagerProvider();
 		
-		appManager.setAPIDataStore(DefaultMongoDS.SIGLETON.getDataStore());
+		appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
 		appManager.setAPISecurityManager(apiSecurityManager);
 		
 		

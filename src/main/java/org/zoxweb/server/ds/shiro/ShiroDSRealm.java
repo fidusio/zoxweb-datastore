@@ -42,6 +42,8 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.GetValue;
 import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.ResourceManager;
+import org.zoxweb.shared.util.ResourceManager.Resource;
 import org.zoxweb.shared.util.SetName;
 import org.zoxweb.shared.util.SharedStringUtil;
 import org.zoxweb.shared.util.SharedUtil;
@@ -53,8 +55,7 @@ public class ShiroDSRealm
 	implements SetName
 {
 
-	
-	 private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
+	private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
 	
 	private APIDataStore<?> dataStore;
 	private APISecurityManager<Subject> apiSecurityManager;
@@ -66,7 +67,7 @@ public class ShiroDSRealm
 	}
 
 	public APISecurityManager<Subject> getAPISecurityManager() {
-		return apiSecurityManager;
+		return apiSecurityManager != null ? apiSecurityManager :  ResourceManager.SINGLETON.lookup(Resource.API_SECURITY_MANAGER);
 	}
 
 	public void setAPISecurityManager(APISecurityManager<Subject> apiSecurityManager) {
@@ -75,7 +76,7 @@ public class ShiroDSRealm
 	
 	public APIDataStore<?> getDataStore()
 	{
-		return dataStore;
+		return dataStore != null ? dataStore : ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
 	}
 
 	public void setDataStore(APIDataStore<?> dataStore)
@@ -249,7 +250,7 @@ public class ShiroDSRealm
 			}
 		}
 		
-		List<UserIDDAO> listOfUserIDDAO = dataStore.search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
+		List<UserIDDAO> listOfUserIDDAO = getDataStore().search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
 		
 		if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
 		{
@@ -263,7 +264,7 @@ public class ShiroDSRealm
 	public  UserIDDAO lookupUserID(GetValue<String> subjectID, String ...params)
 			throws NullPointerException, IllegalArgumentException, AccessException
 	{
-		SharedUtil.checkIfNulls("DB or user ID null", dataStore, subjectID);
+		SharedUtil.checkIfNulls("DB or user ID null", getDataStore(), subjectID);
 		return lookupUserID(subjectID.getValue(), params);
 	}
 	
@@ -387,7 +388,7 @@ public class ShiroDSRealm
 		BasicDBObject projection = new BasicDBObject();
 		projection = projection.append(FormInfoDAO.Param.FORM_REFERENCE.getNVConfig().getName(), true);
 		
-		BasicDBObject result = dataStore.lookupByReferenceID(FormInfoDAO.NVC_FORM_INFO_DAO.getName(), new ObjectId(formReferenceID), projection);
+		BasicDBObject result = getDataStore().lookupByReferenceID(FormInfoDAO.NVC_FORM_INFO_DAO.getName(), new ObjectId(formReferenceID), projection);
 		if (result != null)
 		{
 			ret = new HashSet<String>();
@@ -417,13 +418,13 @@ public class ShiroDSRealm
 		ObjectId canonical_id  = (ObjectId) bsonObj.get(MetaToken.CANONICAL_ID.getName());
 		if (reference_id != null && canonical_id != null)
 		{
-			BasicDBObject nvcEntry = dataStore.lookupByReferenceID("nv_config_entities", canonical_id);
+			BasicDBObject nvcEntry = getDataStore().lookupByReferenceID("nv_config_entities", canonical_id);
 			if (nvcEntry != null && canonical_id != null)
 			{
 				String nvcSubName = nvcEntry.getString(MetaToken.CANONICAL_ID.getName());
 				if(nvcSubName != null)
 				{
-					return dataStore.lookupByReferenceID(nvcSubName, reference_id);
+					return getDataStore().lookupByReferenceID(nvcSubName, reference_id);
 				}
 			}
 		}
@@ -482,7 +483,7 @@ public class ShiroDSRealm
 		if (userIDDAO != null)
 		{
 			//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
-			List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = dataStore.searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
+			List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = getDataStore().searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
 			
 			if (listOfUserIDCredentialsDAO != null && listOfUserIDCredentialsDAO.size() == 1)
 			{
