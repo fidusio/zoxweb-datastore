@@ -36,6 +36,7 @@ import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
+import org.zoxweb.shared.security.AccessException;
 
 
 public class MongoDSShiroTest
@@ -52,6 +53,9 @@ public class MongoDSShiroTest
 	private static final String SHIRO_INI = "shiro.ini";
 	private static final String TEST_USER = "test@xlosistx.io";
 	private static final String TEST_PASSWORD= "T!st2s3r";
+	private static final String ILLEGAL_USER = "illegal@xlosistx.io";
+	private static final String ILLEGAL_PASSWORD= "T!st2s3r";
+	private static final String DEFAULT_API_KEY = "test_default_api_key";
 	
 	private static final String SUPER_ADMIN = "superadmid@xlogistx.io";
 	private static final String SUPER_PASSWORD = "T!st2s3r";
@@ -59,14 +63,15 @@ public class MongoDSShiroTest
 	private static final String APP_ID = "testapp";
 	
 	
-	APISecurityManager<Subject> apiSecurityManager;
-	APIAppManagerProvider appManager;
+	private static  APISecurityManager<Subject> apiSecurityManager;
+	private static  APIAppManagerProvider appManager;
 
 	
 	@Before
 	public void start() throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
 	{
-		
+		if (appManager == null)
+		{
 		APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(MongoDSShiroTest.class.getClassLoader(), MONGO_CONF)), APIConfigInfoDAO.class);
 		
 		// load the Master Key
@@ -118,7 +123,12 @@ public class MongoDSShiroTest
 		
 		try 
 		{
-			createUser();
+			createUser(TEST_USER, TEST_PASSWORD);
+			createUser(ILLEGAL_USER, ILLEGAL_PASSWORD);
+			if (appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, false) == null)
+			{
+				registerSubjectAPIKey(DEFAULT_API_KEY, TEST_USER, TEST_PASSWORD);
+			}
 		}
 		catch(Exception e)
 		{
@@ -129,6 +139,7 @@ public class MongoDSShiroTest
 		
 		
 		apiSecurityManager.login(TEST_USER, TEST_PASSWORD, DOMAIN_ID, APP_ID, false);
+		}
 	}
 	
 //	@Test
@@ -139,33 +150,71 @@ public class MongoDSShiroTest
 
 	@Test
     public void testRegisterSubjectAPIKey() {
-
-	    UserInfoDAO userInfoDAO = new UserInfoDAO();
-	    userInfoDAO.setFirstName("marwan");
-	    userInfoDAO.setLastName("Smith");
-
-	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
-        DeviceDAO deviceDAO = new DeviceDAO();
-        deviceDAO.setDeviceID(UUID.randomUUID().toString());
-        deviceDAO.setManufacturer("Apple");
-        deviceDAO.setModel("7");
-        deviceDAO.setVersion("10");
-
-        AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
-        appDeviceDAO.setAppIDDAO(appIDDAO);
-        appDeviceDAO.setDevice(deviceDAO);
-
-	    String subjectID = "toto@gmail.com";
-	    String password = "Testpwd123";
-
-        apiSecurityManager.logout();
-        appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
+//
+//	    UserInfoDAO userInfoDAO = new UserInfoDAO();
+//	    userInfoDAO.setFirstName("John");
+//	    userInfoDAO.setLastName("Smith");
+//
+//	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
+//        DeviceDAO deviceDAO = new DeviceDAO();
+//        deviceDAO.setDeviceID(UUID.randomUUID().toString());
+//        deviceDAO.setManufacturer("Apple");
+//        deviceDAO.setModel("7");
+//        deviceDAO.setVersion("10");
+//
+//        AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
+//        appDeviceDAO.setAppIDDAO(appIDDAO);
+//        appDeviceDAO.setDevice(deviceDAO);
+//        appDeviceDAO.setSubjectID(DEFAULT_API_KEY);
+//
+//
+//        apiSecurityManager.logout();
+//        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, TEST_USER, TEST_PASSWORD);
+//       
+//        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getAPIKey());
+//        log.info(""+val);
+        
+        
+        registerSubjectAPIKey(null, TEST_USER, TEST_PASSWORD);
     }
 	
-	private void createUser()
+	
+	
+	
+	 public void registerSubjectAPIKey(String apiKey, String userID, String password) {
+
+		    UserInfoDAO userInfoDAO = new UserInfoDAO();
+		    userInfoDAO.setFirstName("John");
+		    userInfoDAO.setLastName("Smith");
+
+		    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
+	        DeviceDAO deviceDAO = new DeviceDAO();
+	        deviceDAO.setDeviceID(UUID.randomUUID().toString());
+	        deviceDAO.setManufacturer("Apple");
+	        deviceDAO.setModel("7");
+	        deviceDAO.setVersion("10");
+
+	        AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
+	        appDeviceDAO.setAppIDDAO(appIDDAO);
+	        appDeviceDAO.setDevice(deviceDAO);
+	        if (apiKey != null)
+	        	appDeviceDAO.setAPIKey(apiKey);
+
+
+	        apiSecurityManager.logout();
+	        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, userID, password);
+	       
+	        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getAPIKey(), false);
+	        log.info(""+val);
+	    }
+	
+	
+	
+	
+	
+	private void createUser(String subjectID, String password)
 	{
-		String subjectID = TEST_USER;
-		String password  = TEST_PASSWORD;
+		
 		UserIDDAO userID = new UserIDDAO();
 		
 		userID.setSubjectID(subjectID);
@@ -201,6 +250,29 @@ public class MongoDSShiroTest
 		
 		appManager.createAppIDDAO(DOMAIN_ID, APP_ID);
 		apiSecurityManager.logout();
+		
+	}
+	
+	@Test
+	public void loadKeySuccess()
+	{
+		
+		apiSecurityManager.logout();
+		apiSecurityManager.login(TEST_USER, TEST_PASSWORD, DOMAIN_ID, APP_ID, true);
+	
+		appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, true);
+		
+	}
+	
+	@Test(expected = AccessException.class)
+	public void loadKeyFailed()
+	{
+		
+		apiSecurityManager.logout();
+		apiSecurityManager.login(ILLEGAL_USER, ILLEGAL_PASSWORD, DOMAIN_ID, APP_ID, true);
+	
+	
+		appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, true);
 		
 	}
 
