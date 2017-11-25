@@ -57,7 +57,7 @@ public class MongoDSShiroTest
 	private static final String ILLEGAL_PASSWORD= "T!st2s3r";
 	private static final String DEFAULT_API_KEY = "test_default_api_key";
 	
-	private static final String SUPER_ADMIN = "superadmid@xlogistx.io";
+	private static final String SUPER_ADMIN = "superadmin@xlogistx.io";
 	private static final String SUPER_PASSWORD = "T!st2s3r";
 	private static final String DOMAIN_ID = "test.com";
 	private static final String APP_ID = "testapp";
