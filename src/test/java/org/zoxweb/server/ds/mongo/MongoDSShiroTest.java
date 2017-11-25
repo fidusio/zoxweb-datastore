@@ -61,7 +61,9 @@ public class MongoDSShiroTest
 	private static final String SUPER_PASSWORD = "T!st2s3r";
 	private static final String DOMAIN_ID = "test.com";
 	private static final String APP_ID = "testapp";
-	
+
+    private static final String PROPANEXP_DOMAIN_ID = "propanexp.com";
+    private static final String PROPANEXP_APP_ID = "propanexp";
 	
 	private static  APISecurityManager<Subject> apiSecurityManager;
 	private static  APIAppManagerProvider appManager;
@@ -116,10 +118,9 @@ public class MongoDSShiroTest
 		
 		appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
 		appManager.setAPISecurityManager(apiSecurityManager);
-		
-		
-		
-		createAPP();
+
+        createAPP(DOMAIN_ID, APP_ID);
+		createAPP(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID);
 		
 		try 
 		{
@@ -206,11 +207,7 @@ public class MongoDSShiroTest
 	       
 	        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getAPIKey(), false);
 	        log.info(""+val);
-	    }
-	
-	
-	
-	
+    }
 	
 	private void createUser(String subjectID, String password)
 	{
@@ -226,7 +223,7 @@ public class MongoDSShiroTest
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
-	public void createAPP()
+	public void createAPP(String domainID, String appID)
 	{
 		String subjectID = SUPER_ADMIN;
 		String password  = SUPER_PASSWORD;
@@ -248,9 +245,8 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, null, null, false);
 		
-		appManager.createAppIDDAO(DOMAIN_ID, APP_ID);
+		appManager.createAppIDDAO(domainID, appID);
 		apiSecurityManager.logout();
-		
 	}
 	
 	@Test
