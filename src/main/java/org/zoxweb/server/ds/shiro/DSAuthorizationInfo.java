@@ -135,30 +135,41 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 				{
 				case PERMISSION_TO_ROLE:
 					break;
-				case PERMISSION_TO_SUBJECT:	
-					stringPermissions.add(sard.getPattern());
-					// to avoid management permissions
-					if (sard.getAssociate() != null)
+				case PERMISSION_TO_SUBJECT:
+					if (sard.getAssociation() != null && sard.getAssociation() instanceof ShiroPermissionDAO)
 					{
-						stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), CRUD.MOVE, sard.getAssociate()).toLowerCase());
-						try
-						{						
-									
-							Set<String> toAdds = realm.getRecusiveNVEReferenceIDFromForm(sard.getAssociate());
-							if (toAdds != null)
-							{
-								//System.out.println(toAdds);
-								for (String toAdd : toAdds)
+						ShiroPermissionDAO permission = sard.getAssociation();
+						if (permission.getPermissionPattern() != null)
+						{
+							stringPermissions.add(permission.getPermissionPattern());
+						}
+					}
+					else
+					{
+						stringPermissions.add(sard.getPattern());
+						// to avoid management permissions
+						if (sard.getAssociate() != null)
+						{
+							stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), CRUD.MOVE, sard.getAssociate()).toLowerCase());
+							try
+							{						
+										
+								Set<String> toAdds = realm.getRecusiveNVEReferenceIDFromForm(sard.getAssociate());
+								if (toAdds != null)
 								{
-									stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), sard.getCRUD(), toAdd).toLowerCase());
-									// we will automatically grant MOVE permission if a permission exist
-									stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), CRUD.MOVE, toAdd).toLowerCase());
+									//System.out.println(toAdds);
+									for (String toAdd : toAdds)
+									{
+										stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), sard.getCRUD(), toAdd).toLowerCase());
+										// we will automatically grant MOVE permission if a permission exist
+										stringPermissions.add(SharedUtil.toCanonicalID(':', sard.getName(), CRUD.MOVE, toAdd).toLowerCase());
+									}
 								}
 							}
-						}
-						catch(Exception e)
-						{
-							e.printStackTrace();
+							catch(Exception e)
+							{
+								e.printStackTrace();
+							}
 						}
 					}
 					break;
