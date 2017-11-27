@@ -31,6 +31,7 @@ import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISecurityManager;
 
 import org.zoxweb.shared.crypto.PasswordDAO;
+import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
@@ -38,7 +39,9 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.security.AccessException;
+
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
+import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.GetValue;
 import org.zoxweb.shared.util.MetaToken;
@@ -171,7 +174,65 @@ public class ShiroDSRealm
 	@Override
 	public void addShiroRule(ShiroAssociationRuleDAO sard) 
 	{
-		// TODO Auto-generated method stub
+		SharedUtil.checkIfNulls("Association parameters can't be null", sard, sard.getName(), sard.getAssociationType(), sard.getAssociatedTo()/*, sard.getAssociate()*/);
+		switch(sard.getAssociationType())
+		{
+		case PERMISSION_TO_SUBJECT:
+			List<QueryMarker> queryCriteria = new ArrayList<QueryMarker>();
+			if (sard.getAssociate() != null)
+				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+			
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRuleDAO.Param.ASSOCIATION_CRUD));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getName(), DataParam.NAME));
+			
+			//System.out.println(queryCriteria);
+			List<ShiroAssociationRuleDAO> list = search(queryCriteria.toArray(new QueryMarker[0]));
+			if (list.size() == 0 && sard.getReferenceID() == null)
+			{
+				getDataStore().insert(sard);
+			}
+			// if a user was granted access and he currently logged in we 
+			// must update his permissions and roles
+			break;
+		case PERMISSION_TO_ROLE:
+			throw new IllegalArgumentException(sard.getAssociationType() + " not supported yet");
+			
+		case ROLEGROUP_TO_SUBJECT:
+			break;
+			
+		case ROLE_TO_ROLEGROUP:
+			throw new IllegalArgumentException(sard.getAssociationType() + " not supported yet");
+			
+		case ROLE_TO_SUBJECT:
+			// assign a role to a subject
+			// associated_to must be user_id or user_info_dao referenceid
+			// associate should be ShiroRoleDAO
+			
+			
+			ShiroRoleDAO role = lookupRole(sard.getAssociate());
+			if (role != null)
+			{
+				// maybe check role permission
+				sard.setAssociation(role);
+				List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
+					   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+				if (roleSard == null || roleSard.size() == 0)
+				{
+					getDataStore().insert(sard);
+				}
+				
+			}
+			// check if the role exist
+			//getDataStore().search(ShiroRoleDAO.NVC_SHIRO_ROLE_DAO, null, queryCriteria);
+			
+			
+			break;
+		}
+		
+		
+	
 		
 	}
 
@@ -494,7 +555,7 @@ public class ShiroDSRealm
 		
 		throw new AccessException("User credentials not found.");
 	}
-	
+
 	
 
 }

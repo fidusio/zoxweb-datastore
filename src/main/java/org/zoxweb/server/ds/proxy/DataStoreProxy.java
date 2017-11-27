@@ -15,6 +15,7 @@
  */
 package org.zoxweb.server.ds.proxy;
 
+import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.shared.api.APIBatchResult;
@@ -343,6 +344,21 @@ public class DataStoreProxy
 	public IDGenerator<String> getIDGenerator()
 	{
 		return null;
+	}
+	
+	public boolean isValidReferenceID(String refID) 
+	{
+		try
+		{
+		// TODO Auto-generated method stub
+			return ObjectId.isValid(refID);
+		}
+		catch(Exception e)
+		{
+			
+		}
+		
+		return false;
 	}
 
 }

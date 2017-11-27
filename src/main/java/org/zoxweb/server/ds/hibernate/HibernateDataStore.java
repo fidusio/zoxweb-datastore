@@ -547,4 +547,10 @@ public class HibernateDataStore
 		return null;
 	}
 
+	@Override
+	public boolean isValidReferenceID(String refID) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
 }

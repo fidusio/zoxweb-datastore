@@ -3237,4 +3237,20 @@ public class MongoDataStore
 	{
 		dataCacheMonitor = dcm;
 	}
+
+
+	public boolean isValidReferenceID(String refID) 
+	{
+		try
+		{
+		// TODO Auto-generated method stub
+			return ObjectId.isValid(refID);
+		}
+		catch(Exception e)
+		{
+			
+		}
+		
+		return false;
+	}
 }

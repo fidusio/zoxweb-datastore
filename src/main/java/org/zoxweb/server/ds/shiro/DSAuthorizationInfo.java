@@ -7,13 +7,15 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Logger;
 
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.authz.Permission;
-
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
+import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
+import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.CRUD;
-
+import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.SharedUtil;
 
 
@@ -33,6 +35,7 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 	protected Set<Permission> objectPermissions = null;
 	private boolean dirty = true;
 	private ShiroDSRealm realm;
+	private static final transient Logger log = Logger.getLogger(DSAuthorizationInfo.class.getName());
 	
 	
 	
@@ -105,6 +108,7 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 	
 	private synchronized void update()
 	{
+		log.info("START:" + rulesMap.size());
 		if (dirty)
 		{
 			if (stringPermissions == null)
@@ -121,6 +125,8 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 				objectPermissions = new HashSet<Permission>();
 			}
 			stringPermissions.clear();
+			roles.clear();
+			objectPermissions.clear();
 			Iterator<ShiroAssociationRuleDAO> it = rulesMap.values().iterator();
 			while(it.hasNext())
 			{
@@ -161,6 +167,21 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 				case ROLE_TO_ROLEGROUP:
 					break;
 				case ROLE_TO_SUBJECT:
+					ShiroRoleDAO role = sard.getAssociation();
+					roles.add(role.getSubjectID());
+					for (NVEntity nve : role.getPermissions().values())
+					{
+						if (nve instanceof ShiroPermissionDAO)
+						{
+							ShiroPermissionDAO permission = (ShiroPermissionDAO) nve;
+							if (permission.getPermissionPattern() != null)
+							{
+								log.info("Adding permission : " + permission.getPermissionPattern());
+								stringPermissions.add(permission.getPermissionPattern());
+							}
+						}
+					}
+					
 					break;	
 				}
 			}
