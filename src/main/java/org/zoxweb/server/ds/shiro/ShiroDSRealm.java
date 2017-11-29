@@ -207,6 +207,10 @@ public class ShiroDSRealm
 			    
 			    return new DomainAuthenticationInfo(jwtAuthToken.getSubjectID(), sak.getUserID(), sak.getAPISecretAsBytes(), getName(), domainID, appID);
 			}
+			catch(Exception e)
+			{
+				e.printStackTrace();
+			}
 			finally
 			{
 				IOUtil.close(ss);

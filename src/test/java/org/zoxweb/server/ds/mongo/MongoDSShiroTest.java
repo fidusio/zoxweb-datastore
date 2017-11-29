@@ -58,9 +58,9 @@ public class MongoDSShiroTest
 	private static final String MONGO_CONF = "mongo_conf.json";
 	private static final String KEYSTORE_INFO = "key_store_info.json";
 	private static final String SHIRO_INI = "shiro.ini";
-	private static final String TEST_USER = "test@xlosistx.io";
+	private static final String TEST_USER = "test@xlogistx.io";
 	private static final String TEST_PASSWORD= "T!st2s3r";
-	private static final String ILLEGAL_USER = "illegal@xlosistx.io";
+	private static final String ILLEGAL_USER = "illegal@xlogistx.io";
 	private static final String ILLEGAL_PASSWORD= "T!st2s3r";
 	private static final String DEFAULT_API_KEY = "test_default_api_key";
 	
