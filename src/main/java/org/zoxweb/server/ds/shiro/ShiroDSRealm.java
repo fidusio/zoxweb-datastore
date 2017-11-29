@@ -18,6 +18,7 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
+import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
@@ -39,9 +40,9 @@ import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
-import org.zoxweb.shared.db.QueryMatch;
+
 import org.zoxweb.shared.db.QueryMatchString;
-import org.zoxweb.shared.filters.FilterType;
+
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.SubjectAPIKey;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
@@ -52,7 +53,7 @@ import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 import org.zoxweb.shared.util.SetName;
-import org.zoxweb.shared.util.SharedStringUtil;
+
 import org.zoxweb.shared.util.SharedUtil;
 
 import com.mongodb.BasicDBObject;
@@ -111,7 +112,7 @@ public class ShiroDSRealm
 	   {
 	        //String userName = (String) getAvailablePrincipal(principals);
 	        String domainID  = ((DomainPrincipalCollection) principals).getDomainID();
-	        String userID = ((DomainPrincipalCollection) principals).getSubjectID();
+	        String userID = ((DomainPrincipalCollection) principals).getUserID();
 	       
 	        DSAuthorizationInfo  info = new DSAuthorizationInfo(this);
 	        
@@ -332,39 +333,41 @@ public class ShiroDSRealm
 	public  UserIDDAO lookupUserID(String subjectID, String ...params)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		SharedUtil.checkIfNulls("subjectID null", subjectID);
-		QueryMatch<?> query = null;
-		if (FilterType.EMAIL.isValid(subjectID))
-		{
-			// if we have an email
-			query = new QueryMatch<String>(RelationalOperator.EQUAL, subjectID, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
-		}
-		else
-		{
-			query = new QueryMatchObjectId(RelationalOperator.EQUAL, subjectID, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
-		}
-	
-		ArrayList<String> listParams = null;
-		if (params != null && params.length > 0)
-		{
-			listParams = new ArrayList<String>();
-			for (String str : params)
-			{
-				if (!SharedStringUtil.isEmpty(str))
-				{
-					listParams.add(str);
-				}
-			}
-		}
 		
-		List<UserIDDAO> listOfUserIDDAO = getDataStore().search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
-		
-		if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
-		{
-			return null;
-		}
-		
-		return listOfUserIDDAO.get(0);
+		return APIAppManagerProvider.lookupUserID(getDataStore(), subjectID, params);
+//		SharedUtil.checkIfNulls("subjectID null", subjectID);
+//		QueryMatch<?> query = null;
+//		if (FilterType.EMAIL.isValid(subjectID))
+//		{
+//			// if we have an email
+//			query = new QueryMatch<String>(RelationalOperator.EQUAL, subjectID, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
+//		}
+//		else
+//		{
+//			query = new QueryMatchObjectId(RelationalOperator.EQUAL, subjectID, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
+//		}
+//	
+//		ArrayList<String> listParams = null;
+//		if (params != null && params.length > 0)
+//		{
+//			listParams = new ArrayList<String>();
+//			for (String str : params)
+//			{
+//				if (!SharedStringUtil.isEmpty(str))
+//				{
+//					listParams.add(str);
+//				}
+//			}
+//		}
+//		
+//		List<UserIDDAO> listOfUserIDDAO = getDataStore().search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
+//		
+//		if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
+//		{
+//			return null;
+//		}
+//		
+//		return listOfUserIDDAO.get(0);
 
 	}
 	

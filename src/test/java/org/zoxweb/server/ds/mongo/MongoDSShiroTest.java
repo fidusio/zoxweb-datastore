@@ -294,7 +294,7 @@ public class MongoDSShiroTest
 	}
 	
 	@Test
-	public void loadKeySuccessByaSuperAdmin()
+	public void loadKeySuccessBySuperAdmin()
 	{
 		
 		apiSecurityManager.logout();

@@ -1318,7 +1318,6 @@ public class MongoDataStore
 			else if (nvc.isTypeReferenceID() && !ReservedID.REFERENCE_ID.getName().equals(nvc.getName()))
 			{
 				String value = (String) nvb.getValue();
-				
 				if (value != null)
 				{
 					doc.append(ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
