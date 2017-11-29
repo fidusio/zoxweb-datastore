@@ -19,18 +19,22 @@ import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
-
+import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
 
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
+import org.zoxweb.server.security.shiro.SubjectSwap;
 import org.zoxweb.server.security.shiro.authc.DomainAuthenticationInfo;
 import org.zoxweb.server.security.shiro.authc.DomainPrincipalCollection;
 import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
+import org.zoxweb.server.security.shiro.authc.JWTAuthenticationToken;
+import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISecurityManager;
 
 import org.zoxweb.shared.crypto.PasswordDAO;
+import org.zoxweb.shared.data.AppDeviceDAO;
 import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -39,7 +43,7 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.security.AccessException;
-
+import org.zoxweb.shared.security.SubjectAPIKey;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
@@ -141,7 +145,7 @@ public class ShiroDSRealm
 		
 		if (token instanceof DomainUsernamePasswordToken)
 		{
-			log.info("Domain based authentication");
+			log.info("DomainUsernamePasswordToken based authentication");
 			DomainUsernamePasswordToken upToken = (DomainUsernamePasswordToken) token;
 	        String userName = upToken.getUsername();
 	        String domainID = upToken.getDomainID();
@@ -166,8 +170,48 @@ public class ShiroDSRealm
 	        }
 
 	        return new DomainAuthenticationInfo(userName, upToken.getUserID(), password, getName(), domainID, upToken.getAppID());
-	    }	
-		 throw new AuthenticationException("Not a domain info");
+	    }
+		else if (token instanceof JWTAuthenticationToken)
+		{
+			log.info("JWTAuthenticationToken based authentication");
+			// lookup AppDeviceDAO or SubjectAPIKey
+			// in oder to do that we need to switch the user to SUPER_ADMIN or DAEMON user
+			JWTAuthenticationToken jwtAuthToken = (JWTAuthenticationToken) token;
+			SubjectSwap ss = null;
+			try
+			{
+				APISecurityManager<Subject> sm = ResourceManager.SINGLETON.lookup(Resource.API_SECURITY_MANAGER);
+				APIAppManager appManager =  ResourceManager.SINGLETON.lookup(Resource.API_APP_MANAGER);
+				
+				ss = new SubjectSwap(sm.getDaemonSubject());
+				SubjectAPIKey sak = appManager.lookupSubjectAPIKey(jwtAuthToken.getJWTSubjectID(), false);
+				if (sak == null)
+					throw new UnknownAccountException("No account found for user [" + jwtAuthToken.getJWTSubjectID() + "]");
+				UserIDDAO userIDDAO = lookupUserID(sak.getUserID(), "_id", "_user_id", "primary_email");
+			    if (userIDDAO == null)
+			    {
+			        throw new AccountException("Account not found usernames are not allowed by this realm.");
+			    }
+			    jwtAuthToken.setSubjectID(userIDDAO.getSubjectID());
+			    
+			    String domainID = jwtAuthToken.getDomainID();
+			    String appID    = jwtAuthToken.getAppID();
+			    if (sak instanceof AppDeviceDAO)
+			    {
+			    	domainID = ((AppDeviceDAO) sak).getDomainID();
+				    appID    = ((AppDeviceDAO) sak).getAppID();
+			    }
+			    
+			    return new DomainAuthenticationInfo(jwtAuthToken.getSubjectID(), sak.getUserID(), sak.getAPISecretAsBytes(), getName(), domainID, appID);
+			}
+			finally
+			{
+				IOUtil.close(ss);
+			}
+			
+			
+		}
+		 throw new AuthenticationException("Invalid Authentication Token");
 	}
 
 	

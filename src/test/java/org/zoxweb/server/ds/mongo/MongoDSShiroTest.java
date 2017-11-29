@@ -41,6 +41,8 @@ import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
+
+
 import org.zoxweb.shared.security.AccessException;
 
 
@@ -134,6 +136,9 @@ public class MongoDSShiroTest
 			if (appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, false) == null)
 			{
 				registerSubjectAPIKey(DEFAULT_API_KEY, TEST_USER, TEST_PASSWORD);
+				apiSecurityManager.logout();
+				registerSubjectAPIKey(null, ILLEGAL_USER, ILLEGAL_PASSWORD);
+				apiSecurityManager.logout();
 			}
 		}
 		catch(Exception e)
