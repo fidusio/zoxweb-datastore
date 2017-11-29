@@ -192,6 +192,8 @@ public class ShiroDSRealm
 			    {
 			        throw new AccountException("Account not found usernames are not allowed by this realm.");
 			    }
+			    
+			    // set the actual user 
 			    jwtAuthToken.setSubjectID(userIDDAO.getSubjectID());
 			    
 			    String domainID = jwtAuthToken.getDomainID();
