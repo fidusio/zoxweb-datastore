@@ -164,7 +164,7 @@ public class ShiroDSRealm
 	        	throw new UnknownAccountException("No account found for user [" + upToken.getUserID() + "]");
 	        }
 
-	        return new DomainAuthenticationInfo(userName, upToken.getUserID(), password, getName(), domainID, upToken.getAppID());
+	        return new DomainAuthenticationInfo(userName, upToken.getUserID(), password, getName(), domainID, upToken.getAppID(), null);
 	    }
 		else if (token instanceof JWTAuthenticationToken)
 		{
@@ -199,7 +199,9 @@ public class ShiroDSRealm
 				    appID    = ((AppDeviceDAO) sak).getAppID();
 			    }
 			    
-			    return new DomainAuthenticationInfo(jwtAuthToken.getSubjectID(), sak.getUserID(), sak.getAPISecretAsBytes(), getName(), domainID, appID);
+			    DomainAuthenticationInfo ret =  new DomainAuthenticationInfo(jwtAuthToken.getSubjectID(), sak.getUserID(), sak.getAPISecretAsBytes(), getName(), domainID, appID, jwtAuthToken.getJWTSubjectID());
+			    
+			    return ret;
 			}
 			catch(Exception e)
 			{
