@@ -66,7 +66,7 @@ public class ShiroDSRealm
 	private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
 	
 	private APIDataStore<?> dataStore;
-	private APISecurityManager<Subject> apiSecurityManager;
+	
 	
 	
 	public ShiroDSRealm()
@@ -74,13 +74,7 @@ public class ShiroDSRealm
 		
 	}
 
-	public APISecurityManager<Subject> getAPISecurityManager() {
-		return apiSecurityManager != null ? apiSecurityManager :  ResourceManager.SINGLETON.lookup(Resource.API_SECURITY_MANAGER);
-	}
-
-	public void setAPISecurityManager(APISecurityManager<Subject> apiSecurityManager) {
-		this.apiSecurityManager = apiSecurityManager;
-	}
+	
 	
 	public APIDataStore<?> getDataStore()
 	{

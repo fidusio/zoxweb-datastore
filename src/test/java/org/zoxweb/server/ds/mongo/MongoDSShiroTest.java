@@ -10,7 +10,7 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 import org.apache.shiro.SecurityUtils;
-
+import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
@@ -25,6 +25,7 @@ import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
 import org.zoxweb.server.security.shiro.ShiroUtil;
+import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
@@ -34,6 +35,8 @@ import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.model.SecurityModel;
+import org.zoxweb.shared.security.model.SecurityModel.Role;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
@@ -126,8 +129,26 @@ public class MongoDSShiroTest
 		appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
 		appManager.setAPISecurityManager(apiSecurityManager);
 
-        createAPP(DOMAIN_ID, APP_ID);
+        
+		
+		
+		try
+		{
+			
+			createUser(SUPER_ADMIN, SUPER_PASSWORD);
+			createSuperAdminRole();
+			associateAdminRole();
+			
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		
+		
+		createAPP(DOMAIN_ID, APP_ID);
 		createAPP(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID);
+		
 		
 		try 
 		{
@@ -148,16 +169,8 @@ public class MongoDSShiroTest
 		}
 		
 		
-		try
-		{
-			createSuperAdminRole();
-		}
-		catch(Exception e)
-		{
-			e.printStackTrace();
-		}
 		
-		associateAdminRole();
+		
 		
 		apiSecurityManager.login(TEST_USER, TEST_PASSWORD, DOMAIN_ID, APP_ID, false);
 		}
@@ -198,6 +211,55 @@ public class MongoDSShiroTest
         
         registerSubjectAPIKey(null, TEST_USER, TEST_PASSWORD);
     }
+	
+	
+	@Test
+	public void testPemissions()
+	{
+		apiSecurityManager.logout();
+		//apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
+		Subject currentUser = SecurityUtils.getSubject();
+		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
+		DomainUsernamePasswordToken token = new DomainUsernamePasswordToken(SUPER_ADMIN, SUPER_PASSWORD, false, null, DOMAIN_ID, APP_ID);
+        //token.setAutoAuthenticationEnabled(autoLogin);
+
+        //this is all you have to do to support 'remember me' (no config - built in!):
+        token.setRememberMe(true);
+
+        currentUser.login(token);
+		
+		
+		
+		//System.out.println("Principals:" + realm.getAuthenticationInfo(token).getClass().getName());
+		System.out.println("Principals:" + currentUser.getPrincipals().getClass().getName());
+		
+		System.out.println("AutorizationInfo:" + realm.lookupAuthorizationInfo(currentUser.getPrincipals()).getClass().getName());
+		
+		
+		
+		String permissions[]  = 
+			{
+	    		"nventity:read:batata",
+	    		"write:batata", 
+	    		"nventity:update:batata",
+	    		"batata:update",
+	    		"batata:update:all"
+	    	};
+	
+		for (String permission : permissions)
+		{
+			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
+		}
+		AuthorizationInfo ai =  realm.lookupAuthorizationInfo(currentUser.getPrincipals());
+		ai.getStringPermissions().add("write:batata");
+		System.out.println("=================================");
+		for (String permission : permissions)
+		{
+			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
+		}
+		
+		apiSecurityManager.logout();
+	}
 	
 	
 	
@@ -246,23 +308,23 @@ public class MongoDSShiroTest
 	
 	public void createAPP(String domainID, String appID)
 	{
-		String subjectID = SUPER_ADMIN;
-		String password  = SUPER_PASSWORD;
-		UserIDDAO userID = new UserIDDAO();
-		
-		userID.setSubjectID(subjectID);
-		UserInfoDAO userInfo = new UserInfoDAO();
-		userInfo.setFirstName("N/S");
-		userInfo.setLastName("N/S");
-		userID.setUserInfo(userInfo);
-		try
-		{
-			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
-		}
-		catch(Exception e)
-		{
-		}
-		
+//		String subjectID = SUPER_ADMIN;
+//		String password  = SUPER_PASSWORD;
+//		UserIDDAO userID = new UserIDDAO();
+//		
+//		userID.setSubjectID(subjectID);
+//		UserInfoDAO userInfo = new UserInfoDAO();
+//		userInfo.setFirstName("N/S");
+//		userInfo.setLastName("N/S");
+//		userID.setUserInfo(userInfo);
+//		try
+//		{
+//			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
+//		}
+//		catch(Exception e)
+//		{
+//		}
+//		
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, null, null, false);
 		
@@ -309,15 +371,45 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 		
-		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
-		ShiroRoleDAO superAdminRole = new ShiroRoleDAO(DOMAIN_ID, APP_ID, "super_admin_role", "Super admin role");
 		
-		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_read_all", "Read all nves", "nventity:read:*")));
-		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_delete_all", "Delete all nves", "nventity:delete:*")));
-		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_update_all", "Update all nves", "nventity:update:*")));
-		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_create_all", "Create all nves", "nventity:create:*")));
-		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_move_all", "Move all nves", "nventity:move:*")));
+		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
+		
+		
+		// set the permission manually
+		AuthorizationInfo ai =  realm.lookupAuthorizationInfo(SecurityUtils.getSubject().getPrincipals());
+		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
+		{
+			ai.getStringPermissions().add(permission.getValue());
+		}
+		
+		
+//		ShiroRoleDAO superAdminRole = new ShiroRoleDAO(DOMAIN_ID, APP_ID, "super_admin_role", "Super admin role");
+//		
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_read_all", "Read all nves", "nventity:read:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_delete_all", "Delete all nves", "nventity:delete:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_update_all", "Update all nves", "nventity:update:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_create_all", "Create all nves", "nventity:create:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_move_all", "Move all nves", "nventity:move:*")));
+//		realm.addRole(superAdminRole);
+		
+		
+		ShiroRoleDAO superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(DOMAIN_ID, APP_ID);
+		
+		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
+		{
+			ShiroPermissionDAO permDAO = permission.toPermission(DOMAIN_ID, APP_ID);
+			realm.addPermission(permDAO);
+			SecurityModel.Role.addPermission(superAdminRole, permDAO);
+		}
+		
 		realm.addRole(superAdminRole);
+		
+		try {
+			System.out.println(GSONUtil.toJSON(superAdminRole, true, false, false));
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
 		apiSecurityManager.logout();
 
@@ -330,9 +422,9 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 		
-		log.info("USER ID:" + ShiroUtil.subjectUserID());
+		log.info("USER ID********************************:" + ShiroUtil.subjectUserID());
 		sard.setAssociatedTo(ShiroUtil.subjectUserID());
-		sard.setAssociate("test.com:testapp:super_admin_role");
+		sard.setAssociate(SecurityModel.toSubjectID(DOMAIN_ID, APP_ID, Role.SUPER_ADMIN));
 		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
 		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
 		sard.setName("SuperAdminRule");
