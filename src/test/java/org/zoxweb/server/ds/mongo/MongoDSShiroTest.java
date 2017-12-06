@@ -219,7 +219,7 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		//apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 		Subject currentUser = SecurityUtils.getSubject();
-		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
+//		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
 		DomainUsernamePasswordToken token = new DomainUsernamePasswordToken(SUPER_ADMIN, SUPER_PASSWORD, false, null, DOMAIN_ID, APP_ID);
         //token.setAutoAuthenticationEnabled(autoLogin);
 
@@ -233,7 +233,7 @@ public class MongoDSShiroTest
 		//System.out.println("Principals:" + realm.getAuthenticationInfo(token).getClass().getName());
 		System.out.println("Principals:" + currentUser.getPrincipals().getClass().getName());
 		
-		System.out.println("AutorizationInfo:" + realm.lookupAuthorizationInfo(currentUser.getPrincipals()).getClass().getName());
+		//System.out.println("AutorizationInfo:" + realm.lookupAuthorizationInfo(currentUser.getPrincipals()).getClass().getName());
 		
 		
 		
@@ -250,13 +250,13 @@ public class MongoDSShiroTest
 		{
 			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
 		}
-		AuthorizationInfo ai =  realm.lookupAuthorizationInfo(currentUser.getPrincipals());
-		ai.getStringPermissions().add("write:batata");
-		System.out.println("=================================");
-		for (String permission : permissions)
-		{
-			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
-		}
+//		AuthorizationInfo ai =  realm.lookupAuthorizationInfo(currentUser.getPrincipals());
+//		ai.getStringPermissions().add("write:batata");
+//		System.out.println("=================================");
+//		for (String permission : permissions)
+//		{
+//			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
+//		}
 		
 		apiSecurityManager.logout();
 	}
