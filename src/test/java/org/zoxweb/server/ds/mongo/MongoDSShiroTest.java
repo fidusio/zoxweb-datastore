@@ -419,20 +419,23 @@ public class MongoDSShiroTest
 	
 	public void associateAdminRole()
 	{
-		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+		
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 		
 		log.info("USER ID********************************:" + ShiroUtil.subjectUserID());
+		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
 		sard.setAssociatedTo(ShiroUtil.subjectUserID());
 		sard.setAssociate(SecurityModel.toSubjectID(DOMAIN_ID, APP_ID, Role.SUPER_ADMIN));
-		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
 		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
 		sard.setName("SuperAdminRule");
 		sard.setExpiration(null);
 		sard.setAssociationStatus(Status.ACTIVE);
 		
-		realm.addShiroRule(sard);
+		
+		
+		
+		apiSecurityManager.addShiroRule(sard);
 		
 		apiSecurityManager.logout();
 		

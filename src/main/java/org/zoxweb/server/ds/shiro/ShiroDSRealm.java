@@ -222,10 +222,12 @@ public class ShiroDSRealm
 	public void addShiroRule(ShiroAssociationRuleDAO sard) 
 	{
 		SharedUtil.checkIfNulls("Association parameters can't be null", sard, sard.getName(), sard.getAssociationType(), sard.getAssociatedTo()/*, sard.getAssociate()*/);
+		List<QueryMarker> queryCriteria = null;
+		List<ShiroAssociationRuleDAO> list = null;
 		switch(sard.getAssociationType())
 		{
 		case PERMISSION_TO_SUBJECT:
-			List<QueryMarker> queryCriteria = new ArrayList<QueryMarker>();
+			queryCriteria = new ArrayList<QueryMarker>();
 			if (sard.getAssociate() != null)
 				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
 			
@@ -235,7 +237,7 @@ public class ShiroDSRealm
 			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getName(), DataParam.NAME));
 			
 			//System.out.println(queryCriteria);
-			List<ShiroAssociationRuleDAO> list = search(queryCriteria.toArray(new QueryMarker[0]));
+			list = search(queryCriteria.toArray(new QueryMarker[0]));
 			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
 				getDataStore().insert(sard);
@@ -258,18 +260,30 @@ public class ShiroDSRealm
 			// associate should be ShiroRoleDAO
 			
 			
-			ShiroRoleDAO role = lookupRole(sard.getAssociate());
-			if (role != null)
+//			queryCriteria = new ArrayList<QueryMarker>();
+//			if (sard.getAssociate() != null)
+//				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+//			
+//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+//			
+//			
+//			list = search(queryCriteria.toArray(new QueryMarker[0]));
+//			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
-				// maybe check role permission
-				sard.setAssociation(role);
-				List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
-					   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
-				if (roleSard == null || roleSard.size() == 0)
+				ShiroRoleDAO role = lookupRole(sard.getAssociate());
+				if (role != null)
 				{
-					getDataStore().insert(sard);
+					// maybe check role permission
+					sard.setAssociation(role);
+					List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
+						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+					if (roleSard == null || roleSard.size() == 0)
+					{
+						getDataStore().insert(sard);
+					}
+					
 				}
-				
 			}
 			// check if the role exist
 			//getDataStore().search(ShiroRoleDAO.NVC_SHIRO_ROLE_DAO, null, queryCriteria);
