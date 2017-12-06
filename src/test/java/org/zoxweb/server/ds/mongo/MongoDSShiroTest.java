@@ -398,11 +398,12 @@ public class MongoDSShiroTest
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
 			ShiroPermissionDAO permDAO = permission.toPermission(DOMAIN_ID, APP_ID);
-			realm.addPermission(permDAO);
+			apiSecurityManager.addPermission(permDAO);
 			SecurityModel.Role.addPermission(superAdminRole, permDAO);
 		}
 		
-		realm.addRole(superAdminRole);
+		apiSecurityManager.addRole(superAdminRole);
+		
 		
 		try {
 			System.out.println(GSONUtil.toJSON(superAdminRole, true, false, false));
