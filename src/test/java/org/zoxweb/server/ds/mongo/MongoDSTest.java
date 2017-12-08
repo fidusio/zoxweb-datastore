@@ -20,7 +20,7 @@ import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
-import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
+import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 
 import org.zoxweb.server.util.GSONUtil;
@@ -68,7 +68,7 @@ public class MongoDSTest
 			// load the mongo config file
 			// create the data store
 			dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-			APISecurityManager<Subject> apiSecurityManager = new DefaultAPISecurityManager();
+			APISecurityManager<Subject> apiSecurityManager = new APISecurityManagerProvider();
 			dsConfig.setAPISecurityManager(apiSecurityManager);
 			
 			

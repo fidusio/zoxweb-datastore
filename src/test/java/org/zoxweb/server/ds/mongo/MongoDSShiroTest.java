@@ -23,7 +23,7 @@ import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
-import org.zoxweb.server.security.shiro.DefaultAPISecurityManager;
+import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.GSONUtil;
@@ -99,7 +99,7 @@ public class MongoDSShiroTest
 		// load the mongo config file
 		// create the data store
 		dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-		apiSecurityManager = new DefaultAPISecurityManager();
+		apiSecurityManager = new APISecurityManagerProvider();
 		dsConfig.setAPISecurityManager(apiSecurityManager);
 		
 		Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:" + SHIRO_INI);
