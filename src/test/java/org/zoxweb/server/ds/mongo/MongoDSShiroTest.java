@@ -42,6 +42,7 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.ResourceManager;
+import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 
@@ -234,6 +235,7 @@ public class MongoDSShiroTest
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
 			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
 			sard = new ShiroAssociationRuleDAO();
@@ -241,6 +243,7 @@ public class MongoDSShiroTest
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
 			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
 			
@@ -251,6 +254,7 @@ public class MongoDSShiroTest
 			sard.setAssociatedTo(spUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
 			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
 			
@@ -521,5 +525,58 @@ public class MongoDSShiroTest
 		}
 		
 	}
+	
+	
+	@Test
+	public void appAdminPermissionCheck()
+	{
+		
+		String admin = "appadmin@propanexp.com";
+		//String sp = "sp@propanexp.com";
+		String pwd = "T1stpwd!";
+		apiSecurityManager.logout();
+		apiSecurityManager.login(admin, pwd, PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, false);
+//		String permissions[]  = 
+//				{
+//		    		"nventity:read:batata",
+//		    		"write:batata", 
+//		    		"nventity:update:batata",
+//		    		"batata:update",
+//		    		"batata:update:all"
+//		    	};
+//		
+//		for (String permission : permissions)
+//		{
+//			
+//			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
+//		}
+		
+
+		System.out.println("*****************************************************************************");
+		SecurityModel.Role[] roles = {SecurityModel.Role.APP_ADMIN, SecurityModel.Role.APP_USER, SecurityModel.Role.APP_SERVICE_PROVIDER};
+		
+		for (SecurityModel.Role role : roles) {
+            String roleSubjectID = SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, role);
+            System.out.println(roleSubjectID);
+            System.out.println(SharedUtil.toCanonicalID('-', apiSecurityManager.currentSubjectID(), apiSecurityManager.currentUserID(), apiSecurityManager.currentDomainID(), apiSecurityManager.currentAppID()));
+
+            if (apiSecurityManager.hasRole(roleSubjectID)) {
+            	System.out.println("Role Exists: " + roleSubjectID);
+                //appAccessMode.getRolesAsList().getValue().add(role);
+            }
+            
+            if (apiSecurityManager.hasRole(roleSubjectID)) {
+            	System.out.println("Role Exists: " + roleSubjectID);
+                //appAccessMode.getRolesAsList().getValue().add(role);
+            }
+        }
+		
+		apiSecurityManager.logout();
+		
+		
+	}
+	
+	
+	
 
 }

@@ -179,7 +179,7 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 					break;
 				case ROLE_TO_SUBJECT:
 					ShiroRoleDAO role = sard.getAssociation();
-					System.out.println("role:" + role.getSubjectID());
+					System.out.println("%^$#%$#%$#%$#%$#%$#%$#%%$#%$#%%%$#@#$@%@#$$#%$$#%$#role:" + role.getSubjectID());
 					roles.add(role.getSubjectID());
 					for (NVEntity nve : role.getPermissions().values())
 					{
