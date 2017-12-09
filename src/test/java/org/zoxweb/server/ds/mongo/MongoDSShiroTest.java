@@ -45,8 +45,6 @@ import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 
-import javassist.tools.rmi.AppletServer;
-
 import org.zoxweb.shared.security.AccessException;
 
 
@@ -222,35 +220,49 @@ public class MongoDSShiroTest
 		String sp = "sp@propanexp.com";
 		String pwd = "T1stpwd!";
 		apiSecurityManager.logout();
-		String adminUserID = createUser(admin, pwd).getUserID();
-	
-	
-		String spUserID = createUser(sp, pwd).getUserID();//apiSecurityManager.currentUserID();
+		try {
+			String adminUserID = createUser(admin, pwd).getUserID();
 		
 		
-		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
-		
-		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
-		sard.setName(SecurityModel.Role.APP_ADMIN.getName());
-		sard.setAssociatedTo(adminUserID);
-		sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
-		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
-		apiSecurityManager.addShiroRule(sard);
-		
-		
-		
-		
-		sard = new ShiroAssociationRuleDAO();
-		sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
-		sard.setAssociatedTo(spUserID);
-		sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
-		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
-		apiSecurityManager.addShiroRule(sard);
-		
-		
-		
-		apiSecurityManager.logout();
-		
+			String spUserID = createUser(sp, pwd).getUserID();//apiSecurityManager.currentUserID();
+			
+			
+			apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
+			
+			ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+			sard.setName(SecurityModel.Role.APP_ADMIN.getName());
+			sard.setAssociatedTo(adminUserID);
+			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
+			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			apiSecurityManager.addShiroRule(sard);
+			
+			sard = new ShiroAssociationRuleDAO();
+			sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
+			sard.setAssociatedTo(adminUserID);
+			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
+			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			apiSecurityManager.addShiroRule(sard);
+			
+			
+			
+			
+			sard = new ShiroAssociationRuleDAO();
+			sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
+			sard.setAssociatedTo(spUserID);
+			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
+			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+			apiSecurityManager.addShiroRule(sard);
+			
+			
+			
+			
+			
+			apiSecurityManager.logout();
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+		}
 		
 		
 		
