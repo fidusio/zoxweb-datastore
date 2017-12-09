@@ -391,7 +391,8 @@ public class MongoDSShiroTest
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, null, null, false);
 		
-		appManager.createAppIDDAO(domainID, appID);
+		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
+		log.info("App created:" + aid.getAppGID());
 		apiSecurityManager.logout();
 	}
 	
