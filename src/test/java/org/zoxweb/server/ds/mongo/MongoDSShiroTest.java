@@ -45,6 +45,7 @@ import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 
+import javassist.tools.rmi.AppletServer;
 
 import org.zoxweb.shared.security.AccessException;
 
@@ -213,6 +214,52 @@ public class MongoDSShiroTest
     }
 	
 	
+	
+	@Test
+	public void createPropaneXPUser()
+	{
+		String admin = "appadmin@propanexp.com";
+		String sp = "sp@propanexp.com";
+		String pwd = "T1stpwd!";
+		apiSecurityManager.logout();
+		String adminUserID = createUser(admin, pwd).getUserID();
+	
+	
+		String spUserID = createUser(sp, pwd).getUserID();//apiSecurityManager.currentUserID();
+		
+		
+		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
+		
+		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+		sard.setName(SecurityModel.Role.APP_ADMIN.getName());
+		sard.setAssociatedTo(adminUserID);
+		sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
+		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+		apiSecurityManager.addShiroRule(sard);
+		
+		
+		
+		
+		sard = new ShiroAssociationRuleDAO();
+		sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
+		sard.setAssociatedTo(spUserID);
+		sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
+		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+		apiSecurityManager.addShiroRule(sard);
+		
+		
+		
+		apiSecurityManager.logout();
+		
+		
+		
+		
+		
+		
+	}
+	
+	
+	
 	@Test
 	public void testPemissions()
 	{
@@ -292,7 +339,7 @@ public class MongoDSShiroTest
         log.info(""+val);
     }
 	
-	private void createUser(String subjectID, String password)
+	private UserIDDAO createUser(String subjectID, String password)
 	{
 		
 		UserIDDAO userID = new UserIDDAO();
@@ -302,7 +349,7 @@ public class MongoDSShiroTest
 		userInfo.setFirstName("N/S");
 		userInfo.setLastName("N/S");
 		userID.setUserInfo(userInfo);
-		appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
