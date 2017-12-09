@@ -18,7 +18,7 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.bson.types.ObjectId;
-import org.zoxweb.server.api.APIAppManagerProvider;
+
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
@@ -31,7 +31,7 @@ import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.security.shiro.authc.JWTAuthenticationToken;
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
+
 import org.zoxweb.shared.api.APISecurityManager;
 
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -48,7 +48,7 @@ import org.zoxweb.shared.security.SubjectAPIKey;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
-import org.zoxweb.shared.util.GetValue;
+
 import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
@@ -76,7 +76,7 @@ public class ShiroDSRealm
 
 	
 	
-	public APIDataStore<?> getDataStore()
+	public APIDataStore<?> getAPIDataStore()
 	{
 		return dataStore != null ? dataStore : ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
 	}
@@ -240,7 +240,7 @@ public class ShiroDSRealm
 			list = search(queryCriteria.toArray(new QueryMarker[0]));
 			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
-				getDataStore().insert(sard);
+				getAPIDataStore().insert(sard);
 			}
 			// if a user was granted access and he currently logged in we 
 			// must update his permissions and roles
@@ -280,7 +280,7 @@ public class ShiroDSRealm
 						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
 					if (roleSard == null || roleSard.size() == 0)
 					{
-						getDataStore().insert(sard);
+						getAPIDataStore().insert(sard);
 					}
 					
 				}
@@ -320,7 +320,7 @@ public class ShiroDSRealm
 			
 		}
 		
-		return getDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria);
+		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria);
 	}
 
 	@Override
@@ -344,54 +344,7 @@ public class ShiroDSRealm
 	
 	
 	
-	public  UserIDDAO lookupUserID(String subjectID, String ...params)
-			throws NullPointerException, IllegalArgumentException, AccessException, APIException
-	{
-		
-		return APIAppManagerProvider.lookupUserID(getDataStore(), subjectID, params);
-//		SharedUtil.checkIfNulls("subjectID null", subjectID);
-//		QueryMatch<?> query = null;
-//		if (FilterType.EMAIL.isValid(subjectID))
-//		{
-//			// if we have an email
-//			query = new QueryMatch<String>(RelationalOperator.EQUAL, subjectID, UserIDDAO.Param.PRIMARY_EMAIL.getNVConfig());
-//		}
-//		else
-//		{
-//			query = new QueryMatchObjectId(RelationalOperator.EQUAL, subjectID, MetaToken.REFERENCE_ID);//"_id", new BasicDBObject("$in", listOfObjectID)
-//		}
-//	
-//		ArrayList<String> listParams = null;
-//		if (params != null && params.length > 0)
-//		{
-//			listParams = new ArrayList<String>();
-//			for (String str : params)
-//			{
-//				if (!SharedStringUtil.isEmpty(str))
-//				{
-//					listParams.add(str);
-//				}
-//			}
-//		}
-//		
-//		List<UserIDDAO> listOfUserIDDAO = getDataStore().search(UserIDDAO.NVC_USER_ID_DAO, listParams, query);
-//		
-//		if (listOfUserIDDAO == null || listOfUserIDDAO.size() != 1)
-//		{
-//			return null;
-//		}
-//		
-//		return listOfUserIDDAO.get(0);
 
-	}
-	
-	public  UserIDDAO lookupUserID(GetValue<String> subjectID, String ...params)
-			throws NullPointerException, IllegalArgumentException, AccessException
-	{
-		SharedUtil.checkIfNulls("DB or user ID null", getDataStore(), subjectID);
-		return lookupUserID(subjectID.getValue(), params);
-	}
-	
 //	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
 //			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 //	{
@@ -512,7 +465,7 @@ public class ShiroDSRealm
 		BasicDBObject projection = new BasicDBObject();
 		projection = projection.append(FormInfoDAO.Param.FORM_REFERENCE.getNVConfig().getName(), true);
 		
-		BasicDBObject result = getDataStore().lookupByReferenceID(FormInfoDAO.NVC_FORM_INFO_DAO.getName(), new ObjectId(formReferenceID), projection);
+		BasicDBObject result = getAPIDataStore().lookupByReferenceID(FormInfoDAO.NVC_FORM_INFO_DAO.getName(), new ObjectId(formReferenceID), projection);
 		if (result != null)
 		{
 			ret = new HashSet<String>();
@@ -542,13 +495,13 @@ public class ShiroDSRealm
 		ObjectId canonical_id  = (ObjectId) bsonObj.get(MetaToken.CANONICAL_ID.getName());
 		if (reference_id != null && canonical_id != null)
 		{
-			BasicDBObject nvcEntry = getDataStore().lookupByReferenceID("nv_config_entities", canonical_id);
+			BasicDBObject nvcEntry = getAPIDataStore().lookupByReferenceID("nv_config_entities", canonical_id);
 			if (nvcEntry != null && canonical_id != null)
 			{
 				String nvcSubName = nvcEntry.getString(MetaToken.CANONICAL_ID.getName());
 				if(nvcSubName != null)
 				{
-					return getDataStore().lookupByReferenceID(nvcSubName, reference_id);
+					return getAPIDataStore().lookupByReferenceID(nvcSubName, reference_id);
 				}
 			}
 		}
@@ -607,7 +560,7 @@ public class ShiroDSRealm
 		if (userIDDAO != null)
 		{
 			//APIDataStore<?> dataStore = FidusStoreAPIManager.SINGLETON.lookupAPIDataStore(FidusStoreAPIManager.FIDUS_STORE_NAME);
-			List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = getDataStore().searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
+			List<UserIDCredentialsDAO> listOfUserIDCredentialsDAO = getAPIDataStore().searchByID(UserIDCredentialsDAO.NVC_USER_ID_CREDENTIALS_DAO, userIDDAO.getReferenceID());
 			
 			if (listOfUserIDCredentialsDAO != null && listOfUserIDCredentialsDAO.size() == 1)
 			{
