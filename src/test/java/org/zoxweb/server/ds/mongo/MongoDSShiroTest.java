@@ -235,7 +235,7 @@ public class MongoDSShiroTest
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
 			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
-			sard.setExpiration(null);
+			//sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
 			sard = new ShiroAssociationRuleDAO();
@@ -243,7 +243,7 @@ public class MongoDSShiroTest
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
 			sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
-			sard.setExpiration(null);
+			//sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
 			
@@ -565,10 +565,6 @@ public class MongoDSShiroTest
                 //appAccessMode.getRolesAsList().getValue().add(role);
             }
             
-            if (apiSecurityManager.hasRole(roleSubjectID)) {
-            	System.out.println("Role Exists: " + roleSubjectID);
-                //appAccessMode.getRolesAsList().getValue().add(role);
-            }
         }
 		
 		apiSecurityManager.logout();
