@@ -15,8 +15,10 @@ import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
+
 import org.junit.Before;
 import org.junit.Test;
+
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -45,9 +47,7 @@ import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
-
 import org.zoxweb.shared.security.AccessException;
-
 
 public class MongoDSShiroTest
 {
@@ -551,7 +551,6 @@ public class MongoDSShiroTest
 //			
 //			System.out.println(permission + ":" +ShiroUtil.isPermitted(permission) );
 //		}
-		
 
 		System.out.println("*****************************************************************************");
 		SecurityModel.Role[] roles = {SecurityModel.Role.APP_ADMIN, SecurityModel.Role.APP_USER, SecurityModel.Role.APP_SERVICE_PROVIDER};
@@ -569,11 +568,6 @@ public class MongoDSShiroTest
         }
 		
 		apiSecurityManager.logout();
-		
-		
 	}
-	
-	
-	
 
 }
