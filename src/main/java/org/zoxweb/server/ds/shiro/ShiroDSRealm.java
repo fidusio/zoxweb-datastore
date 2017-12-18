@@ -142,29 +142,29 @@ public class ShiroDSRealm
 		{
 			log.info("DomainUsernamePasswordToken based authentication");
 			DomainUsernamePasswordToken upToken = (DomainUsernamePasswordToken) token;
-	        String userName = upToken.getUsername();
-	        String domainID = upToken.getDomainID();
-	        if (userName == null)
+	        //String userName = upToken.getUsername();
+	        //String domainID = upToken.getDomainID();
+	        if (upToken.getUsername() == null)
 	        {
 	            throw new AccountException("Null usernames are not allowed by this realm.");
 	        }
-	        UserIDDAO userIDDAO = lookupUserID(userName, "_id", "_user_id");
+	        UserIDDAO userIDDAO = lookupUserID(upToken.getUsername(), "_id", "_user_id");
 	        if (userIDDAO == null)
 	        {
 	            throw new AccountException("Account not found usernames are not allowed by this realm.");
 	        }
 	        upToken.setUserID(userIDDAO.getUserID());
 	        // String userID = upToken.getUserID();
-	        log.info( domainID +":"+upToken.getUserID());
+	        log.info( upToken.getUsername() +":"+upToken.getUserID());
 	        // Null username is invalid
 	        
-	        PasswordDAO password = getUserPassword(domainID, userName);
+	        PasswordDAO password = getUserPassword(null, upToken.getUsername());
 	        if (password == null)
 	        {
 	        	throw new UnknownAccountException("No account found for user [" + upToken.getUserID() + "]");
 	        }
 
-	        return new DomainAuthenticationInfo(userName, upToken.getUserID(), password, getName(), domainID, upToken.getAppID(), null);
+	        return new DomainAuthenticationInfo(upToken.getUsername(), upToken.getUserID(), password, getName(), upToken.getDomainID(), upToken.getAppID(), null);
 	    }
 		else if (token instanceof JWTAuthenticationToken)
 		{
