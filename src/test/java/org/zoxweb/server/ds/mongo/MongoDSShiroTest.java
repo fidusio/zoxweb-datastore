@@ -36,6 +36,9 @@ import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.http.HTTPMessageConfig;
+import org.zoxweb.shared.http.HTTPMethod;
+import org.zoxweb.shared.http.HTTPParameterFormatter;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
@@ -43,6 +46,7 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
+import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.Const.Status;
@@ -569,5 +573,22 @@ public class MongoDSShiroTest
 		
 		apiSecurityManager.logout();
 	}
+
+	@Test
+    public void createHTTPMessageConfig() {
+        String admin = "appadmin@propanexp.com";
+        //String sp = "sp@propanexp.com";
+        String pwd = "T1stpwd!";
+        apiSecurityManager.logout();
+        apiSecurityManager.login(admin, pwd, PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, false);
+
+	    HTTPMessageConfig hmc = (HTTPMessageConfig) HTTPMessageConfig.createAndInit("http://localhost:8080", "/api", HTTPMethod.GET);
+        hmc.setName("HTTPMessageConfig test");
+        hmc.setHTTPParameterFormatter(HTTPParameterFormatter.URI_REST_ENCODED);
+        hmc.getParameters().add(new NVPair("name", "John Smith"));
+        hmc.getParameters().add(new NVPair("year", "2017"));
+
+        appManager.create(hmc);
+    }
 
 }
