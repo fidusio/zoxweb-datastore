@@ -69,6 +69,7 @@ import org.zoxweb.shared.util.NVEnumList;
 import org.zoxweb.shared.util.NVFloat;
 import org.zoxweb.shared.util.NVFloatList;
 import org.zoxweb.shared.util.NVGenericMap;
+import org.zoxweb.shared.util.NVGetNameValueList;
 import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.NVIntList;
 import org.zoxweb.shared.util.NVLong;
@@ -395,6 +396,18 @@ public class MongoDataStore
 		
 		return listOfDBObject;		
 	}
+	
+	private ArrayList<DBObject> mapArrayValuesNVGetNameValueString(NVEntity container, ArrayValues<GetNameValue<String>> listOfNVPair, boolean sync)
+	{
+		ArrayList<DBObject> listOfDBObject = new ArrayList<DBObject>();
+		
+		for (GetNameValue<String> nvp : listOfNVPair.values())
+		{
+			listOfDBObject.add(mapNVPair(container, new NVPair(nvp.getName(), nvp.getValue()), sync));
+		}
+		
+		return listOfDBObject;		
+	}
 
 	/**
 	 * Maps an enum list to an array list of strings.
@@ -709,19 +722,32 @@ public class MongoDataStore
 				ArrayList<BasicDBObject> list = (ArrayList<BasicDBObject>) dbObject.get(nvc.getName());
 				
 				//List<NVPair> nvpl = new ArrayList<NVPair>();
-				
-				ArrayValues<NVPair> arrayValues = (ArrayValues<NVPair>) nvb;
-				
-				if (list != null)
+				if (nvb instanceof NVGetNameValueList)
 				{
-					for (int i = 0; i < list.size(); i++)
+					if (list != null)
 					{
-						arrayValues.add(toNVPair(userID, container, list.get(i)));
+						for (int i = 0; i < list.size(); i++)
+						{
+							((NVGetNameValueList)nvb).add(toNVPair(userID, container, list.get(i)));
+						}
 					}
+					((NVGetNameValueList)nvb).setFixed(isFixed);
 				}
-				
-				if (nvb instanceof NVPairList)
-					((NVPairList) nvb).setFixed(isFixed);
+				else
+				{
+					ArrayValues<NVPair> arrayValues = (ArrayValues<NVPair>) nvb;
+					
+					if (list != null)
+					{
+						for (int i = 0; i < list.size(); i++)
+						{
+							arrayValues.add(toNVPair(userID, container, list.get(i)));
+						}
+					}
+					
+					if (nvb instanceof NVPairList)
+						((NVPairList) nvb).setFixed(isFixed);
+				}
 				//((NVPairList) nvb).setValue(nvpl);
 				
 				return;
@@ -1255,6 +1281,12 @@ public class MongoDataStore
 					doc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 				doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
 			}
+			else if (nvb instanceof NVGetNameValueList)
+			{	
+				if ( ((NVGetNameValueList) nvb).isFixed())
+					doc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+				doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
+			}
 			else if (nvb instanceof NVPairGetNameMap)
 			{	
 				//log.info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
@@ -1446,6 +1478,12 @@ public class MongoDataStore
 				if ( ((NVPairList) nvb).isFixed())
 					doc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 				doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
+			}
+			else if (nvb instanceof NVGetNameValueList)
+			{	
+				if ( ((NVGetNameValueList) nvb).isFixed())
+					doc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+				doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
 			}
 			else if (nvb instanceof NVPairGetNameMap)
 			{	
@@ -1898,6 +1936,12 @@ public class MongoDataStore
 						updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 					
 					updatedDoc.put(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
+				}
+				else if (nvb instanceof NVGetNameValueList)
+				{	
+					if ( ((NVGetNameValueList) nvb).isFixed())
+						updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+					updatedDoc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
 				}
 				else if (nvb instanceof NVPairGetNameMap)
 				{

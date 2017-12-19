@@ -1,11 +1,13 @@
 package org.zoxweb.server.ds.mongo;
 
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import java.util.List;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -15,7 +17,7 @@ import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
-
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -36,6 +38,7 @@ import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.HTTPMessageConfig;
 import org.zoxweb.shared.http.HTTPMethod;
 import org.zoxweb.shared.http.HTTPParameterFormatter;
@@ -49,6 +52,7 @@ import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 import org.zoxweb.shared.security.AccessException;
@@ -575,7 +579,7 @@ public class MongoDSShiroTest
 	}
 
 	@Test
-    public void createHTTPMessageConfig() {
+    public void createHTTPMessageConfig() throws IOException {
         String admin = "appadmin@propanexp.com";
         //String sp = "sp@propanexp.com";
         String pwd = "T1stpwd!";
@@ -587,8 +591,19 @@ public class MongoDSShiroTest
         hmc.setHTTPParameterFormatter(HTTPParameterFormatter.URI_REST_ENCODED);
         hmc.getParameters().add(new NVPair("name", "John Smith"));
         hmc.getParameters().add(new NVPair("year", "2017"));
-
-        appManager.create(hmc);
+        hmc.getHeaderParameters().add(new NVPair("bozo", "the clown"));
+        hmc.getHeaderParameters().add(new NVPair("bozo", "the donkey"));
+        hmc.getHeaderParameters().add(new NVPair("toto", "the clown"));
+       
+        hmc = appManager.create(hmc);
+        String str = GSONUtil.toJSON(hmc, true);
+        List<HTTPMessageConfig> ret = appManager.search(HTTPMessageConfig.NVC_HTTP_MESSAGE_CONFIG, new QueryMatchString(RelationalOperator.EQUAL, hmc.getReferenceID(), HTTPMessageConfig.NVC_REFERENCE_ID));
+        Assert.assertEquals(ret.size(), 1);
+        System.out.println(GSONUtil.toJSON(ret.get(0), true));
+        Assert.assertEquals(GSONUtil.toJSON(ret.get(0), true), str);
+        
+        System.out.println(ret.get(0).getParameters().getClass().getName());
+        System.out.println(ret.get(0).getHeaderParameters().getClass().getName());
     }
 
 }
