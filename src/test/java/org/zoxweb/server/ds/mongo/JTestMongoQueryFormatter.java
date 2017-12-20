@@ -135,4 +135,17 @@ public class JTestMongoQueryFormatter {
 		System.out.println("Query Test: " + query);
 	}
 	
+	
+	@Test
+	public void test8() 
+	{
+		query = MongoQueryFormatter.formatQuery(UserPreferenceDAO.NVC_USER_PREFERENCE_DAO,
+				 new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_ID.getNVConfig(), MetaToken.REFERENCE_ID),
+				 LogicalOperator.AND, 
+		        new QueryMatch<String>(RelationalOperator.EQUAL, "542c55c7ea59bfebabe370b1", "user_id")
+		       
+		        );
+		System.out.println("Query Test8: " + query);
+	}
+	
 }

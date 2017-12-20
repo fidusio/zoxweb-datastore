@@ -177,7 +177,7 @@ public class MongoDataStore
 	{
 		REFERENCE_ID(MetaToken.REFERENCE_ID .getName(), "_id"),
 //		ACCOUNT_ID("account_id", "_account_id"),
-//		USER_ID("user_id", "_user_id")
+		USER_ID("user_id", "_user_id")
 		;
 
 		private String name;
