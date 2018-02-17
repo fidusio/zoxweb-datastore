@@ -61,9 +61,9 @@ public class MongoDSTest
 				 	  CryptoUtil.KEY_STORE_TYPE,
 				 	  ksid.getKeyStorePassword().toCharArray());
 			
-			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test"), true, false, false));
+			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test", CryptoUtil.PKCS12), true, false, false));
 			
-			KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getKeyPassword());
+			KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getAliasPassword());
 			// setup the ms
 			// load the mongo config file
 			// create the data store

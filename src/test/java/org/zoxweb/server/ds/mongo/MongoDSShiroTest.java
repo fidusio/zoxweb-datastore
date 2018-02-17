@@ -102,7 +102,7 @@ public class MongoDSShiroTest
 			 	  ksid.getKeyStorePassword().toCharArray());
 	
 		
-		KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getKeyPassword());
+		KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getAliasPassword());
 		// setup the ms
 		// load the mongo config file
 		// create the data store
