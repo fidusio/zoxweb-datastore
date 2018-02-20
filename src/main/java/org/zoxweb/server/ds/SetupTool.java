@@ -31,6 +31,7 @@ import org.zoxweb.server.util.GSONUtil;
 
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
@@ -65,6 +66,20 @@ public class SetupTool
 	private APIAppManager appManager = null;
 	APISecurityManagerProvider apiSecurityManager = null;
 	
+	
+	
+	
+	public void createAPP(String subjectID, String password, String domainID, String appID)
+	{
+
+
+		apiSecurityManager.logout();
+		apiSecurityManager.login(subjectID, password, null, null, false);
+		
+		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
+		log.info("App created:" + aid.getAppGID());
+		apiSecurityManager.logout();
+	}
 	
 	public void associateAdminRole(String subjectID, String password, String domainID, String appID)
 	{
@@ -253,26 +268,52 @@ public class SetupTool
 	}
 	
 	
+	private static void usage()
+	{
+		System.err.println("setup subjectid password domain appID name lastname");
+		System.err.println("create_app subjectid password domain appID");
+	}
+	
 	public static void main(String[] args) 
 	{
 		try
 		{
 			SetupTool setupTool = new SetupTool().initApp();
 			int index = 0;
+			String command = args[index++];
+			String subjectID = args[index++];
+			String password = args[index++];
 			String domainID = args[index++];
 			String appID = args[index++];
-			String subjectID = args[index++];
-			String name = args[index++];
-			String lastname = args[index++];
-			String password = args[index++];
-			setupTool.createUser(subjectID, name, lastname, password);
-			setupTool.createSuperAdminRole(subjectID, password, domainID, appID);
-			setupTool.associateAdminRole(subjectID, password, domainID, appID);
+		
+			
+			
+			switch(command.toLowerCase())
+			{
+			case "setup":
+				String name = args[index++];
+				String lastname = args[index++];
+				
+				setupTool.createUser(subjectID, name, lastname, password);
+				setupTool.createSuperAdminRole(subjectID, password, domainID, appID);
+				setupTool.associateAdminRole(subjectID, password, domainID, appID);
+				break;
+			case "create_app":
+				setupTool.createAPP(subjectID, password, domainID, appID);
+				break;
+				
+				default:
+					System.err.println("No command found");
+					usage();
+					
+			}
+			
 		
 		}
 		catch(Exception e)
 		{
 			e.printStackTrace();
+			usage();
 		}
 		
 		System.exit(0);
