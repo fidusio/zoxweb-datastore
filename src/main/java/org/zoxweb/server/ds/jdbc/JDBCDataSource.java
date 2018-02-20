@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds;
+package org.zoxweb.server.ds.jdbc;
 
 import java.io.PrintWriter;
 import java.sql.Connection;
