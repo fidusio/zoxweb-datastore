@@ -187,7 +187,7 @@ public class DSAuthorizationInfo implements AuthorizationInfo
 							ShiroPermissionDAO permission = (ShiroPermissionDAO) nve;
 							if (permission.getPermissionPattern() != null)
 							{
-								log.info("Adding permission : " + permission.getPermissionPattern());
+								//log.info("Adding permission : " + permission.getPermissionPattern());
 								stringPermissions.add(permission.getPermissionPattern());
 							}
 						}
