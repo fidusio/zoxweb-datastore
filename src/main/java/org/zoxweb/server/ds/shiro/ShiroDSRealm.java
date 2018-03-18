@@ -22,7 +22,7 @@ import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
 
 import org.zoxweb.server.security.shiro.authc.DomainPrincipalCollection;
-
+import org.zoxweb.server.security.shiro.authz.ShiroAuthorizationInfo;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.DataConst.DataParam;
@@ -97,7 +97,7 @@ public class ShiroDSRealm
 	        String domainID  = ((DomainPrincipalCollection) principals).getDomainID();
 	        String userID = ((DomainPrincipalCollection) principals).getUserID();
 	       
-	        DSAuthorizationInfo  info = new DSAuthorizationInfo(this);
+	        ShiroAuthorizationInfo  info = new ShiroAuthorizationInfo(this);
 	        
 	        if (isPermissionsLookupEnabled()) 
 	        {
