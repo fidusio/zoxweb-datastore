@@ -57,10 +57,9 @@ public class ShiroDSRealm
 	private APIDataStore<?> dataStore;
 	
 	
-	
 	public ShiroDSRealm()
 	{
-		
+		log.info("started");
 	}
 
 	
@@ -88,7 +87,7 @@ public class ShiroDSRealm
            throw new AuthorizationException("PrincipalCollection method argument cannot be null.");
        }
        
-       log.info("PrincipalCollection class:" + principals.getClass());
+   
      
 
        if (principals instanceof DomainPrincipalCollection )
@@ -102,10 +101,13 @@ public class ShiroDSRealm
 	        if (isPermissionsLookupEnabled()) 
 	        {
 	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(domainID, userID);
-	        	log.info("rules:" + rules.size());
+//	        	log.info("rules:" + rules.size());
+//	        	for(ShiroAssociationRuleDAO rule : rules)
+//	        	{
+//	        		log.info("" + rule.getAssociationType());
+//	        	}
 	        	info.addShiroAssociationRule(rules);
 	        }
-	        //System.out.println("PrincipalCollection:" +principals);
 	        return info;
 	   }
        
@@ -560,7 +562,11 @@ public class ShiroDSRealm
 		
 		throw new AccessException("User credentials not found.");
 	}
+	
+	
 
+	
+	
 	
 
 }
