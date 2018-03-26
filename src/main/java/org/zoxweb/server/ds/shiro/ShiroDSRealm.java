@@ -80,14 +80,14 @@ public class ShiroDSRealm
 	@Override
 	protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) 
 	{
-		
+		log.info("Getting: " + principals);
        //null usernames are invalid
        if (principals == null) 
        {
            throw new AuthorizationException("PrincipalCollection method argument cannot be null.");
        }
        
-   
+      
      
 
        if (principals instanceof DomainPrincipalCollection )
@@ -97,11 +97,12 @@ public class ShiroDSRealm
 	        String userID = ((DomainPrincipalCollection) principals).getUserID();
 	       
 	        ShiroAuthorizationInfo  info = new ShiroAuthorizationInfo(this);
+	       
 	        
 	        if (isPermissionsLookupEnabled()) 
 	        {
 	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(domainID, userID);
-//	        	log.info("rules:" + rules.size());
+	        	log.info("++-+-+-+-++-+-+++-+-+-rules:" + rules.size());
 //	        	for(ShiroAssociationRuleDAO rule : rules)
 //	        	{
 //	        		log.info("" + rule.getAssociationType());
