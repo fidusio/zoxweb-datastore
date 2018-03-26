@@ -17,10 +17,6 @@
     <properties>
         <hibernate.version>5.2.9.Final</hibernate.version>
         <apache.derby.version>10.13.1.1</apache.derby.version>
-        <mongo.version>3.6.1</mongo.version>
-        <zoxweb.shiro>1.0.0</zoxweb.shiro>
-        <slf4j.version>1.7.25</slf4j.version>
-        <common.logging.version>1.2</common.logging.version>
     </properties>
 
     <build>
