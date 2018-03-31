@@ -69,7 +69,7 @@ public class SetupTool
 	
 	
 	
-	public void createAPP(String subjectID, String password, String domainID, String appID)
+	public void createAppID(String subjectID, String password, String domainID, String appID)
 	{
 
 
@@ -299,7 +299,7 @@ public class SetupTool
 				setupTool.associateAdminRole(subjectID, password, domainID, appID);
 				break;
 			case "create_app":
-				setupTool.createAPP(subjectID, password, domainID, appID);
+				setupTool.createAppID(subjectID, password, domainID, appID);
 				break;
 				
 				default:

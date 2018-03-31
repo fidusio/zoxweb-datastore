@@ -104,7 +104,7 @@
     	 <dependency>
 	        <groupId>org.zoxweb</groupId>
 	        <artifactId>zoxweb-shiro</artifactId>
-	        <version>${zoxweb.shiro}</version>
+	        <version>${zoxweb-shiro.version}</version>
 	        <scope>provided</scope>
     	</dependency>
 
@@ -119,21 +119,22 @@
           
         </dependency>
         
-        <!--
         <dependency>
-      		<groupId>net.sf.ehcache</groupId>
-      		<artifactId>ehcache</artifactId>
-    	</dependency>
-    	  <dependency>
-            <groupId>org.apache.shiro</groupId>
-            <artifactId>shiro-ehcache</artifactId>   
-        </dependency>
-    	-->
+		  <groupId>javax.cache</groupId>
+		  <artifactId>cache-api</artifactId>
+		</dependency>
+		
+		<dependency>
+	      <groupId>org.ehcache</groupId>
+	      <artifactId>ehcache</artifactId>
+	      <version>${org.ehcache.version}</version>
+	    </dependency>
+	    <!--  
         <dependency>
 	    	<groupId>javax.servlet</groupId>
 	    	<artifactId>javax.servlet-api</artifactId>
 		</dependency>
-        
+        -->
       
 
 		   <dependency>
