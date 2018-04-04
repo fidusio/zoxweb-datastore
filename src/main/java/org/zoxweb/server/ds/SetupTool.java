@@ -36,7 +36,9 @@ import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
+import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
@@ -139,10 +141,9 @@ public class SetupTool
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
 			ShiroPermissionDAO permDAO = permission.toPermission(domainID, appID);
-			if(permission.isAppIDSpecific())
-			{
-				permDAO.setPermissionPattern(permDAO.getPermissionPattern() + ":*");
-			}
+			
+			permDAO.setPermissionPattern(PPEncoder.SINGLETON.patternEncoder(permDAO.getPermissionPattern(), PermissionToken.APP_ID, "*"));
+			
 			apiSecurityManager.addPermission(permDAO);
 			SecurityModel.Role.addPermission(superAdminRole, permDAO);
 		}
