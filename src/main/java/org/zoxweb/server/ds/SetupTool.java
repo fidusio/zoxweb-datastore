@@ -142,7 +142,7 @@ public class SetupTool
 		{
 			ShiroPermissionDAO permDAO = permission.toPermission(domainID, appID);
 			
-			permDAO.setPermissionPattern(PPEncoder.SINGLETON.patternEncoder(permDAO.getPermissionPattern(), PermissionToken.APP_ID, "*"));
+			permDAO.setPermissionPattern(PPEncoder.SINGLETON.encodePattern(permDAO.getPermissionPattern(), PermissionToken.APP_ID, "*"));
 			
 			apiSecurityManager.addPermission(permDAO);
 			SecurityModel.Role.addPermission(superAdminRole, permDAO);

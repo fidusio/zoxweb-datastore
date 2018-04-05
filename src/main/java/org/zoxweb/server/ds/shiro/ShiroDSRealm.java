@@ -32,12 +32,13 @@ import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 
 import org.zoxweb.shared.security.AccessException;
-
+import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 
 import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 import org.zoxweb.shared.util.SetName;
@@ -107,6 +108,7 @@ public class ShiroDSRealm
 //	        		log.info("" + rule.getAssociationType());
 //	        	}
 	        	info.addShiroAssociationRule(rules);
+	        	
 	        }
 	        return info;
 	   }
@@ -122,7 +124,7 @@ public class ShiroDSRealm
 //	        	{
 //	        		log.info("" + rule.getAssociationType());
 //	        	}
-	        	info.addShiroAssociationRule(rules);
+	        	info.addShiroAssociationRule(rules, new NVPair(PermissionToken.RESOURCE_ID.getValue(), refID));
 	        }
 	        return info;
     	   
