@@ -18,10 +18,9 @@ import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 
 import org.zoxweb.server.security.UserIDCredentialsDAO;
-
+import org.zoxweb.server.security.shiro.DomainPrincipalCollection;
+import org.zoxweb.server.security.shiro.ResourcePrincipalCollection;
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
-
-import org.zoxweb.server.security.shiro.authc.DomainPrincipalCollection;
 import org.zoxweb.server.security.shiro.authz.ShiroAuthorizationInfo;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -90,7 +89,7 @@ public class ShiroDSRealm
       
      
 
-       if (principals instanceof DomainPrincipalCollection )
+       if (principals instanceof DomainPrincipalCollection)
 	   {
 	        //String userName = (String) getAvailablePrincipal(principals);
 	        String domainID  = ((DomainPrincipalCollection) principals).getDomainID();
@@ -111,15 +110,34 @@ public class ShiroDSRealm
 	        }
 	        return info;
 	   }
+       else if (principals instanceof ResourcePrincipalCollection)
+       {
+    	   String refID = (String) principals.getPrimaryPrincipal();
+    	   ShiroAuthorizationInfo  info = new ShiroAuthorizationInfo(this);
+    	   if (isPermissionsLookupEnabled()) 
+	        {
+	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(null, refID);
+	        	log.info("Resource rules:" + rules.size());
+//	        	for(ShiroAssociationRuleDAO rule : rules)
+//	        	{
+//	        		log.info("" + rule.getAssociationType());
+//	        	}
+	        	info.addShiroAssociationRule(rules);
+	        }
+	        return info;
+    	   
+       }
        
        throw new AuthorizationException("Not a domain info");
 	}
 	
-	protected List<ShiroAssociationRuleDAO> getUserShiroAssociationRule(String domainID, String userID)
+	protected List<ShiroAssociationRuleDAO> getUserShiroAssociationRule(String domainID, String resourceID)
 	{
-		List<ShiroAssociationRuleDAO> sardList = search(new QueryMatchString(RelationalOperator.EQUAL, userID, ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+		List<ShiroAssociationRuleDAO> sardList = search(new QueryMatchString(RelationalOperator.EQUAL, resourceID, ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
 		return sardList;
 	}
+	
+	
 	
 	/**
 	 * @see org.apache.shiro.realm.AuthenticatingRealm#doGetAuthenticationInfo(org.apache.shiro.authc.AuthenticationToken)
@@ -247,6 +265,7 @@ public class ShiroDSRealm
 			throw new IllegalArgumentException(sard.getAssociationType() + " not supported yet");
 			
 		case ROLE_TO_SUBJECT:
+		case ROLE_TO_RESOURCE:
 			// assign a role to a subject
 			// associated_to must be user_id or user_info_dao referenceid
 			// associate should be ShiroRoleDAO
@@ -282,6 +301,10 @@ public class ShiroDSRealm
 			
 			
 			break;
+		case PERMISSION_TO_RESOURCE:
+			break;
+		
+		
 		}
 		
 		
