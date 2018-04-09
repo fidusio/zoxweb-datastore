@@ -7,12 +7,18 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+
+import java.util.HashSet;
+import java.util.Set;
 import java.util.logging.Logger;
+
+
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.mongo.MongoDataStore;
@@ -31,6 +37,7 @@ import org.zoxweb.server.util.GSONUtil;
 
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -66,7 +73,7 @@ public class SetupTool
 	private ApplicationConfigDAO appConfig = null; 
 	private APIConfigInfoDAO dsConfig = null;
 	private APIAppManager appManager = null;
-	APISecurityManagerProvider apiSecurityManager = null;
+	APISecurityManager<Subject> apiSecurityManager = null;
 	
 	
 	
@@ -115,11 +122,11 @@ public class SetupTool
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
 		
 		
-		ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
+	
 		
 		
 		// set the permission manually
-		AuthorizationInfo ai =  realm.lookupAuthorizationInfo(SecurityUtils.getSubject().getPrincipals());
+		AuthorizationInfo ai =  ShiroUtil.lookupAuthorizationInfo(SecurityUtils.getSubject().getPrincipals());
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
 			ai.getStringPermissions().add(permission.getValue());
@@ -137,15 +144,26 @@ public class SetupTool
 		
 		
 		ShiroRoleDAO superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(domainID, appID);
-		
+		Set<SecurityModel.Permission> exclusion = new HashSet<SecurityModel.Permission>();
+		exclusion.add(SecurityModel.Permission.RESOURCE_READ_PRIVATE);
+		exclusion.add(SecurityModel.Permission.RESOURCE_READ_PUBLIC);
+		exclusion.add(SecurityModel.Permission.NVE_CREATE_ALL);
+		exclusion.add(SecurityModel.Permission.NVE_DELETE_ALL);
+		exclusion.add(SecurityModel.Permission.NVE_UPDATE_ALL);
+		exclusion.add(SecurityModel.Permission.NVE_READ_ALL);
+		PermissionToken pTokens[] = {PermissionToken.APP_ID, PermissionToken.RESOURCE_ID};
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
-			ShiroPermissionDAO permDAO = permission.toPermission(domainID, appID);
-			
-			permDAO.setPermissionPattern(PPEncoder.SINGLETON.encodePattern(permDAO.getPermissionPattern(), PermissionToken.APP_ID, "*"));
-			
-			apiSecurityManager.addPermission(permDAO);
-			SecurityModel.Role.addPermission(superAdminRole, permDAO);
+			if (!exclusion.contains(permission))
+			{
+				ShiroPermissionDAO permDAO = permission.toPermission(domainID, appID);
+				
+				for (PermissionToken pr: pTokens)
+					permDAO.setPermissionPattern(PPEncoder.SINGLETON.encodePattern(permDAO.getPermissionPattern(), pr, "*"));
+				
+				apiSecurityManager.addPermission(permDAO);
+				SecurityModel.Role.addPermission(superAdminRole, permDAO);
+			}
 		}
 		
 		apiSecurityManager.addRole(superAdminRole);
@@ -268,6 +286,24 @@ public class SetupTool
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
+	public void readUserAuthz(String subjectID, String password, String domainID, String appID)
+	{
+		
+		apiSecurityManager.login(subjectID, password, domainID, appID, false);
+		Subject subject = SecurityUtils.getSubject();
+		
+		// set the permission manually
+		AuthorizationInfo ai =  ShiroUtil.lookupAuthorizationInfo(subject);
+		for (String role : ai.getRoles())
+		{
+			System.out.println("Role: " + role);
+		}
+		for(String permission : ai.getStringPermissions())
+		{
+			System.out.println("Permission: " + permission);
+		}
+	}
+	
 	
 	private static void usage()
 	{
@@ -301,6 +337,11 @@ public class SetupTool
 				break;
 			case "create_app":
 				setupTool.createAppID(subjectID, password, domainID, appID);
+				break;
+			case "read_user_authz":
+				setupTool.readUserAuthz(subjectID, password, domainID, appID);
+				
+				
 				break;
 				
 				default:
