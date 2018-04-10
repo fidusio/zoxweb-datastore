@@ -38,6 +38,7 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
+
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -72,10 +73,13 @@ public class SetupTool
 	
 	private ApplicationConfigDAO appConfig = null; 
 	private APIConfigInfoDAO dsConfig = null;
-	private APIAppManager appManager = null;
-	APISecurityManager<Subject> apiSecurityManager = null;
+	public APIAppManager appManager = null;
+	public APISecurityManager<Subject> apiSecurityManager = null;
 	
-	
+	private SetupTool()
+	{
+		
+	}
 	
 	
 	public void createAppID(String subjectID, String password, String domainID, String appID)
@@ -90,7 +94,7 @@ public class SetupTool
 		apiSecurityManager.logout();
 	}
 	
-	public void associateAdminRole(String subjectID, String password, String domainID, String appID)
+	public void associateSuperAdminRole(String subjectID, String password, String domainID, String appID)
 	{
 		
 		apiSecurityManager.logout();
@@ -116,7 +120,7 @@ public class SetupTool
 	}
 	
 	
-	public void createSuperAdminRole(String subjectID, String password, String domainID, String appID)
+	public void createBasicRoles(String subjectID, String password, String domainID, String appID)
 	{
 		apiSecurityManager.logout();
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
@@ -151,6 +155,7 @@ public class SetupTool
 		exclusion.add(SecurityModel.Permission.NVE_DELETE_ALL);
 		exclusion.add(SecurityModel.Permission.NVE_UPDATE_ALL);
 		exclusion.add(SecurityModel.Permission.NVE_READ_ALL);
+		exclusion.add(SecurityModel.Permission.SELF_USER);
 		PermissionToken pTokens[] = {PermissionToken.APP_ID, PermissionToken.RESOURCE_ID};
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
@@ -169,6 +174,24 @@ public class SetupTool
 		apiSecurityManager.addRole(superAdminRole);
 		
 		
+		ShiroRoleDAO userRole = SecurityModel.Role.USER_ROLE.toRole(domainID, appID);
+		ShiroPermissionDAO permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectID());
+		
+		SecurityModel.Role.addPermission(userRole, permDAO);
+		permDAO = SecurityModel.Permission.SELF_USER.toPermission(domainID, appID);
+		apiSecurityManager.addPermission(permDAO);
+		SecurityModel.Role.addPermission(userRole, permDAO);
+		apiSecurityManager.addRole(userRole);
+	
+//		ShiroRoleDAO resourceRole = SecurityModel.Role.RESOURCE_ROLE.toRole(domainID, appID);
+//		permDAO = SecurityModel.AppPermission.RESOURCE_READ_PRIVATE.toPermission(domainID, appID);
+//		apiSecurityManager.addPermission(permDAO);
+//		SecurityModel.Role.addPermission(resourceRole, permDAO);
+//		permDAO = SecurityModel.AppPermission.RESOURCE_READ_PUBLIC.toPermission(domainID, appID);
+//		apiSecurityManager.addPermission(permDAO);
+//		SecurityModel.Role.addPermission(resourceRole, permDAO);	
+//		apiSecurityManager.addRole(resourceRole);
+		
 		try {
 			System.out.println(GSONUtil.toJSON(superAdminRole, true, false, false));
 		} catch (IOException e) {
@@ -181,20 +204,21 @@ public class SetupTool
 	}
 	
 	
-	public SetupTool initApp() throws NullPointerException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
+	public static SetupTool initApp() throws NullPointerException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
 	{
 		
-		appConfig = ApplicationConfigManager.SINGLETON.loadDefault();
+		SetupTool ret = new SetupTool();
+		ret.appConfig = ApplicationConfigManager.SINGLETON.loadDefault();
 		
 		
 		
-		log.info("" + appConfig);
+		log.info("" + ret.appConfig);
 		
 		
-		 dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(appConfig, MONGO_CONF)), APIConfigInfoDAO.class);
+		ret.dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, MONGO_CONF)), APIConfigInfoDAO.class);
          
          // load the Master Key
-         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(appConfig, KEYSTORE_INFO)), KeyStoreInfoDAO.class);
+         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, KEYSTORE_INFO)), KeyStoreInfoDAO.class);
 
          KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(ApplicationConfigManager.locateFile(ksid.getKeyStore())),
          		ksid.getKeyStoreType(),
@@ -205,9 +229,9 @@ public class SetupTool
          // setup the ms
          // load the mongo config file
          // create the data store
-         dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-         apiSecurityManager = new APISecurityManagerProvider();
-         dsConfig.setAPISecurityManager(apiSecurityManager);
+         ret.dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
+         ret.apiSecurityManager = new APISecurityManagerProvider();
+         ret.dsConfig.setAPISecurityManager(ret.apiSecurityManager);
 
 //		Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:" + SHIRO_INI);
 //
@@ -224,21 +248,21 @@ public class SetupTool
          MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
 
 
-         ResourceManager.SINGLETON.map(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, dsConfig));
+         ResourceManager.SINGLETON.map(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, ret.dsConfig));
 //		realm.setAPISecurityManager(apiSecurityManager);
 //		realm.setDataStore(DefaultMongoDS.SIGLETON.getDataStore());
 
-         appManager = new APIAppManagerProvider();
+         ret.appManager = new APIAppManagerProvider();
 
-         appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
-         appManager.setAPISecurityManager(apiSecurityManager);
-         ResourceManager.SINGLETON.map(Resource.API_APP_MANAGER, appManager);
-         ResourceManager.SINGLETON.map(Resource.API_SECURITY_MANAGER, apiSecurityManager);
+         ret.appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+         ret.appManager.setAPISecurityManager(ret.apiSecurityManager);
+         ResourceManager.SINGLETON.map(Resource.API_APP_MANAGER, ret.appManager);
+         ResourceManager.SINGLETON.map(Resource.API_SECURITY_MANAGER, ret.apiSecurityManager);
          TaskUtil.getDefaultTaskProcessor();
          TaskUtil.getDefaultTaskScheduler();
          
          
-         File shiroFile = ApplicationConfigManager.locateFile(appConfig.lookupValue(SHIRO_INI));
+         File shiroFile = ApplicationConfigManager.locateFile(ret.appConfig.lookupValue(SHIRO_INI));
 			
 		 Factory<SecurityManager> factory = new IniSecurityManagerFactory(shiroFile.getAbsolutePath());
 
@@ -256,18 +280,18 @@ public class SetupTool
 			
 			
 			
-			realm.setAPISecurityManager(apiSecurityManager);
+			realm.setAPISecurityManager(ret.apiSecurityManager);
 			realm.setDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
 			
-			appManager = new APIAppManagerProvider();
+			ret.appManager = new APIAppManagerProvider();
 			
-			appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
-			appManager.setAPISecurityManager(apiSecurityManager);
+			ret.appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+			ret.appManager.setAPISecurityManager(ret.apiSecurityManager);
 
 	        
 			
 			
-			return this;
+			return ret;
 	}
 	
 	
@@ -302,6 +326,8 @@ public class SetupTool
 		{
 			System.out.println("Permission: " + permission);
 		}
+		apiSecurityManager.logout();
+				
 	}
 	
 	
@@ -315,7 +341,7 @@ public class SetupTool
 	{
 		try
 		{
-			SetupTool setupTool = new SetupTool().initApp();
+			SetupTool setupTool = initApp();
 			int index = 0;
 			String command = args[index++];
 			String subjectID = args[index++];
@@ -332,8 +358,8 @@ public class SetupTool
 				String lastname = args[index++];
 				
 				setupTool.createUser(subjectID, name, lastname, password);
-				setupTool.createSuperAdminRole(subjectID, password, domainID, appID);
-				setupTool.associateAdminRole(subjectID, password, domainID, appID);
+				setupTool.createBasicRoles(subjectID, password, domainID, appID);
+				setupTool.associateSuperAdminRole(subjectID, password, domainID, appID);
 				break;
 			case "create_app":
 				setupTool.createAppID(subjectID, password, domainID, appID);
