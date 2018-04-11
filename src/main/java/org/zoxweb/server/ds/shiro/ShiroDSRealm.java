@@ -3,9 +3,10 @@ package org.zoxweb.server.ds.shiro;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-
+import java.util.UUID;
 import java.util.logging.Logger;
 
 
@@ -21,6 +22,7 @@ import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.server.security.shiro.DomainPrincipalCollection;
 import org.zoxweb.server.security.shiro.ResourcePrincipalCollection;
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
+import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authz.ShiroAuthorizationInfo;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -32,12 +34,15 @@ import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 
 import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
+import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 
 import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
@@ -53,6 +58,9 @@ public class ShiroDSRealm
 {
 
 	private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
+	private volatile Set<ShiroAssociationRuleDAO> cachedSARD = null;
+	
+	private String userDefaultRoles = null;
 	
 	private APIDataStore<?> dataStore;
 	
@@ -60,6 +68,40 @@ public class ShiroDSRealm
 	public ShiroDSRealm()
 	{
 		log.info("started");
+	}
+	
+	protected Set<ShiroAssociationRuleDAO> getCachedSARDs()
+	{
+		if (cachedSARD == null)
+		{
+			synchronized(this)
+			{
+				if (cachedSARD == null)
+				{
+					cachedSARD = new LinkedHashSet<ShiroAssociationRuleDAO>();
+					if(userDefaultRoles != null)
+					{
+						ShiroRoleDAO role = lookupRole(userDefaultRoles);
+						log.info("role:" + role);
+						for (NVEntity nve : role.getPermissions().values())
+						{
+							log.info(""+nve);
+						}
+						
+						if (role != null)
+						{
+							ShiroAssociationRuleDAO toAdd = new ShiroAssociationRuleDAO();
+							toAdd.setAssociation(role);
+							toAdd.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
+							toAdd.setReferenceID(UUID.randomUUID().toString());
+							cachedSARD.add(toAdd);	
+						}
+					}
+				}
+				log.info("cachedSARD size:" + cachedSARD.size());
+			}
+		}
+		return cachedSARD;
 	}
 
 	
@@ -92,6 +134,7 @@ public class ShiroDSRealm
 
        if (principals instanceof DomainPrincipalCollection)
 	   {
+    	   
 	        //String userName = (String) getAvailablePrincipal(principals);
 	        String domainID  = ((DomainPrincipalCollection) principals).getDomainID();
 	        String userID = ((DomainPrincipalCollection) principals).getUserID();
@@ -101,6 +144,7 @@ public class ShiroDSRealm
 	        
 	        if (isPermissionsLookupEnabled()) 
 	        {
+	        
 	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(domainID, userID);
 	        	log.info("++-+-+-+-++-+-+++-+-+-rules:" + rules.size());
 //	        	for(ShiroAssociationRuleDAO rule : rules)
@@ -108,6 +152,8 @@ public class ShiroDSRealm
 //	        		log.info("" + rule.getAssociationType());
 //	        	}
 	        	info.addShiroAssociationRule(rules);
+	        	info.addShiroAssociationRule(getCachedSARDs(), new NVPair(SecurityModel.TOK_USER_ID, ShiroUtil.subjectUserID()));
+	        	
 	        	
 	        }
 	        return info;
@@ -229,7 +275,7 @@ public class ShiroDSRealm
 //		 throw new AuthenticationException("Invalid Authentication Token");
 //	}
 
-	
+
 	@Override
 	public void addShiroRule(ShiroAssociationRuleDAO sard) 
 	{
@@ -587,6 +633,18 @@ public class ShiroDSRealm
 		}
 		
 		throw new AccessException("User credentials not found.");
+	}
+
+
+
+	public String getUserDefaultRoles() {
+		return userDefaultRoles;
+	}
+
+
+
+	public void setUserDefaultRoles(String userDefaultRoles) {
+		this.userDefaultRoles = userDefaultRoles;
 	}
 	
 	
