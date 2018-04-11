@@ -166,7 +166,7 @@ public class SetupTool
 				for (PermissionToken pr: pTokens)
 					permDAO.setPermissionPattern(PPEncoder.SINGLETON.encodePattern(permDAO.getPermissionPattern(), pr, "*"));
 				
-				apiSecurityManager.addPermission(permDAO);
+				//apiSecurityManager.addPermission(permDAO);
 				SecurityModel.Role.addPermission(superAdminRole, permDAO);
 			}
 		}
