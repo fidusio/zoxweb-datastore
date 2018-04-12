@@ -22,7 +22,6 @@ import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.server.security.shiro.DomainPrincipalCollection;
 import org.zoxweb.server.security.shiro.ResourcePrincipalCollection;
 import org.zoxweb.server.security.shiro.ShiroBaseRealm;
-import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.security.shiro.authz.ShiroAuthorizationInfo;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -152,7 +151,9 @@ public class ShiroDSRealm
 //	        		log.info("" + rule.getAssociationType());
 //	        	}
 	        	info.addShiroAssociationRule(rules);
-	        	info.addShiroAssociationRule(getCachedSARDs(), new NVPair(SecurityModel.TOK_USER_ID, ShiroUtil.subjectUserID()));
+	        	info.addShiroAssociationRule(getCachedSARDs(), 
+	        								 new NVPair(SecurityModel.TOK_USER_ID, ((DomainPrincipalCollection) principals).getUserID()),
+	        								 new NVPair(SecurityModel.TOK_RESOURCE_ID, "*"));
 	        	
 	        	
 	        }
