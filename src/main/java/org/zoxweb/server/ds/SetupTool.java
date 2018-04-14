@@ -94,7 +94,7 @@ public class SetupTool
 		apiSecurityManager.logout();
 	}
 	
-	public void associateSuperAdminRole(String subjectID, String password, String domainID, String appID)
+	public void assignSuperAdminRole(String subjectID, String password, String domainID, String appID)
 	{
 		
 		apiSecurityManager.logout();
@@ -170,11 +170,12 @@ public class SetupTool
 				SecurityModel.Role.addPermission(superAdminRole, permDAO);
 			}
 		}
+		SecurityModel.Role.addPermission(superAdminRole, SecurityModel.toPermission(domainID, appID, "assign_all", "Assign super admin mode", SecurityModel.PERM_ASSIGN + ":*"));
 		
 		apiSecurityManager.addRole(superAdminRole);
 		
 		
-		ShiroRoleDAO userRole = SecurityModel.Role.USER_ROLE.toRole(domainID, appID);
+		ShiroRoleDAO userRole = SecurityModel.Role.USER.toRole(domainID, appID);
 		ShiroPermissionDAO permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectID());
 		
 		SecurityModel.Role.addPermission(userRole, permDAO);
@@ -359,7 +360,7 @@ public class SetupTool
 				
 				setupTool.createUser(subjectID, name, lastname, password);
 				setupTool.createBasicRoles(subjectID, password, domainID, appID);
-				setupTool.associateSuperAdminRole(subjectID, password, domainID, appID);
+				setupTool.assignSuperAdminRole(subjectID, password, domainID, appID);
 				break;
 			case "create_app":
 				setupTool.createAppID(subjectID, password, domainID, appID);

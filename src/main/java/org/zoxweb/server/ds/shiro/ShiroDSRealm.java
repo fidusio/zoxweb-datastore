@@ -82,13 +82,13 @@ public class ShiroDSRealm
 					{
 						ShiroRoleDAO role = lookupRole(userDefaultRoles);
 						log.info("role:" + role);
-						for (NVEntity nve : role.getPermissions().values())
-						{
-							log.info(""+nve);
-						}
-						
+					
 						if (role != null)
 						{
+							for (NVEntity nve : role.getPermissions().values())
+							{
+								log.info(""+nve);
+							}
 							ShiroAssociationRuleDAO toAdd = new ShiroAssociationRuleDAO();
 							toAdd.setAssociation(role);
 							toAdd.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
@@ -337,7 +337,8 @@ public class ShiroDSRealm
 					// maybe check role permission
 					sard.setAssociation(role);
 					List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
-						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
+						   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
 					if (roleSard == null || roleSard.size() == 0)
 					{
 						getAPIDataStore().insert(sard);
