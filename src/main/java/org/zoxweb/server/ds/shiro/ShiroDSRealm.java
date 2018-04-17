@@ -332,6 +332,7 @@ public class ShiroDSRealm
 //			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
 				ShiroRoleDAO role = lookupRole(sard.getAssociate());
+				log.info("Role:"+role);
 				if (role != null)
 				{
 					// maybe check role permission
@@ -339,6 +340,7 @@ public class ShiroDSRealm
 					List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
 						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
 						   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+					log.info("roleSard:" + roleSard);
 					if (roleSard == null || roleSard.size() == 0)
 					{
 						getAPIDataStore().insert(sard);
