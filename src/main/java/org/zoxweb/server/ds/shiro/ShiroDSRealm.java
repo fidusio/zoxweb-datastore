@@ -2,6 +2,7 @@ package org.zoxweb.server.ds.shiro;
 
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -358,16 +359,73 @@ public class ShiroDSRealm
 		
 		
 		}
-		
-		
+	}
 	
+	ShiroAssociationRuleDAO lookupSARD(ShiroAssociationRuleDAO sard)
+	{
+		List<ShiroAssociationRuleDAO> matches = null;
+		ArrayList<QueryMarker> queryCriteria = null;
+		switch(sard.getAssociationType())
+		{
+		case PERMISSION_TO_RESOURCE:
+			queryCriteria = new ArrayList<QueryMarker>();
+			if (sard.getAssociate() != null)
+				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+			
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRuleDAO.Param.ASSOCIATION_CRUD));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getName(), DataParam.NAME));
+			matches = search(queryCriteria.toArray(new QueryMarker[0]));
+			break;
+		case PERMISSION_TO_ROLE:
+			break;
+		case PERMISSION_TO_SUBJECT:
+			break;
+		case ROLEGROUP_TO_SUBJECT:
+			break;
+		
+		case ROLE_TO_ROLEGROUP:
+			break;
+		case ROLE_TO_SUBJECT:
+		case ROLE_TO_RESOURCE:
+			matches = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
+					   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
+					   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+			break;
+		default:
+			break;
+			
+		}
+		
+		
+		if (matches != null && matches.size() == 1)
+		{
+			return matches.get(0);
+		}
+		
+		return null;
+		
 		
 	}
 
 	@Override
 	public void deleteShiroRule(ShiroAssociationRuleDAO sard)
 	{
-		// TODO Auto-generated method stub
+		if (sard.getReferenceID() != null)
+		{
+			getAPIDataStore().delete(sard, false);
+		}
+		else
+		{
+			ShiroAssociationRuleDAO match = lookupSARD(sard);
+			log.info("Match:" + match);
+			if (match != null)
+			{
+				getAPIDataStore().delete(match, false);
+			}
+				
+		}
 		
 	}
 
@@ -389,6 +447,18 @@ public class ShiroDSRealm
 		
 		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria);
 	}
+	
+	public List<ShiroAssociationRuleDAO> search(Collection<QueryMarker> queryCriteria)
+	{
+		if (queryCriteria == null || queryCriteria.size() == 0)
+		{
+			throw new NullPointerException("null or empty search parameters");
+		}
+		
+		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria.toArray(new QueryMarker[queryCriteria.size()]));
+	}
+	
+	
 
 	@Override
 	public PasswordDAO getUserPassword(String domainID, String userID)
