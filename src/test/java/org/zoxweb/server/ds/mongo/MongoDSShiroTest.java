@@ -1,16 +1,6 @@
 package org.zoxweb.server.ds.mongo;
 
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.util.List;
-import java.util.UUID;
-import java.util.logging.Logger;
-
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
@@ -20,7 +10,6 @@ import org.apache.shiro.util.Factory;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -42,6 +31,7 @@ import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.HTTPMessageConfig;
 import org.zoxweb.shared.http.HTTPMethod;
 import org.zoxweb.shared.http.HTTPParameterFormatter;
+import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
@@ -49,13 +39,22 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
-import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.ResourceManager;
-import org.zoxweb.shared.util.SharedUtil;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.Const.Status;
+import org.zoxweb.shared.util.NVPair;
+import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
-import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.util.SharedUtil;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.util.List;
+import java.util.UUID;
+import java.util.logging.Logger;
 
 public class MongoDSShiroTest
 {
@@ -82,7 +81,7 @@ public class MongoDSShiroTest
 
     private static final String PROPANEXP_DOMAIN_ID = "propanexp.com";
     private static final String PROPANEXP_APP_ID = "propanexp";
-	
+
 	private static  APISecurityManager<Subject> apiSecurityManager;
 	private static  APIAppManagerProvider appManager;
 

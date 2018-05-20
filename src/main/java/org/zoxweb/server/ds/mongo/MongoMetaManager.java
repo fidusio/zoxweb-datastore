@@ -15,11 +15,10 @@
  */
 package org.zoxweb.server.ds.mongo;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.logging.Logger;
-
+import com.mongodb.BasicDBObject;
+import com.mongodb.DB;
+import com.mongodb.DBCollection;
+import com.mongodb.DBObject;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.MongoDataStore.ReservedID;
 import org.zoxweb.shared.util.DynamicEnumMap;
@@ -31,10 +30,10 @@ import org.zoxweb.shared.util.NVConfigEntityLocal;
 import org.zoxweb.shared.util.SharedStringUtil;
 import org.zoxweb.shared.util.SharedUtil;
 
-import com.mongodb.BasicDBObject;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
-import com.mongodb.DBObject;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.logging.Logger;
 
 public class MongoMetaManager 
 {
@@ -45,7 +44,6 @@ public class MongoMetaManager
 	 */
 	private HashMap<String, Object> map = new HashMap<String, Object>();
 	private DBCollection nvConfigEntities = null;
-	
 
 	public enum MetaCollections
 		implements GetName
@@ -77,7 +75,7 @@ public class MongoMetaManager
 	 */
 	private MongoMetaManager()
 	{
-		
+
 	}
 	
 	/**
@@ -131,12 +129,10 @@ public class MongoMetaManager
 		
 		map.remove(collectionFullName);
 	}
-	
-	
+
 	public synchronized NVConfigEntity addNVConfigEntity(DB mongo, NVConfigEntity nvce)
 	{
-		
-		if ( nvce.getReferenceID() != null)
+		if (nvce.getReferenceID() != null)
 			return nvce;
 		
 		if (nvConfigEntities == null)
@@ -169,8 +165,7 @@ public class MongoMetaManager
 		
 		removeCollectionInfo(collection.getFullName());
 	}
-	
-	
+
 	public synchronized MongoDBObjectMeta lookupCollectionName(MongoDataStore mds, ObjectId collectionID)
 	{
 		BasicDBObject nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONVIG_ENTITIES.getName(), collectionID);
@@ -180,24 +175,17 @@ public class MongoMetaManager
 		try {
 			nvce  = fromBasicDBObject( nvceDB);//(Class<? extends NVEntity>) Class.forName((String)nvceDB.getString(MetaToken.CLASS_TYPE.getName()));
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
-			
 			return null;
 		}
 		
 		MongoDBObjectMeta ret = new MongoDBObjectMeta(nvce);
 		
 		return ret;
-		
 	}
-	
-	
+
 	public static BasicDBObject dbMapNVConfigEntity(NVConfigEntity nvce)
 	{
-		
-		
-		
 		BasicDBObject entryElement = new BasicDBObject();
 		entryElement.put(MetaToken.NAME.getName(), nvce.getName());
 		entryElement.put(MetaToken.DESCRIPTION.getName(), nvce.getDescription());
@@ -208,13 +196,9 @@ public class MongoMetaManager
 		entryElement.put(MetaToken.CANONICAL_ID.getName(), nvce.toCanonicalID());
 		return entryElement;
 	}
-	
-	
-	
+
 	public static NVConfigEntity fromBasicDBObject(BasicDBObject dbo) throws ClassNotFoundException
 	{
-		
-		
 		Class <?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
 		NVConfigEntity ret = new NVConfigEntityLocal();
 		ret.setName( dbo.getString(MetaToken.NAME.getName()));
@@ -224,11 +208,8 @@ public class MongoMetaManager
 		ret.setArray(dbo.getBoolean(MetaToken.IS_ARRAY.getName()));
 		ret.setReferenceID(dbo.getObjectId(ReservedID.REFERENCE_ID.getValue()).toHexString());
 		return ret;
-		
 	}
-	
-	
-	
+
 	/**
 	 * 
 	 * @param collection to be indexed
@@ -319,7 +300,8 @@ public class MongoMetaManager
 		
 		List<DBObject> indexes = collection.getIndexInfo();
 		log.info("List of DBObject Indexes: " + indexes);
-		for(String indexToAdd : uniqueIndexNames)
+
+		for (String indexToAdd : uniqueIndexNames)
 		{
 			log.info("Index to be added:" + indexToAdd + " to collection:" + collection.getName());
 			if (!SharedStringUtil.isEmpty(indexToAdd))
@@ -327,13 +309,13 @@ public class MongoMetaManager
 				for (DBObject dbIndex : indexes)
 				{
 					if ((dbIndex.get("key") != null && ((DBObject)dbIndex.get("key")).get(indexToAdd) != null))
-					{	
+					{
 						indexToAdd = null;
 						break;
 					}
 				}
 				
-				if ( indexToAdd != null)
+				if (indexToAdd != null)
 				{
 					ret.add(indexToAdd);
 					collection.createIndex(new BasicDBObject(indexToAdd, 1), new BasicDBObject("unique", true));
@@ -349,15 +331,11 @@ public class MongoMetaManager
 	{
 		if (!isIndexed(collection))
 		{
-			
 			createUniqueIndex(collection, MetaToken.NAME.getName());
 			
 			//collection.createIndex(new BasicDBObject(MetaToken.NAME.getName(), 1), new BasicDBObject("unique", true));
 			map.put(collection.getFullName(), DynamicEnumMap.class);
 		}
-		
-		
-	
 	}
 	
 }

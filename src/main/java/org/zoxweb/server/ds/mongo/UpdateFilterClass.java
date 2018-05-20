@@ -91,8 +91,7 @@ public class UpdateFilterClass
 		{
 			return isValid(in.getClass());
 		}
-	
-		
+
 		return false;
 	}
 

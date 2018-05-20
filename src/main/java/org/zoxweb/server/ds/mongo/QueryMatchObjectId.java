@@ -33,7 +33,7 @@ public class QueryMatchObjectId
 	 * @param id reference id
 	 * @param names to be collected
 	 */
-	public QueryMatchObjectId(RelationalOperator operator, String id, String ...names)
+	public QueryMatchObjectId(RelationalOperator operator, String id, String... names)
 	{
 		super(operator, new ObjectId(id), names);
 	}
@@ -45,9 +45,9 @@ public class QueryMatchObjectId
 	 * @param id reference id
 	 * @param names to be collected
 	 */
-	public QueryMatchObjectId(RelationalOperator operator, String id, GetName ...names)
+	public QueryMatchObjectId(RelationalOperator operator, String id, GetName... names)
 	{
-		super(operator, new ObjectId(id), names);	
+		super(operator, new ObjectId(id), names);
 	}
 	
 	/**
@@ -57,9 +57,9 @@ public class QueryMatchObjectId
 	 * @param id reference id
 	 * @param gnvc to be collected
 	 */
-	public QueryMatchObjectId(RelationalOperator operator, String id, GetNVConfig ...gnvc)
+	public QueryMatchObjectId(RelationalOperator operator, String id, GetNVConfig... gnvc)
 	{
-		super(operator, new ObjectId(id), gnvc);	
+		super(operator, new ObjectId(id), gnvc);
 	}
 	
 }

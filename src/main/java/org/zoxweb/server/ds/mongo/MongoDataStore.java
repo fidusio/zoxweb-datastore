@@ -15,80 +15,9 @@
  */
 package org.zoxweb.server.ds.mongo;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.math.BigDecimal;
-import java.net.UnknownHostException;
-
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Logger;
-
-import org.zoxweb.server.util.ServerUtil;
-import org.zoxweb.server.util.MetaUtil;
-import org.zoxweb.shared.filters.ChainedFilter;
-import org.zoxweb.shared.filters.FilterType;
-import org.zoxweb.shared.filters.LowerCaseFilter;
-import org.zoxweb.shared.filters.ValueFilter;
-import org.zoxweb.shared.security.AccessException;
-//import org.zoxweb.shared.security.KeyMaker;
-import org.zoxweb.shared.util.CRUD;
-import org.zoxweb.shared.util.Const;
-import org.zoxweb.shared.util.Const.RelationalOperator;
-import org.zoxweb.shared.util.DynamicEnumMap;
-import org.zoxweb.shared.util.DynamicEnumMapManager;
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.GetNameValue;
-import org.zoxweb.shared.util.IDGenerator;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVBase;
-import org.zoxweb.shared.util.NVBigDecimal;
-import org.zoxweb.shared.util.NVBigDecimalList;
-import org.zoxweb.shared.util.NVBlob;
-import org.zoxweb.shared.util.NVBoolean;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVDouble;
-import org.zoxweb.shared.util.NVDoubleList;
-import org.zoxweb.shared.util.NVECRUDMonitor;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVEntityReferenceIDMap;
-import org.zoxweb.shared.util.NVEntityGetNameMap;
-import org.zoxweb.shared.util.NVEntityReference;
-import org.zoxweb.shared.util.NVEntityReferenceList;
-import org.zoxweb.shared.util.NVEnum;
-import org.zoxweb.shared.util.NVEnumList;
-import org.zoxweb.shared.util.NVFloat;
-import org.zoxweb.shared.util.NVFloatList;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.NVGetNameValueList;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.NVIntList;
-import org.zoxweb.shared.util.NVLong;
-import org.zoxweb.shared.util.NVLongList;
-import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.NVPairList;
-import org.zoxweb.shared.util.NVPairGetNameMap;
-import org.zoxweb.shared.util.ArrayValues;
-import org.zoxweb.shared.util.SharedStringUtil;
-import org.zoxweb.shared.util.SharedUtil;
-import org.zoxweb.shared.util.TimeStampInterface;
-//import org.apache.shiro.subject.Subject;
-import org.bson.types.ObjectId;
-
-
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
-
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
@@ -98,16 +27,15 @@ import com.mongodb.ServerAddress;
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
-//import com.zoxweb.fidusstore.server.data.DataCacheMonitor;
-
+import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
-//import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 import org.zoxweb.server.io.IOUtil;
-
+import org.zoxweb.server.util.MetaUtil;
+import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.shared.api.APIBatchResult;
-import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIConfigInfo;
+import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIFileInfoMap;
 import org.zoxweb.shared.api.APISearchResult;
@@ -121,6 +49,34 @@ import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
+import org.zoxweb.shared.filters.ChainedFilter;
+import org.zoxweb.shared.filters.FilterType;
+import org.zoxweb.shared.filters.LowerCaseFilter;
+import org.zoxweb.shared.filters.ValueFilter;
+import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.util.Const.RelationalOperator;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Logger;
+
+//import org.zoxweb.shared.security.KeyMaker;
+//import org.apache.shiro.subject.Subject;
+//import com.zoxweb.fidusstore.server.data.DataCacheMonitor;
+//import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
 
 /**
  * This class is used to define the MongoDB object for data storage. This object primarily contains methods 
@@ -132,7 +88,7 @@ public class MongoDataStore
     extends APIServiceProviderBase<DB>
 	implements APIDataStore<DB>, APIDocumentStore<DB>
 {
-    private static final transient Logger log = Logger.getLogger("MongoDataStore");
+    private static final transient Logger log = Logger.getLogger(MongoDataStore.class.getName());
     
     public static final IDGenerator<String> MongoIDGenerator = new IDGenerator<String>()
 	{
@@ -146,7 +102,6 @@ public class MongoDataStore
 		@Override
 		public String getName() 
 		{
-			// TODO Auto-generated method stub
 			return "MongoIDGenerator";
 		}
 	};

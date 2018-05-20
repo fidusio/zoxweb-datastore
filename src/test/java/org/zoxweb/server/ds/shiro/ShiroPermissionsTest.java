@@ -1,12 +1,12 @@
 package org.zoxweb.server.ds.shiro;
 
+import org.junit.Test;
+import org.zoxweb.server.ds.SetupTool;
+
 import java.io.IOException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
-
-import org.junit.Test;
-import org.zoxweb.server.ds.SetupTool;
 
 public class ShiroPermissionsTest 
 {
@@ -17,7 +17,6 @@ public class ShiroPermissionsTest
 			return SetupTool.initApp();
 		} catch (NullPointerException | KeyStoreException | NoSuchAlgorithmException | CertificateException
 				| IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		return null;
