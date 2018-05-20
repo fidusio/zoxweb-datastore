@@ -15,23 +15,20 @@
  */
 package org.zoxweb.server.ds.mongo;
 
-import java.util.Date;
-
-import org.bson.types.ObjectId;
-
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.SharedStringUtil;
-
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.QueryBuilder;
-
+import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.MongoDataStore.ReservedID;
 import org.zoxweb.server.filters.TimestampFilter;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
+import org.zoxweb.shared.util.NVConfig;
+import org.zoxweb.shared.util.NVConfigEntity;
+import org.zoxweb.shared.util.SharedStringUtil;
+
+import java.util.Date;
 
 /**
  * Includes utility methods to format Mongo query requests.
@@ -55,9 +52,7 @@ public class MongoQueryFormatter
 			}
 
 			qb = qb.put(queryKey);
-		
-			//System.out.println(queryKey+":" + queryMatch.getName() + ":" + queryMatch.getValue());
-			
+
 			if (nvc == null && !queryMatch.isCanonicalName())
 			{
 				throw new IllegalArgumentException("Parameter name does not exist in table: " + queryMatch.getName());
@@ -67,10 +62,8 @@ public class MongoQueryFormatter
                 switch(queryMatch.getOperator())
                 {
                 case EQUAL:
-                	//System.out.println(queryKey+":" + queryMatch.getName() + ":" + queryMatch.getValue() + " " + map(nvc, queryMatch));
                 	//Object val = map(nvc, queryMatch);
                     qb.is(map(nvc, queryMatch));
-                    //System.out.println(""+val + " " + val.getClass());
                     break;
                 case GT:
                     qb.greaterThan(map(nvc, queryMatch));
@@ -157,9 +150,7 @@ public class MongoQueryFormatter
 //							
 //							}
 //					}
-					
 				}
-				
 				else if (queryCriteria[i] instanceof LogicalOperator)
 				{
 					LogicalOperator logical = (LogicalOperator) queryCriteria[i];
@@ -202,13 +193,7 @@ public class MongoQueryFormatter
 	
 		return qb.get();
 	}
-	
-	/**
-	 * 
-	 * @param nvc
-	 * @param queryMatch
-	 * @return
-	 */
+
 	private static Object map(NVConfig nvc, QueryMatch<?> queryMatch)
 	{
 		if (nvc != null && nvc.getMetaTypeBase() == Date.class && queryMatch.getValue() instanceof String)

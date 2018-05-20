@@ -190,7 +190,6 @@ public class MongoMetaManager
 		entryElement.put(MetaToken.NAME.getName(), nvce.getName());
 		entryElement.put(MetaToken.DESCRIPTION.getName(), nvce.getDescription());
 		entryElement.put(MetaToken.DOMAIN_ID.getName(), nvce.getDomainID());
-		// the class
 		entryElement.put(MetaToken.CLASS_TYPE.getName(), nvce.getMetaTypeBase().getName());
 		entryElement.put(MetaToken.IS_ARRAY.getName(), nvce.isArray());
 		entryElement.put(MetaToken.CANONICAL_ID.getName(), nvce.toCanonicalID());

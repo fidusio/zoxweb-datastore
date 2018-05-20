@@ -1,24 +1,12 @@
 package org.zoxweb.server.ds.shiro;
 
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.logging.Logger;
-
-
+import com.mongodb.BasicDBObject;
 import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
-
 import org.bson.types.ObjectId;
-
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
-
 import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.server.security.shiro.DomainPrincipalCollection;
 import org.zoxweb.server.security.shiro.ResourcePrincipalCollection;
@@ -30,9 +18,7 @@ import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
-
 import org.zoxweb.shared.db.QueryMatchString;
-
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -40,17 +26,22 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
 import org.zoxweb.shared.util.Const.RelationalOperator;
-
 import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 import org.zoxweb.shared.util.SetName;
-
 import org.zoxweb.shared.util.SharedUtil;
 
-import com.mongodb.BasicDBObject;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.logging.Logger;
 
 public class ShiroDSRealm
 	extends ShiroBaseRealm
@@ -58,13 +49,13 @@ public class ShiroDSRealm
 {
 
 	private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
+
 	private volatile Set<ShiroAssociationRuleDAO> cachedSARD = null;
 	
 	private String userDefaultRoles = null;
 	
 	private APIDataStore<?> dataStore;
-	
-	
+
 	public ShiroDSRealm()
 	{
 		log.info("started");

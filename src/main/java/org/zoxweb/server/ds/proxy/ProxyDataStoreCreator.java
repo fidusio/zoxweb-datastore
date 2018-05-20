@@ -8,12 +8,11 @@ import org.zoxweb.shared.api.APIServiceProviderCreator;
 import org.zoxweb.shared.api.APITokenManager;
 import org.zoxweb.shared.util.GetName;
 
-
 public class ProxyDataStoreCreator implements APIServiceProviderCreator {
 	
 	
 	public enum ProxyParam 
-	implements GetName
+	    implements GetName
 	{
 		URL("url"),
 		URI("uri"),

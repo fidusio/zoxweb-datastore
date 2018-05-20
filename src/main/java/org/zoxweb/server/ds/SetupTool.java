@@ -1,19 +1,5 @@
 package org.zoxweb.server.ds;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-
-import java.util.HashSet;
-import java.util.Set;
-import java.util.logging.Logger;
-
-
-
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
@@ -24,7 +10,6 @@ import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.mongo.MongoDataStore;
 import org.zoxweb.server.ds.mongo.MongoDataStoreCreator;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
-
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
@@ -34,11 +19,9 @@ import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.task.TaskUtil;
 import org.zoxweb.server.util.ApplicationConfigManager;
 import org.zoxweb.server.util.GSONUtil;
-
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
-
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -52,21 +35,30 @@ import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
-import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.Const.Status;
+import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Logger;
 
 /**
  * The setup tool is used to create and setup a new system
  * @author javaconsigliere
  *
  */
-
-
 public class SetupTool 
 {
-	
 	private static final transient Logger log = Logger.getLogger(SetupTool.class.getName());
+
 	public static final String MONGO_CONF = "mongod_conf";
 	public static final String KEYSTORE_INFO = "key_store_info";
 	public static final String SHIRO_INI = "shiro_ini";
@@ -80,12 +72,9 @@ public class SetupTool
 	{
 		
 	}
-	
-	
+
 	public void createAppID(String subjectID, String password, String domainID, String appID)
 	{
-
-
 		apiSecurityManager.logout();
 		apiSecurityManager.login(subjectID, password, null, null, false);
 		
@@ -96,7 +85,6 @@ public class SetupTool
 	
 	public void assignSuperAdminRole(String subjectID, String password, String domainID, String appID)
 	{
-		
 		apiSecurityManager.logout();
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
 		
@@ -108,35 +96,23 @@ public class SetupTool
 		sard.setName("SuperAdminRule");
 		sard.setExpiration(null);
 		sard.setAssociationStatus(Status.ACTIVE);
-		
-		
-		
-		
+
 		apiSecurityManager.addShiroRule(sard);
-		
 		apiSecurityManager.logout();
-		
-		
 	}
-	
-	
+
 	public void createBasicRoles(String subjectID, String password, String domainID, String appID)
 	{
 		apiSecurityManager.logout();
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
-		
-		
-	
-		
-		
+
 		// set the permission manually
 		AuthorizationInfo ai =  ShiroUtil.lookupAuthorizationInfo(SecurityUtils.getSubject().getPrincipals());
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
 			ai.getStringPermissions().add(permission.getValue());
 		}
-		
-		
+
 //		ShiroRoleDAO superAdminRole = new ShiroRoleDAO(DOMAIN_ID, APP_ID, "super_admin_role", "Super admin role");
 //		
 //		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_read_all", "Read all nves", "nventity:read:*")));
