@@ -793,6 +793,18 @@ public class MongoDataStore
 			return;
 		}
 		
+		if (clazz == NVStringList.class)
+		{
+			List<String> values = new ArrayList<String>();
+			BasicDBList dbValues = (BasicDBList) dbObject.get(nvc.getName());
+			
+			for (Object val : dbValues)
+			{
+				values.add((String) val);
+			}
+			((NVStringList) nvb).setValue(values);
+			return;
+		}
 		if (clazz == long.class || clazz == Long.class)
 		{
 			((NVLong) nvb).setValue(dbObject.getLong(nvc.getName()));
@@ -1257,6 +1269,18 @@ public class MongoDataStore
 			else if (nvb instanceof NVEnumList)
 			{
 				doc.append(nvc.getName(), mapEnumList((NVEnumList) nvb));
+			}
+			else if (nvb instanceof NVStringList)
+			{
+				doc.append(nvc.getName(), ((NVStringList) nvb).getValue());
+			}
+			else if (nvb instanceof NVGenericMap)
+			{
+				
+			}
+			else if (nvb instanceof NVGenericMapList)
+			{
+				
 			}
 			else if (nvb instanceof NVEntityReference)
 			{
@@ -1909,6 +1933,18 @@ public class MongoDataStore
 				else if (nvb instanceof NVEnumList)
 				{
 					updatedDoc.put(nvc.getName(), mapEnumList((NVEnumList) nvb));
+				}
+				else if (nvb instanceof NVStringList)
+				{
+					updatedDoc.put(nvc.getName(), ((NVStringList) nvb).getValue());
+				}
+				else if (nvb instanceof NVGenericMap)
+				{
+					
+				}
+				else if (nvb instanceof NVGenericMapList)
+				{
+					
 				}
 				else if (nvb instanceof NVEntityReference)
 				{
