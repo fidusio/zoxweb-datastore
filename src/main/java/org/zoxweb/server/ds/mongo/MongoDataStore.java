@@ -2252,7 +2252,9 @@ public class MongoDataStore
 			gfsFile.setId(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
 			
 			os = gfsFile.getOutputStream();
-			IOUtil.relayStreams(is, os, false);
+			long length = IOUtil.relayStreams(is, os, false);
+			file.getOriginalFileInfo().setLength(length);
+			update(file.getOriginalFileInfo());
 			
 	
 			//gfsFile.save();

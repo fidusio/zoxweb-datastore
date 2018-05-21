@@ -90,7 +90,8 @@ public class MongoDSFileTest {
     @Test
     public void testCreateFile() throws IOException {
         FileInfoDAO createdFileInfo = new FileInfoDAO();
-        createdFileInfo.setName("mongo_conf");
+        
+        createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setDescription("MongoDB configuration file");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
         createdFileInfo.setLength(400);
@@ -109,7 +110,7 @@ public class MongoDSFileTest {
     @Test
     public void testReadFile() throws IOException {
         FileInfoDAO createdFileInfo = new FileInfoDAO();
-        createdFileInfo.setName("mongo_conf");
+        createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setDescription("MongoDB configuration file");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
         createdFileInfo.setLength(400);
@@ -130,7 +131,7 @@ public class MongoDSFileTest {
     @Test
     public void testUpdateFile() throws IOException {
         FileInfoDAO createdFileInfo = new FileInfoDAO();
-        createdFileInfo.setName("mongo_conf");
+        createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
         createdFileInfo.setLength(400);
         createdFileInfo.setCreationTime(System.currentTimeMillis());
@@ -151,7 +152,7 @@ public class MongoDSFileTest {
     @Test
     public void testDeleteFile() throws IOException {
         FileInfoDAO createdFileInfo = new FileInfoDAO();
-        createdFileInfo.setName("mongo_conf");
+        createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setDescription("MongoDB configuration file");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
         createdFileInfo.setLength(400);
