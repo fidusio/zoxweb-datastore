@@ -382,6 +382,7 @@ public class MongoDataStore
 	private DBObject mapNVGenericMap(NVGenericMap nvgm)
 	{
 		DBObject ret = new BasicDBObject();
+		ret.put(MetaToken.CLASS_TYPE.getName(), NVGenericMap.class.getName());
 		
 		for(GetNameValue<?> gnv : nvgm.values())
 		{
@@ -426,9 +427,9 @@ public class MongoDataStore
 					insert(nve);
 				ret.put(gnv.getName(), mapNVEntityReference(connect(), nve));
 			}
-			else if (value instanceof ArrayValues)
+			else if (gnv instanceof NVGenericMap)
 			{
-				
+				ret.put(gnv.getName(), mapNVGenericMap((NVGenericMap) gnv));
 			}
 		}
 		
@@ -908,50 +909,7 @@ public class MongoDataStore
 		{
 			NVGenericMap nvgm = (NVGenericMap) nvb;
 			DBObject dbNVGM = (DBObject) dbObject.get(nvc.getName());
-			for (String key : dbNVGM.keySet())
-			{
-				Object value = dbNVGM.get(key);
-				NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
-				if (possibleNVB != null)
-				{
-					nvgm.add(possibleNVB);
-				}
-				else if (value instanceof BasicDBObject)
-				{
-					String classType = (String)((DBObject)value).get(MetaToken.CLASS_TYPE.getName());
-					BasicDBObject subDBObject = (BasicDBObject) value;
-					if (classType != null)
-					{
-						Class<?> subClass = null;
-						try
-						{
-							subClass = Class.forName(classType);
-						} catch (ClassNotFoundException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-						if (subClass.isEnum())
-						{
-							NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass,  (String)((DBObject)value).get(MetaToken.VALUE.getName())));
-							nvgm.add(nvEnum);
-							continue;
-						}
-						if (subClass == BigDecimal.class)
-						{
-							NVBigDecimal nvBD = new NVBigDecimal(key, new BigDecimal((String)((DBObject)value).get(MetaToken.VALUE.getName())));
-							nvgm.add(nvBD);
-							continue;
-						}
-					}
-					else if (subDBObject.containsField(MetaToken.CANONICAL_ID.getName()) && subDBObject.containsField(MetaToken.REFERENCE_ID.getName()))
-					{
-						MongoDBObjectMeta mdbom = lookupByReferenceID(subDBObject);
-						NVEntity nveToAdd = fromDB(userID, db, mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase());
-						nvgm.add(key, nveToAdd);
-					}
-				}
-			}
-			
+			fromNVGenericMap(userID, nvgm, dbNVGM);	
 			return;
 			
 		}
@@ -1092,6 +1050,68 @@ public class MongoDataStore
 		}
 		
 		return null;
+	}
+	
+	
+	
+	@SuppressWarnings("unchecked")
+	private NVGenericMap fromNVGenericMap(String userID, NVGenericMap nvgm, DBObject dbNVGM) throws InstantiationException, IllegalAccessException, APIException
+	{
+		if (nvgm == null)
+		{
+			nvgm = new NVGenericMap();
+		}
+		
+		for (String key : dbNVGM.keySet())
+		{
+			Object value = dbNVGM.get(key);
+			NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
+			if (possibleNVB != null)
+			{
+				nvgm.add(possibleNVB);
+			}
+			else if (value instanceof BasicDBObject)
+			{
+				String classType = (String)((DBObject)value).get(MetaToken.CLASS_TYPE.getName());
+				BasicDBObject subDBObject = (BasicDBObject) value;
+				if (classType != null)
+				{
+					Class<?> subClass = null;
+					try
+					{
+						subClass = Class.forName(classType);
+					} catch (ClassNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					if (subClass.isEnum())
+					{
+						NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass,  (String)((DBObject)value).get(MetaToken.VALUE.getName())));
+						nvgm.add(nvEnum);
+						continue;
+					}
+					if (subClass == BigDecimal.class)
+					{
+						NVBigDecimal nvBD = new NVBigDecimal(key, new BigDecimal((String)((DBObject)value).get(MetaToken.VALUE.getName())));
+						nvgm.add(nvBD);
+						continue;
+					}
+					if (subClass == NVGenericMap.class)
+					{
+						nvgm.add(fromNVGenericMap(userID, null, subDBObject));
+						continue;
+					}
+				}
+				else if (subDBObject.containsField(MetaToken.CANONICAL_ID.getName()) && subDBObject.containsField(MetaToken.REFERENCE_ID.getName()))
+				{
+					MongoDBObjectMeta mdbom = lookupByReferenceID(subDBObject);
+					NVEntity nveToAdd = fromDB(userID, connect(), mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase());
+					nvgm.add(key, nveToAdd);
+				}
+			}
+		}
+		
+		return nvgm;
 	}
 
 	/**

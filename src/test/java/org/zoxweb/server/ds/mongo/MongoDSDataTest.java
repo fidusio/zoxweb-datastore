@@ -35,6 +35,7 @@ import org.zoxweb.shared.util.NVBoolean;
 import org.zoxweb.shared.util.NVDouble;
 import org.zoxweb.shared.util.NVEnum;
 import org.zoxweb.shared.util.NVFloat;
+import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.NVLong;
 import org.zoxweb.shared.util.NVStringList;
@@ -116,7 +117,7 @@ public class MongoDSDataTest {
     }
 
     @Test
-    public void testCreateNVGM()
+    public void testCreateNVGM() throws IOException
     {
     	int index = 1;
     	JWT jwtHS256 = new JWT();
@@ -145,6 +146,13 @@ public class MongoDSDataTest {
 		
 		
 		header.getNVGenericMap().add("nve", appID);
+		
+		NVGenericMap inner = new NVGenericMap("innerNVG");
+		inner.add(new NVLong("innerLong", 5000));
+		inner.add("innerString", "v");
+		
+		
+		header.getNVGenericMap().add(inner);
 		
 		JWTPayload payload = jwtHS256.getPayload();
 		payload.setDomainID("xlogistx.io");
@@ -187,6 +195,9 @@ public class MongoDSDataTest {
 		dataStore.insert(jwtHS256);
 		dataStore.insert(jwtNONE);
 		dataStore.insert(jwtHS512);
+		
+		
+		System.out.println(GSONUtil.toJSON(jwtHS256, true, false, false));
         
     }
     
