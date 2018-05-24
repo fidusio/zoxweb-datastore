@@ -27,6 +27,8 @@ import com.mongodb.ServerAddress;
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
+
+
 import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
@@ -54,8 +56,50 @@ import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessException;
-import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.util.ArrayValues;
+import org.zoxweb.shared.util.CRUD;
+import org.zoxweb.shared.util.Const;
+//import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
+import org.zoxweb.shared.util.DynamicEnumMap;
+import org.zoxweb.shared.util.DynamicEnumMapManager;
+import org.zoxweb.shared.util.GetName;
+import org.zoxweb.shared.util.GetNameValue;
+import org.zoxweb.shared.util.IDGenerator;
+import org.zoxweb.shared.util.NVECRUDMonitor;
+import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.NVEntityGetNameMap;
+import org.zoxweb.shared.util.NVEntityReference;
+import org.zoxweb.shared.util.NVEntityReferenceIDMap;
+import org.zoxweb.shared.util.NVEntityReferenceList;
+import org.zoxweb.shared.util.NVEnum;
+import org.zoxweb.shared.util.NVEnumList;
+import org.zoxweb.shared.util.NVGenericMap;
+import org.zoxweb.shared.util.NVGenericMapList;
+import org.zoxweb.shared.util.NVGetNameValueList;
+import org.zoxweb.shared.util.NVPair;
+import org.zoxweb.shared.util.NVPairGetNameMap;
+import org.zoxweb.shared.util.NVPairList;
+import org.zoxweb.shared.util.NVStringList;
+import org.zoxweb.shared.util.SharedStringUtil;
+import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.TimeStampInterface;
+import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.NVBase;
+import org.zoxweb.shared.util.NVBigDecimal;
+import org.zoxweb.shared.util.NVBigDecimalList;
+import org.zoxweb.shared.util.NVBlob;
+import org.zoxweb.shared.util.NVDouble;
+import org.zoxweb.shared.util.NVDoubleList;
+import org.zoxweb.shared.util.NVLong;
+import org.zoxweb.shared.util.NVLongList;
+import org.zoxweb.shared.util.NVInt;
+import org.zoxweb.shared.util.NVIntList;
+import org.zoxweb.shared.util.NVBoolean;
+import org.zoxweb.shared.util.NVFloat;
+import org.zoxweb.shared.util.NVFloatList;
+import org.zoxweb.shared.util.NVConfig;
+import org.zoxweb.shared.util.NVConfigEntity;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -334,10 +378,57 @@ public class MongoDataStore
 		return db;
 	}
 	
-	@SuppressWarnings("unused")
-	private DBObject mapNVGenericMap(NVEntity container, NVGenericMap nvgm)
+	
+	private DBObject mapNVGenericMap(NVGenericMap nvgm)
 	{
-		return null;
+		DBObject ret = new BasicDBObject();
+		
+		for(GetNameValue<?> gnv : nvgm.values())
+		{
+			
+			Object value = gnv.getValue();
+			if (value instanceof String  ||
+				value instanceof Boolean ||
+				value instanceof Integer ||
+				value instanceof Long    ||
+				value instanceof Float   ||
+				value instanceof Double  ||
+				value instanceof byte[]  ||
+				gnv instanceof NVStringList ||
+				gnv instanceof NVIntList ||
+				gnv instanceof NVLongList ||
+				gnv instanceof NVFloatList ||
+				gnv instanceof NVDoubleList 
+				)
+//				value instanceof BigDecimal ||
+//				value instanceof Enum)
+			{
+				ret.put(gnv.getName(), value);
+			}
+			else if (value instanceof Enum)
+			{
+				DBObject toAdd = new BasicDBObject();
+				toAdd.put(MetaToken.CLASS_TYPE.getName(), value.getClass().getName());
+				toAdd.put(MetaToken.VALUE.getName(), ((Enum<?>)value).name());
+				ret.put(gnv.getName(), toAdd);
+			}
+			else if (value instanceof BigDecimal)
+			{
+				DBObject toAdd = new BasicDBObject();
+				toAdd.put(MetaToken.CLASS_TYPE.getName(), value.getClass().getName());
+				toAdd.put(MetaToken.VALUE.getName(), ""+value);
+				ret.put(gnv.getName(), toAdd);
+			}
+			else if (value instanceof ArrayValues)
+			{
+				
+			}
+		}
+		
+		
+		
+		
+		return ret;
 	}
 	
 	private ArrayList<DBObject> mapArrayValuesNVPair(NVEntity container, ArrayValues<NVPair> listOfNVPair, boolean sync)
@@ -804,6 +895,55 @@ public class MongoDataStore
 			}
 			((NVStringList) nvb).setValue(values);
 			return;
+		}
+		
+		if(clazz == NVGenericMap.class)
+		{
+			NVGenericMap nvgm = (NVGenericMap) nvb;
+			DBObject dbNVGM = (DBObject) dbObject.get(nvc.getName());
+			for (String key : dbNVGM.keySet())
+			{
+				Object value = dbNVGM.get(key);
+				NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
+				if (possibleNVB != null)
+				{
+					nvgm.add(possibleNVB);
+				}
+				else if (value instanceof BasicDBObject)
+				{
+					String classType = (String)((DBObject)value).get(MetaToken.CLASS_TYPE.getName());
+					if (classType != null)
+					{
+						Class<?> subClass = null;
+						try
+						{
+							subClass = Class.forName(classType);
+						} catch (ClassNotFoundException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+						if (subClass.isEnum())
+						{
+							NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass,  (String)((DBObject)value).get(MetaToken.VALUE.getName())));
+							nvgm.add(nvEnum);
+							continue;
+						}
+						if (subClass == BigDecimal.class)
+						{
+							NVBigDecimal nvBD = new NVBigDecimal(key, new BigDecimal((String)((DBObject)value).get(MetaToken.VALUE.getName())));
+							nvgm.add(nvBD);
+							continue;
+						}
+					}
+				}
+			}
+			
+			return;
+			
+		}
+		if (clazz == NVGenericMapList.class)
+		{
+			
 		}
 		if (clazz == long.class || clazz == Long.class)
 		{
@@ -1276,7 +1416,7 @@ public class MongoDataStore
 			}
 			else if (nvb instanceof NVGenericMap)
 			{
-				
+				doc.append(nvc.getName(), mapNVGenericMap((NVGenericMap)nvb));
 			}
 			else if (nvb instanceof NVGenericMapList)
 			{
@@ -1940,7 +2080,7 @@ public class MongoDataStore
 				}
 				else if (nvb instanceof NVGenericMap)
 				{
-					
+					updatedDoc.put(nvc.getName(), mapNVGenericMap((NVGenericMap) nvb));
 				}
 				else if (nvb instanceof NVGenericMapList)
 				{

@@ -94,7 +94,7 @@ public class MongoDSFileTest {
         createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setDescription("MongoDB configuration file");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
-        createdFileInfo.setLength(400);
+       
         createdFileInfo.setCreationTime(System.currentTimeMillis());
 
         InputStream is = new FileInputStream(IOUtil.locateFile(MongoDSShiroTest.class.getClassLoader(), MONGO_CONF));
@@ -133,7 +133,7 @@ public class MongoDSFileTest {
         FileInfoDAO createdFileInfo = new FileInfoDAO();
         createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
-        createdFileInfo.setLength(400);
+        
         createdFileInfo.setCreationTime(System.currentTimeMillis());
 
         InputStream is = new FileInputStream(IOUtil.locateFile(MongoDSShiroTest.class.getClassLoader(), MONGO_CONF));
@@ -155,7 +155,7 @@ public class MongoDSFileTest {
         createdFileInfo.setFullPathName("mongo_conf");
         createdFileInfo.setDescription("MongoDB configuration file");
         createdFileInfo.setFileType(FileInfoDAO.FileType.FILE);
-        createdFileInfo.setLength(400);
+        
         createdFileInfo.setCreationTime(System.currentTimeMillis());
 
         InputStream is = new FileInputStream(IOUtil.locateFile(MongoDSShiroTest.class.getClassLoader(), MONGO_CONF));
