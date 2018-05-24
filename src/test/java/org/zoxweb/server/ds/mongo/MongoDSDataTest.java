@@ -8,6 +8,7 @@ import org.apache.shiro.util.Factory;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.api.APIDocumentStore;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -16,10 +17,11 @@ import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.util.GSONUtil;
+import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
-
+import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.JWT;
 import org.zoxweb.shared.security.JWTHeader;
@@ -68,6 +70,7 @@ public class MongoDSDataTest {
     protected static APISecurityManager<Subject> apiSecurityManager;
     protected static APIDocumentStore<?> documentStore;
     protected static APIDataStore<?> dataStore;
+    protected static APIAppManager appManager = new APIAppManagerProvider();
 
     @BeforeClass
     public static void start()
@@ -94,6 +97,10 @@ public class MongoDSDataTest {
         ResourceManager.SINGLETON.map(Resource.DATA_STORE, mdsc.createAPI(null, dsConfig));
         dataStore = ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
         documentStore = ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
+        
+
+        appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+        appManager.setAPISecurityManager(apiSecurityManager);
 
         ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
         realm.setAPISecurityManager(apiSecurityManager);
@@ -130,6 +137,14 @@ public class MongoDSDataTest {
 		stringListValue.add("mario");
 		stringListValue.add("taza");
 		header.getNVGenericMap().add(new NVStringList("stringlist", stringListValue));
+		AppIDDAO appID = appManager.lookupAppIDDAO("batata.com", "banadoura", false);
+		if (appID == null)
+		{
+			appID = new AppIDDAO("batata.com", "banadoura");
+		}
+		
+		
+		header.getNVGenericMap().add("nve", appID);
 		
 		JWTPayload payload = jwtHS256.getPayload();
 		payload.setDomainID("xlogistx.io");

@@ -419,6 +419,13 @@ public class MongoDataStore
 				toAdd.put(MetaToken.VALUE.getName(), ""+value);
 				ret.put(gnv.getName(), toAdd);
 			}
+			else if(value instanceof NVEntity)
+			{
+				NVEntity nve = (NVEntity)value;
+				if (nve.getReferenceID() == null)
+					insert(nve);
+				ret.put(gnv.getName(), mapNVEntityReference(connect(), nve));
+			}
 			else if (value instanceof ArrayValues)
 			{
 				
@@ -912,6 +919,7 @@ public class MongoDataStore
 				else if (value instanceof BasicDBObject)
 				{
 					String classType = (String)((DBObject)value).get(MetaToken.CLASS_TYPE.getName());
+					BasicDBObject subDBObject = (BasicDBObject) value;
 					if (classType != null)
 					{
 						Class<?> subClass = null;
@@ -934,6 +942,12 @@ public class MongoDataStore
 							nvgm.add(nvBD);
 							continue;
 						}
+					}
+					else if (subDBObject.containsField(MetaToken.CANONICAL_ID.getName()) && subDBObject.containsField(MetaToken.REFERENCE_ID.getName()))
+					{
+						MongoDBObjectMeta mdbom = lookupByReferenceID(subDBObject);
+						NVEntity nveToAdd = fromDB(userID, db, mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase());
+						nvgm.add(key, nveToAdd);
 					}
 				}
 			}
