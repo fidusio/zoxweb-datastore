@@ -1068,6 +1068,18 @@ public class MongoDataStore
 			NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
 			if (possibleNVB != null)
 			{
+				if(possibleNVB.getValue() instanceof String && MetaToken.CLASS_TYPE.getName().equalsIgnoreCase(key))
+				{
+					try
+					{
+						Class.forName((String)possibleNVB.getValue());
+						continue;
+					}
+					catch(Exception e)
+					{
+						
+					}
+				}
 				nvgm.add(possibleNVB);
 			}
 			else if (value instanceof BasicDBObject)
@@ -1098,7 +1110,9 @@ public class MongoDataStore
 					}
 					if (subClass == NVGenericMap.class)
 					{
-						nvgm.add(fromNVGenericMap(userID, null, subDBObject));
+						NVGenericMap nvgmToAdd = fromNVGenericMap(userID, null, subDBObject);
+						nvgmToAdd.setName(key);
+						nvgm.add(nvgmToAdd);
 						continue;
 					}
 				}
