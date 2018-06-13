@@ -19,7 +19,6 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 
@@ -31,6 +30,7 @@ import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.SecurityConsts;
 import org.zoxweb.shared.security.SubjectAPIKey;
 
 public class MongoDSTest 
@@ -120,7 +120,7 @@ public class MongoDSTest
 			userInfo.setFirstName("N/S");
 			userInfo.setLastName("N/S");
 			userID.setUserInfo(userInfo);
-			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
+			appManager.createUserIDDAO(userID, SecurityConsts.UserStatus.ACTIVE, password);
 			
 		    
 			Subject currentUser = apiSecurityManager.login(subjectID, password, null, null, false);

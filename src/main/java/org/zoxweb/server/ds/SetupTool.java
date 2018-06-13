@@ -13,7 +13,6 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import org.zoxweb.server.security.UserIDCredentialsDAO.UserStatus;
 import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
 import org.zoxweb.server.security.shiro.ShiroUtil;
 import org.zoxweb.server.task.TaskUtil;
@@ -27,6 +26,8 @@ import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.SecurityConsts;
+
 import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -283,7 +284,7 @@ public class SetupTool
 		userInfo.setLastName(lastname);
 		userID.setUserInfo(userInfo);
 		APIAppManager appManager = ResourceManager.SINGLETON.lookup(Resource.API_APP_MANAGER);
-		return appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, SecurityConsts.UserStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
