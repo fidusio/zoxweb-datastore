@@ -350,7 +350,7 @@ public class MongoDSShiroTest
         deviceDAO.setVersion("10");
 
         AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
-        appDeviceDAO.setAppIDDAO(appIDDAO);
+        appDeviceDAO.setAppGID(appIDDAO.getAppGID());
         appDeviceDAO.setDevice(deviceDAO);
         if (apiKey != null)
         	appDeviceDAO.setClientID(apiKey);

@@ -59,7 +59,7 @@ public class MongoQueryFormatterTest {
         assertNotNull(query.get("_id"));
 
         query = MongoQueryFormatter.formatQuery(UserPreferenceDAO.NVC_USER_PREFERENCE_DAO,
-                new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_ID.getNVConfig(), MetaToken.REFERENCE_ID),
+                new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_GID.getNVConfig(), MetaToken.REFERENCE_ID),
                 Const.LogicalOperator.AND,
                 new QueryMatch<>(RelationalOperator.EQUAL, "542c55c7ea59bfebabe370b1", "user_id")
         );
