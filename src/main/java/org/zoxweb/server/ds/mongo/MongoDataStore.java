@@ -134,7 +134,7 @@ public class MongoDataStore
 {
     private static final transient Logger log = Logger.getLogger(MongoDataStore.class.getName());
     
-    public static final IDGenerator<String> MongoIDGenerator = new IDGenerator<String>()
+    public static final IDGenerator<String, ObjectId> MongoIDGenerator = new IDGenerator<String, ObjectId>()
 	{
 		
 		@Override
@@ -142,6 +142,11 @@ public class MongoDataStore
 		{
 			return ObjectId.get().toHexString();
 		}
+		
+		public ObjectId generateNativeID() 
+        {
+            return ObjectId.get();
+        }
 
 		@Override
 		public String getName() 
@@ -3451,7 +3456,8 @@ public class MongoDataStore
 	}
 	
 	
-	public IDGenerator<String> getIDGenerator()
+	@SuppressWarnings("unchecked")
+    public IDGenerator<String, ObjectId> getIDGenerator()
 	{
 		return MongoIDGenerator;
 	}

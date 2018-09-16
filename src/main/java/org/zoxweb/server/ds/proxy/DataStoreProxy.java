@@ -341,7 +341,8 @@ public class DataStoreProxy
 	}
 	
 	
-	public IDGenerator<String> getIDGenerator()
+	@SuppressWarnings("unchecked")
+    public IDGenerator<String, String> getIDGenerator()
 	{
 		return null;
 	}

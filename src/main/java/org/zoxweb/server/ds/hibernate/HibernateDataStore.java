@@ -21,6 +21,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
 import org.zoxweb.server.io.IOUtil;
+import org.zoxweb.server.util.IDGeneratorUtil;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIDataStore;
@@ -542,9 +543,10 @@ public class HibernateDataStore
 	}
 	
 	
-	public IDGenerator<String> getIDGenerator()
+	@SuppressWarnings("unchecked")
+    public IDGenerator<String, UUID> getIDGenerator()
 	{
-		return null;
+		return IDGeneratorUtil.UUIDV4;
 	}
 
 	@Override
