@@ -353,13 +353,13 @@ public class MongoDSShiroTest
         appDeviceDAO.setAppGID(appIDDAO.getAppGID());
         appDeviceDAO.setDevice(deviceDAO);
         if (apiKey != null)
-        	appDeviceDAO.setClientID(apiKey);
+        	appDeviceDAO.setSubjectID(apiKey);
 
 
         apiSecurityManager.logout();
         AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, userID, password);
        
-        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getClientID(), false);
+        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getSubjectID(), false);
         log.info(""+val);
     }
 	

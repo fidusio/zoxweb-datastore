@@ -1,6 +1,8 @@
 package org.zoxweb.server.ds.derby;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -19,32 +21,64 @@ import org.zoxweb.shared.util.GetName;
 import org.zoxweb.shared.util.IDGenerator;
 import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.SharedUtil;
 
 @SuppressWarnings("serial")
 public class DerbyDataStore implements APIDataStore<Connection> {
 
+  private volatile APIConfigInfo apiConfig = null;
+  private volatile boolean driverLoaded = false;
+  
+  
   @Override
   public APIConfigInfo getAPIConfigInfo() {
     // TODO Auto-generated method stub
-    return null;
+    return apiConfig;
   }
 
   @Override
   public void setAPIConfigInfo(APIConfigInfo configInfo) {
     // TODO Auto-generated method stub
-    
+    apiConfig = configInfo;
   }
 
   @Override
   public Connection connect() throws APIException {
     // TODO Auto-generated method stub
-    return null;
+    if (!driverLoaded)
+    {
+      synchronized(this)
+      {
+        if(!driverLoaded)
+        {
+          SharedUtil.checkIfNulls("Configuration null", getAPIConfigInfo());
+          
+          String driverClassName = getAPIConfigInfo().getConfigParameters().get("driver_name").getValue();
+          try 
+          {
+            Class.forName(driverClassName);
+            driverLoaded = true;
+          } catch (ClassNotFoundException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            throw new APIException("Driver not loaded");
+          }
+        }
+      }
+    }
+    return newConnection();
   }
 
   @Override
   public Connection newConnection() throws APIException {
     // TODO Auto-generated method stub
-    return null;
+    try {
+      return DriverManager.getConnection(getAPIConfigInfo().getConfigParameters().get("url").getValue());
+    } catch (SQLException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+    throw new APIException("Connection failed");
   }
 
   @Override
