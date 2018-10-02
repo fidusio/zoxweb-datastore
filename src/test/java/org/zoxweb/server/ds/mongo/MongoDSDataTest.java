@@ -134,18 +134,18 @@ public class MongoDSDataTest {
 		
 		header.setJWTAlgorithm(JWTAlgorithm.HS256);
 		header.setTokenType("JWT");
-		header.getNVGenericMap().add(new NVBoolean("boolean", true));
-		header.getNVGenericMap().add(new NVEnum("enum", JWTAlgorithm.HS256));
-		header.getNVGenericMap().add(new NVInt("int", 1000));
-		header.getNVGenericMap().add(new NVLong("long", 1000000));
-		header.getNVGenericMap().add(new NVFloat("float", (float) 32.554));
-		header.getNVGenericMap().add(new NVDouble("double", 32.554));
-		header.getNVGenericMap().add(new NVBlob("blob", new byte[] {0,1,2,3,4,5,6,7,8,9}));
-		header.getNVGenericMap().add(new NVBigDecimal("bigdecimal", new BigDecimal(1254.5856584)));
+		header.getProperties().add(new NVBoolean("boolean", true));
+		header.getProperties().add(new NVEnum("enum", JWTAlgorithm.HS256));
+		header.getProperties().add(new NVInt("int", 1000));
+		header.getProperties().add(new NVLong("long", 1000000));
+		header.getProperties().add(new NVFloat("float", (float) 32.554));
+		header.getProperties().add(new NVDouble("double", 32.554));
+		header.getProperties().add(new NVBlob("blob", new byte[] {0,1,2,3,4,5,6,7,8,9}));
+		header.getProperties().add(new NVBigDecimal("bigdecimal", new BigDecimal(1254.5856584)));
 		List<String> stringListValue = new ArrayList<String>();
 		stringListValue.add("mario");
 		stringListValue.add("taza");
-		header.getNVGenericMap().add(new NVStringList("stringlist", stringListValue));
+		header.getProperties().add(new NVStringList("stringlist", stringListValue));
 		AppIDDAO appID = appManager.lookupAppIDDAO("batata.com", "banadoura", false);
 		if (appID == null)
 		{
@@ -153,14 +153,14 @@ public class MongoDSDataTest {
 		}
 		
 		
-		header.getNVGenericMap().add("nve", appID);
+		header.getProperties().add("nve", appID);
 		
 		NVGenericMap inner = new NVGenericMap("innerNVG");
 		inner.add(new NVLong("innerLong", 5000));
 		inner.add("innerString", "v");
 		
 		
-		header.getNVGenericMap().add(inner);
+		header.getProperties().add(inner);
 		
 		JWTPayload payload = jwtHS256.getPayload();
 		payload.setDomainID("xlogistx.io");
