@@ -263,7 +263,8 @@ public class MongoDataStore
 	 * @return mongoDB
 	 * @throws UnknownHostException
 	 */
-	public DB connect() 
+	
+    public DB connect() 
 			throws APIException
 	{
 		if (mongoDB == null)
@@ -292,7 +293,7 @@ public class MongoDataStore
 					try 
 					{
 						mongoDB = newConnection();
-						mongoClient = (MongoClient) mongoDB.getMongo();
+						mongoClient = (MongoClient) mongoDB.getMongoClient();
 					}
 					catch (MongoException e)
 					{
@@ -1032,7 +1033,7 @@ public class MongoDataStore
 				
 				if (!SharedStringUtil.isEmpty(filterTypeName))
 				{
-				    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(FilterType.values(), filterTypeName));
+				    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(filterTypeName, FilterType.values()));
 				}
 			}
 			
@@ -2464,7 +2465,7 @@ public class MongoDataStore
 			{
 				try
 				{
-					temp.getMongo().close();
+					temp.getMongoClient().close();
 				}
 				catch( Exception e)
 				{
@@ -2515,7 +2516,7 @@ public class MongoDataStore
 			{
 				try
 				{
-					temp.getMongo().close();
+					temp.getMongoClient().close();
 				}
 				catch( Exception e)
 				{
