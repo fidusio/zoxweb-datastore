@@ -129,12 +129,12 @@ public class HibernateDataStore
             {
                 if (sessionFactory == null)
                 {
-                    if (configInfo == null || configInfo.getConfigParameters() == null)
+                    if (configInfo == null)
                     {
                         throw new NullPointerException("Missing configuration info.");
                     }
 
-                    String resource = SharedUtil.lookupValue(configInfo.getConfigParameters().get(RESOURCE));
+                    String resource = configInfo.getProperties().getValue(RESOURCE);
 
                     SharedUtil.checkIfNulls("Resource (e.g. hibernate.cfg.xml) is null.", resource);
 

@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.hibernate;
+package org.zoxweb.server.ds.derby;
 
 
 
@@ -25,23 +25,28 @@ import static org.junit.Assert.*;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
-import org.zoxweb.shared.util.NVPair;
 
-public class HibernateDataStoreTest {
+
+public class DerbyDataStoreTest {
 
 	// local datatore
-    private static HibernateDataStore dataStore;
-    private static final String RESOURCE_FILE = "hibernate.cfg.xml";
+    private static DerbyDataStore dataStore;
+    private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
+    private static final String URL = "jdbc:derby:memory:test;create=true";
+    private static final String USER ="APP";
+    private static final String PASSWORD ="APP";
 
     @BeforeClass
     public static void setUp() {
 //    	try
     	{
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
-    		configInfo.getProperties().add(new NVPair("resource", RESOURCE_FILE));
-
-    		dataStore = new HibernateDataStore(configInfo);
-    		dataStore.connect();
+    		configInfo.getProperties().add("driver", DRIVER);
+    		configInfo.getProperties().add("url", URL);
+    		configInfo.getProperties().add("user", USER);
+    		configInfo.getProperties().add("password", PASSWORD);
+    		dataStore = new DerbyDataStore(configInfo);
+    		System.out.println(dataStore.connect());
     	}
 //    	catch(Throwable e)
 //    	{

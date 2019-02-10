@@ -3,9 +3,12 @@ package org.zoxweb.server.ds.derby;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
+import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.util.IDGeneratorUtil;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIConfigInfo;
@@ -28,6 +31,19 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
   private volatile APIConfigInfo apiConfig = null;
   private volatile boolean driverLoaded = false;
+  private volatile Set<Connection> connections = new HashSet<Connection>();
+  
+  
+  public DerbyDataStore()
+  {
+    
+  }
+  
+  
+  public DerbyDataStore(APIConfigInfo configInfo)
+  {
+    setAPIConfigInfo(configInfo);
+  }
   
   
   @Override
@@ -53,7 +69,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         {
           SharedUtil.checkIfNulls("Configuration null", getAPIConfigInfo());
           
-          String driverClassName = getAPIConfigInfo().getConfigParameters().get("driver_name").getValue();
+          String driverClassName = getAPIConfigInfo().getProperties().getValue(DerbyParam.DRIVER);
           try 
           {
             Class.forName(driverClassName);
@@ -72,8 +88,18 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   @Override
   public Connection newConnection() throws APIException {
     // TODO Auto-generated method stub
-    try {
-      return DriverManager.getConnection(getAPIConfigInfo().getConfigParameters().get("url").getValue());
+    try 
+    {
+      synchronized(connections)
+      {
+        Connection ret =  DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL),
+      
+                                         getAPIConfigInfo().getProperties().getValue(DerbyParam.USER),
+                                         getAPIConfigInfo().getProperties().getValue(DerbyParam.PASSWORD));
+        
+        connections.add(ret);
+        return ret;
+      }
     } catch (SQLException e) {
       // TODO Auto-generated catch block
       e.printStackTrace();
@@ -84,7 +110,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   @Override
   public void close() throws APIException {
     // TODO Auto-generated method stub
-    
+    connections.stream().forEach(c->IOUtil.close(c));
   }
 
   @Override
