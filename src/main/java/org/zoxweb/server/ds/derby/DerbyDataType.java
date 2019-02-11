@@ -1,17 +1,18 @@
 package org.zoxweb.server.ds.derby;
 
 import java.util.Date;
-import org.zoxweb.shared.util.NVBoolean;
+
+import org.zoxweb.shared.util.*;
 
 public enum DerbyDataType
 {
   BOOLEAN("BOOLEAN", Boolean.class, NVBoolean.class),
-  BLOB("BLOB", byte[].class),
+  BLOB("BLOB", byte[].class, NVBlob.class),
   LONG_VARCHAR("LONG VARCHAR", String.class),
-  INTEGER("INTEGER", Integer.class),
-  BIGINT("BIGINT", Long.class),
-  FLOAT("FLOAT", Float.class),
-  DOUBLE("DOUBLE", Double.class),
+  INTEGER("INTEGER", Integer.class, NVInt.class),
+  BIGINT("BIGINT", Long.class, NVLong.class),
+  FLOAT("FLOAT", Float.class, NVFloat.class),
+  DOUBLE("DOUBLE", Double.class, NVDouble.class),
   TIMESTAMP("TIMESTAMP", Date.class),
   
   
@@ -22,7 +23,7 @@ public enum DerbyDataType
   ;
   
   private String dbType;
-  private Object types;
+  private Object types[];
   DerbyDataType(String dbName, Object ...types)
   {
     this.dbType = dbName;
@@ -34,9 +35,20 @@ public enum DerbyDataType
   {
     return dbType;
   }
-  
-  
-  
+
+
+  public static DerbyDataType toType(Object obj)
+  {
+    for (DerbyDataType ddt : DerbyDataType.values())
+    {
+      for(Object o : ddt.types)
+      {
+        if (obj == o)
+          return ddt;
+      }
+    }
+    return null;
+  }
 
   
 }
