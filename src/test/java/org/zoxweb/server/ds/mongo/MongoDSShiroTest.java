@@ -27,9 +27,10 @@ import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.db.QueryMatchString;
+import org.zoxweb.shared.http.HTTPEncoder;
 import org.zoxweb.shared.http.HTTPMessageConfig;
 import org.zoxweb.shared.http.HTTPMethod;
-import org.zoxweb.shared.http.HTTPParameterFormatter;
+
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.security.SecurityConsts;
@@ -588,7 +589,7 @@ public class MongoDSShiroTest
 
 	    HTTPMessageConfig hmc = (HTTPMessageConfig) HTTPMessageConfig.createAndInit("http://localhost:8080", "/api", HTTPMethod.GET);
         hmc.setName("HTTPMessageConfig test");
-        hmc.setHTTPParameterFormatter(HTTPParameterFormatter.URI_REST_ENCODED);
+        hmc.setHTTPParameterFormatter(HTTPEncoder.URI_REST_ENCODED);
         hmc.getParameters().add(new NVPair("name", "John Smith"));
         hmc.getParameters().add(new NVPair("year", "2017"));
         hmc.getHeaderParameters().add(new NVPair("bozo", "the clown"));
