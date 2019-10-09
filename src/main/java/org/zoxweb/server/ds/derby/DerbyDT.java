@@ -4,7 +4,7 @@ import java.util.Date;
 
 import org.zoxweb.shared.util.*;
 
-public enum DerbyDataType
+public enum DerbyDT
 {
   BOOLEAN("BOOLEAN", Boolean.class, NVBoolean.class),
   BLOB("BLOB", byte[].class, NVBlob.class),
@@ -24,7 +24,7 @@ public enum DerbyDataType
   
   private String dbType;
   private Object types[];
-  DerbyDataType(String dbName, Object ...types)
+  DerbyDT(String dbName, Object ...types)
   {
     this.dbType = dbName;
     this.types = types;
@@ -37,9 +37,9 @@ public enum DerbyDataType
   }
 
 
-  public static DerbyDataType toType(Object obj)
+  public static DerbyDT toType(Object obj)
   {
-    for (DerbyDataType ddt : DerbyDataType.values())
+    for (DerbyDT ddt : DerbyDT.values())
     {
       for(Object o : ddt.types)
       {

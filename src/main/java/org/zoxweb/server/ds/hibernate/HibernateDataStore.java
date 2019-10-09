@@ -322,6 +322,7 @@ public class HibernateDataStore
         } 
         catch (HibernateException e) 
         {
+            e.printStackTrace();
             if (transaction != null)
             {
                 transaction.rollback();

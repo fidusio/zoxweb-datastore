@@ -1,12 +1,12 @@
 package org.zoxweb.server.ds.derby;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Logger;
+
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.util.IDGeneratorUtil;
@@ -32,8 +32,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   private volatile APIConfigInfo apiConfig = null;
   private volatile boolean driverLoaded = false;
   private volatile Set<Connection> connections = new HashSet<Connection>();
-  
-  
+
+  public static final String CACHE_DATA_TB  = "CACHE_DATA_TB";
+
+  private static transient  Logger log = Logger.getLogger(DerbyDataStore.class.getName());
   public DerbyDataStore()
   {
     
@@ -43,9 +45,49 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   public DerbyDataStore(APIConfigInfo configInfo)
   {
     setAPIConfigInfo(configInfo);
+    init();
   }
-  
-  
+
+
+  private void init()
+  {
+    Connection con = null;
+    Statement stmt = null;
+    try {
+      con = newConnection();
+      stmt = con.createStatement();
+      if (!doesTableExist(CACHE_DATA_TB))
+      stmt.execute("create table " + CACHE_DATA_TB + " (GLOBAL_ID VARCHAR(64), CANONICAL_ID VARCHAR(1024), DATA_TXT LONG VARCHAR, PRIMARY KEY(GLOBAL_ID))");
+    }
+    catch(Exception e)
+    {
+
+    }
+    finally {
+      IOUtil.close(con, stmt);
+    }
+  }
+
+  public boolean doesTableExist(String sTablename) throws SQLException{
+
+
+      DatabaseMetaData dbmd = newConnection().getMetaData();
+      ResultSet rs = dbmd.getTables(null, null, sTablename.toUpperCase(),null);
+      if(rs.next())
+      {
+       log.info("Table "+rs.getString("TABLE_NAME")+"already exists !!");
+        return true;
+      }
+      else
+      {
+        log.info("Table " + sTablename + " do not exist.");
+        return false;
+      }
+
+
+  }
+
+
   @Override
   public APIConfigInfo getAPIConfigInfo() {
     // TODO Auto-generated method stub
