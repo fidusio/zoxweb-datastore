@@ -26,6 +26,8 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
 
+import java.util.List;
+
 
 public class DerbyDataStoreTest {
 
@@ -70,7 +72,7 @@ public class DerbyDataStoreTest {
 
         addressDAO = (AddressDAO) dataStore.insert(addressDAO);
         assertNotNull(addressDAO);
-        assertNotNull(addressDAO.getReferenceID());
+        assertNotNull(addressDAO.getGlobalID());
    }
 
     @Test
@@ -79,10 +81,12 @@ public class DerbyDataStoreTest {
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
-        addressDAO = (AddressDAO) dataStore.insert(addressDAO);
+        addressDAO = dataStore.insert(addressDAO);
+        assertNotNull(addressDAO);
 
-        AddressDAO result = (AddressDAO) dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID());
-        assertNotNull(result);
+        List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID());
+
+        //assertNotNull(result);
 
         System.out.println("Result: " + result);
     }
@@ -113,8 +117,8 @@ public class DerbyDataStoreTest {
         addressDAO = (AddressDAO) dataStore.insert(addressDAO);
 
         dataStore.delete(addressDAO, true);
-        addressDAO = (AddressDAO) dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID());
-        assertNull(addressDAO);
+        List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID());
+        assert(result.isEmpty());
     }
 
 }
