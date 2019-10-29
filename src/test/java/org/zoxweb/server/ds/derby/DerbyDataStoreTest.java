@@ -19,6 +19,7 @@ package org.zoxweb.server.ds.derby;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -34,13 +35,15 @@ import java.io.IOException;
 import java.util.List;
 
 
+
+
 public class DerbyDataStoreTest {
 
 	// local datatore
     private static DerbyDataStore dataStore;
     private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
-    private static final String MEMORY_URL = "jdbc:derby:memory:test;create=true";
-    private static final String DIR_URL = "jdbc:derby:/db/derby/test;create=true";
+    private static final String MEMORY_URL = "jdbc:derby:memory:test";
+    private static final String DIR_URL = "jdbc:derby:/tmp/derby/test";
     private static final String USER ="APP";
     private static final String PASSWORD ="APP";
 
@@ -50,7 +53,7 @@ public class DerbyDataStoreTest {
     	{
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", DRIVER);
-    		configInfo.getProperties().add("url", MEMORY_URL);
+    		configInfo.getProperties().add("url", DIR_URL);
     		configInfo.getProperties().add("user", USER);
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
@@ -99,28 +102,26 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testInsertComplex() throws IOException {
-
-
-        DSTestClass.NVETypes nveTypes = null;
+        DSTestClass.ComplexTypes complexTypes = null;
 
         for (int i = 0;i < 10; i++) {
             DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
             long ts = System.nanoTime();
-            nveTypes = new DSTestClass.NVETypes();
-            nveTypes.setAllTypes(allTypes);
-            nveTypes = dataStore.insert(nveTypes);
+            complexTypes = DSTestClass.ComplexTypes.buildComplex();
+            complexTypes.setAllTypes(allTypes);
+            complexTypes = dataStore.insert(complexTypes);
             ts = System.nanoTime() - ts;
             System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
         }
 
-        assertNotNull(nveTypes);
-        assertNotNull(nveTypes.getGlobalID());
-        System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
-        List<DSTestClass.NVETypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
-        nveTypes = result.get(0);
+        assertNotNull(complexTypes);
+        assertNotNull(complexTypes.getGlobalID());
+        String jsonOrig = GSONUtil.toJSON(complexTypes, true, false, false);
+        List<DSTestClass.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) complexTypes.getNVConfig(), complexTypes.getGlobalID());
+        complexTypes = result.get(0);
 
-        String json = GSONUtil.toJSON(nveTypes, true, false, true);
-        System.out.println(json);
+        String json = GSONUtil.toJSON(complexTypes, true, false, false);
+        assertEquals(jsonOrig,json);
 
     }
 
@@ -161,13 +162,13 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testUpdateComplex() throws IOException {
-        DSTestClass.NVETypes nveTypes = null;
+        DSTestClass.ComplexTypes nveTypes = null;
 
 //        for (int i = 0;i < 10; i++)
         {
             DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
             long ts = System.nanoTime();
-            nveTypes = new DSTestClass.NVETypes();
+            nveTypes = DSTestClass.ComplexTypes.buildComplex();
             nveTypes.setAllTypes(allTypes);
             nveTypes = dataStore.update(nveTypes);
             ts = System.nanoTime() - ts;
@@ -181,7 +182,7 @@ public class DerbyDataStoreTest {
         nveTypes.getAllTypes().setName("harra");
         nveTypes =  dataStore.update(nveTypes);
         System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
-        List<DSTestClass.NVETypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
+        List<DSTestClass.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
         nveTypes = result.get(0);
 
 
@@ -200,5 +201,7 @@ public class DerbyDataStoreTest {
         List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID());
         assert(result.isEmpty());
     }
+
+
 
 }

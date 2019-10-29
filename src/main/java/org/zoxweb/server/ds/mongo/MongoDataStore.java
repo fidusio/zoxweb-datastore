@@ -3163,7 +3163,7 @@ public class MongoDataStore
 		SharedUtil.checkIfNulls("null class name", className);
 		try 
 		{
-			nvce = MetaUtil.SINGLETON.fromClass(className);
+			nvce = MetaUtil.fromClass(className);
 		} catch (Exception e) 
 		{
 			e.printStackTrace();

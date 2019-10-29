@@ -258,7 +258,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     {
       synchronized(connections)
       {
-        Connection ret =  DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL),
+        Connection ret =  DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL) +";create=true",
 
                                          getAPIConfigInfo().getProperties().getValue(DerbyParam.USER),
                                          getAPIConfigInfo().getProperties().getValue(DerbyParam.PASSWORD));
@@ -280,15 +280,16 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       connections.stream().forEach(c -> IOUtil.close(c));
       connections.clear();
 
-      try {
-        DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL) +";shutdown=true",
-
-                getAPIConfigInfo().getProperties().getValue(DerbyParam.USER),
-                getAPIConfigInfo().getProperties().getValue(DerbyParam.PASSWORD));
-      } catch (SQLException e) {
-        e.printStackTrace();
-      }
+//      try {
+//        DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL) +";shutdown=true",
+//
+//                getAPIConfigInfo().getProperties().getValue(DerbyParam.USER),
+//                getAPIConfigInfo().getProperties().getValue(DerbyParam.PASSWORD));
+//      } catch (SQLException e) {
+//        e.printStackTrace();
+//      }
     }
+    log.info("Closed");
   }
 
   @Override

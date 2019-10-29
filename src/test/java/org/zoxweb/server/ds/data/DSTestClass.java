@@ -5,11 +5,12 @@ import org.zoxweb.shared.data.SetNameDescriptionDAO;
 import org.zoxweb.shared.util.*;
 
 import java.security.SecureRandom;
-import java.sql.Connection;
 import java.util.List;
 
 
 public class DSTestClass {
+
+    static SecureRandom sr =  new SecureRandom();
 
     public static class AllTypes
         extends SetNameDescriptionDAO
@@ -178,8 +179,8 @@ public class DSTestClass {
         {
             AllTypes ret = new AllTypes();
             try {
-                SecureRandom sr =  CryptoUtil.defaultSecureRandom();
-                ret.setName("AllTypes-" + SharedUtil.signum(sr.nextInt()));
+
+                ret.setName("AllTypes-" + Math.abs(sr.nextInt()));
                 ret.setDescription("Auto generated.");
                 ret.setBoolean(sr.nextBoolean());
                 ret.setInt(sr.nextInt());
@@ -204,13 +205,17 @@ public class DSTestClass {
 
 
 
-    public static class NVETypes
+    public static class ComplexTypes
             extends SetNameDescriptionDAO {
         public enum Param
                 implements GetNVConfig {
 
             ALL_TYPES(NVConfigManager.createNVConfigEntity("all_types", "All Types", "AllTypes", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.NOT_ARRAY)),
-
+            INT_ARRAY(NVConfigManager.createNVConfig("int_array", "Integer Value", "IntVal", false, true, int[].class)),
+            LONG_ARRAY(NVConfigManager.createNVConfig("long_array", "Long Value", "LongVal", false, true, long[].class)),
+            FLOAT_ARRAY(NVConfigManager.createNVConfig("float_array", "Float Value", "FloatVal", false, true, float[].class)),
+            DOUBLE_ARRAY(NVConfigManager.createNVConfig("double_array", "Double Value", "DoubleVal", false, true, double[].class)),
+            ENUM_ARRAY(NVConfigManager.createNVConfig("enum_array", "Enum Value", "EnumVal", false, true, Const.Status[].class)),
             ;
 
             private NVConfig nvc;
@@ -233,21 +238,21 @@ public class DSTestClass {
         }
 
         public static final NVConfigEntity NVC_NVETYPES_DOA = new NVConfigEntityLocal(
-                "nve_types",
+                "complex_types",
                 null,
-                "NVETypes",
+                "ComplexTypes",
                 true,
                 false,
                 false,
                 false,
-                NVETypes.class,
-                SharedUtil.extractNVConfigs(NVETypes.Param.values()),
+                ComplexTypes.class,
+                SharedUtil.extractNVConfigs(Param.values()),
                 null,
                 false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
         );
 
-        public NVETypes()
+        public ComplexTypes()
         {
             super(NVC_NVETYPES_DOA);
         }
@@ -261,6 +266,26 @@ public class DSTestClass {
         {
             setValue(Param.ALL_TYPES, at);
         }
+
+        public static ComplexTypes buildComplex()
+        {
+            ComplexTypes ret = new ComplexTypes();
+
+            ret.setName("AllTypes-" + Math.abs(sr.nextInt()));
+            ret.setDescription("Auto generated.");
+            for (int i = 0; i < 3; i++) {
+                ((NVDoubleList) ret.attributes.get(Param.DOUBLE_ARRAY.getNVConfig().getName())).getValue().add(sr.nextDouble());
+                ((NVFloatList) ret.attributes.get(Param.FLOAT_ARRAY.getNVConfig().getName())).getValue().add(sr.nextFloat());
+                ((NVIntList) ret.attributes.get(Param.INT_ARRAY.getNVConfig().getName())).getValue().add(sr.nextInt());
+                ((NVLongList) ret.attributes.get(Param.LONG_ARRAY.getNVConfig().getName())).getValue().add(sr.nextLong());
+                ((NVEnumList) ret.attributes.get(Param.ENUM_ARRAY.getNVConfig().getName())).getValue().add(Const.Status.values()[sr.nextInt(Const.Status.values().length)]);
+
+            }
+
+            return ret;
+        }
+
+
     }
 
 

@@ -12,6 +12,7 @@ import java.util.Set;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.io.UByteArrayOutputStream;
 import org.zoxweb.server.util.GSONUtil;
+import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.util.*;
 
 
@@ -147,6 +148,10 @@ public enum DerbyDT
     {
       ddt = REMOTE_REFERENCE;
     }
+    else if (nvc.isArray())
+    {
+        return INNER_ARRAY;
+    }
 
 
 
@@ -157,8 +162,6 @@ public enum DerbyDT
       else
         return ddt;
     }
-
-
     throw new IllegalArgumentException("Type not found " + nvc);
   }
 
@@ -242,11 +245,12 @@ public enum DerbyDT
       String json = GSONUtil.toJSONGenericMap((NVGenericMap) nvb, false, false, true);
       ps.setString(index, json);
     }
-    else if (nvb instanceof NVStringList)
+    else if (MetaUtil.isPrimitiveArray(nvb))
     {
       NVGenericMap nvgm = new NVGenericMap();
       nvgm.add((GetNameValue<?>) nvb);
-      ps.setString(index, GSONUtil.toJSONGenericMap(nvgm, false, false, false));
+      String json = GSONUtil.toJSONGenericMap(nvgm, false, false, false);
+      ps.setString(index, json);
     }
     else if (nvb instanceof NVEntityReference)
     {
@@ -268,6 +272,9 @@ public enum DerbyDT
 //    return null;
 //  }
 
+
+
+
   public static void mapValue(ResultSet rs, NVConfig nvc, NVBase<?> nvb) throws SQLException, IOException {
     //Object value = rs.getObject(nvb.getName());
     if (nvb instanceof NVGenericMap)
@@ -275,10 +282,27 @@ public enum DerbyDT
       NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null);
       ((NVGenericMap)nvb).setValue(nvgm.getValue());
     }
-    else if (nvb instanceof NVStringList)
+    else if (MetaUtil.isPrimitiveArray(nvb))
     {
-      NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null);
-      ((NVStringList)nvb).setValue(((NVStringList)nvgm.values()[0]).getValue());
+      String strValue = rs.getString(nvb.getName());
+      NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(strValue, null, null);
+      if (nvgm.values().length == 1) {
+        if (nvb instanceof NVEnumList)
+        {
+          NVStringList tempList = (NVStringList)nvgm.values()[0];
+          for(String enumName : tempList.getValues())
+          {
+            ((NVEnumList)nvb).getValue().add(SharedUtil.enumValue(nvc.getMetaTypeBase(), enumName));
+          }
+        }
+        else {
+          ((NVBase<Object>) nvb).setValue(nvgm.values()[0].getValue());
+        }
+      }
+      else
+      {
+        System.out.println("ERROR !!! : " + nvgm + " " + strValue);
+      }
     }
     else if (nvb instanceof NVEnum)
     {
