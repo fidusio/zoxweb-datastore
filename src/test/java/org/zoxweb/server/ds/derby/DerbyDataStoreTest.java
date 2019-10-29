@@ -160,6 +160,35 @@ public class DerbyDataStoreTest {
     }
 
     @Test
+    public void testUpdateComplex() throws IOException {
+        DSTestClass.NVETypes nveTypes = null;
+
+//        for (int i = 0;i < 10; i++)
+        {
+            DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
+            long ts = System.nanoTime();
+            nveTypes = new DSTestClass.NVETypes();
+            nveTypes.setAllTypes(allTypes);
+            nveTypes = dataStore.update(nveTypes);
+            ts = System.nanoTime() - ts;
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+            System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
+        }
+
+        assertNotNull(nveTypes);
+        assertNotNull(nveTypes.getGlobalID());
+        nveTypes.setName("batata");
+        nveTypes.getAllTypes().setName("harra");
+        nveTypes =  dataStore.update(nveTypes);
+        System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
+        List<DSTestClass.NVETypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
+        nveTypes = result.get(0);
+
+
+        System.out.println(nveTypes);
+    }
+
+    @Test
     public void testDelete() {
         AddressDAO addressDAO = new AddressDAO();
         addressDAO.setCity("Los Angeles");

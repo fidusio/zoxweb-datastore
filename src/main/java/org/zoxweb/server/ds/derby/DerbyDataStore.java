@@ -662,7 +662,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       throws NullPointerException, IllegalArgumentException, APIException {
     SharedUtil.checkIfNulls("Can't update null nve", nve);
     Connection con = null;
-    Statement stmt = null;
+    PreparedStatement stmt = null;
     try {
 
 
@@ -680,11 +680,11 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       {
         if (!DerbyDT.excludeMeta(DerbyDT.META_UPDATE_EXCLUSION, nvb))
         {
-          if(nvb instanceof NVEntityReference)
-          {
-            NVEntity innerNVE = update(nve);
-            ((NVEntityReference) nvb).setValue(innerNVE);
-          }
+//          if(nvb instanceof NVEntityReference)
+//          {
+//            NVEntity innerNVE = update(((NVEntityReference) nvb).getValue());
+//            ((NVEntityReference) nvb).setValue(innerNVE);
+//          }
           if(values.length() > 0)
           {
             values.append(", ");
@@ -692,10 +692,26 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           DerbyDT.toDerbyValue(values, nvb, true);
         }
       }
+
+
       String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE GLOBAL_ID='" + nve.getGlobalID() + "'";
       log.info(updateStatement);
-      stmt = con.createStatement();
-      stmt.executeUpdate(updateStatement);
+      stmt = con.prepareStatement(updateStatement);
+      int index = 0;
+        for(NVBase<?> nvb : nve.getAttributes().values())
+        {
+            if (!DerbyDT.excludeMeta(DerbyDT.META_UPDATE_EXCLUSION, nvb))
+            {
+                if(nvb instanceof NVEntityReference)
+                {
+                    NVEntity innerNVE = update(((NVEntityReference) nvb).getValue());
+                    ((NVEntityReference) nvb).setValue(innerNVE);
+                }
+
+                DerbyDT.toDerbyValue(stmt, ++index, nvb);
+            }
+        }
+      stmt.execute();
 
 
 

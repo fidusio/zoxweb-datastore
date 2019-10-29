@@ -168,7 +168,8 @@ public enum DerbyDT
     if (addName)
     {
       sb.append(nvb.getName());
-      sb.append("=");
+      sb.append("=?");
+      return;
     }
     if (value == null)
     {
@@ -196,6 +197,12 @@ public enum DerbyDT
       sb.append("'");
       sb.append(json);
       sb.append("'");
+    }
+    else if (nvb instanceof NVStringList)
+    {
+      NVGenericMap nvgm = new NVGenericMap();
+      nvgm.add((GetNameValue<?>) nvb);
+      sb.append("'" + GSONUtil.toJSONGenericMap(nvgm, false, false, false) + "'");
     }
     else if (value instanceof NVEntity)
     {

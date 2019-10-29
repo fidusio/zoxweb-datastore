@@ -188,7 +188,7 @@ public class DSTestClass {
                 ret.setDouble(sr.nextDouble());
                 ret.setFloat(sr.nextFloat());
                 ret.setStatus(Const.Status.values()[sr.nextInt(Const.Status.values().length)]);
-                ret.setBytes(sr.generateSeed((int)Const.SizeInBytes.K.LENGTH));
+                ret.setBytes(sr.generateSeed(64));
                 ret.setStringArray("toto", "titi", "tata");
 
             }
