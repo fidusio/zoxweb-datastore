@@ -30,6 +30,8 @@ import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.NVConfigEntity;
+import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.NVEnumList;
 
 import java.io.IOException;
 import java.util.List;
@@ -48,10 +50,12 @@ public class DerbyDataStoreTest {
     private static final String USER ="APP";
     private static final String PASSWORD ="APP";
 
+
     @BeforeClass
     public static void setUp() {
 //    	try
     	{
+    	    NVEntity.GLOBAL_ID_AS_REF_ID = true;
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", DRIVER);
     		configInfo.getProperties().add("url", DIR_URL);
@@ -91,7 +95,7 @@ public class DerbyDataStoreTest {
         assertNotNull(allTypes);
         assertNotNull(allTypes.getGlobalID());
         System.out.println("json:" + GSONUtil.toJSON(allTypes, true, false, false));
-        List<DSTestClass.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getGlobalID());
+        List<DSTestClass.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getReferenceID());
         allTypes = result.get(0);
         System.out.println(allTypes.getBytes().length);
         String json = GSONUtil.toJSON(allTypes, true, false, true);
@@ -119,7 +123,7 @@ public class DerbyDataStoreTest {
         assertNotNull(complexTypes);
         assertNotNull(complexTypes.getGlobalID());
         String jsonOrig = GSONUtil.toJSON(complexTypes, true, false, false);
-        List<DSTestClass.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) complexTypes.getNVConfig(), complexTypes.getGlobalID());
+        List<DSTestClass.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) complexTypes.getNVConfig(), complexTypes.getReferenceID());
         complexTypes = result.get(0);
 
         String json = GSONUtil.toJSON(complexTypes, true, false, false);
