@@ -22,10 +22,15 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
+import org.zoxweb.server.ds.data.DSTestClass;
+import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
+import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.NVConfigEntity;
 
+import java.io.IOException;
 import java.util.List;
 
 
@@ -34,7 +39,8 @@ public class DerbyDataStoreTest {
 	// local datatore
     private static DerbyDataStore dataStore;
     private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
-    private static final String URL = "jdbc:derby:memory:test;create=true";
+    private static final String MEMORY_URL = "jdbc:derby:memory:test;create=true";
+    private static final String DIR_URL = "jdbc:derby:/db/derby/test;create=true";
     private static final String USER ="APP";
     private static final String PASSWORD ="APP";
 
@@ -44,7 +50,7 @@ public class DerbyDataStoreTest {
     	{
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", DRIVER);
-    		configInfo.getProperties().add("url", URL);
+    		configInfo.getProperties().add("url", MEMORY_URL);
     		configInfo.getProperties().add("user", USER);
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
@@ -64,15 +70,30 @@ public class DerbyDataStoreTest {
     }
 
     @Test
-    public void testInsert() {
-        AddressDAO addressDAO = new AddressDAO();
-        addressDAO.setCity("Los Angeles");
-        addressDAO.setStateOrProvince("CA");
-        addressDAO.setCountry("USA");
+    public void testInsert() throws IOException {
 
-        addressDAO = (AddressDAO) dataStore.insert(addressDAO);
-        assertNotNull(addressDAO);
-        assertNotNull(addressDAO.getGlobalID());
+        DSTestClass.AllTypes allTypes = null;
+
+
+        for (int i = 0;i < 10; i++) {
+            allTypes = DSTestClass.AllTypes.autoBuilder();
+            long ts = System.nanoTime();
+            allTypes = dataStore.insert(allTypes);
+            ts = System.nanoTime() - ts;
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+        }
+
+        assertNotNull(allTypes);
+        assertNotNull(allTypes.getGlobalID());
+        System.out.println("json:" + GSONUtil.toJSON(allTypes, true, false, false));
+        List<DSTestClass.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getGlobalID());
+        allTypes = result.get(0);
+        System.out.println(allTypes.getBytes().length);
+        String json = GSONUtil.toJSON(allTypes, true, false, true);
+        System.out.println(json);
+        DSTestClass.AllTypes.testValues(allTypes);
+        allTypes = GSONUtil.fromJSON(json);
+        DSTestClass.AllTypes.testValues(allTypes);
    }
 
     @Test
@@ -86,9 +107,11 @@ public class DerbyDataStoreTest {
 
         List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID());
 
-        //assertNotNull(result);
+
+        //assertNotNull(result)
 
         System.out.println("Result: " + result);
+
     }
 
     @Test

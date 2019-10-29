@@ -1,10 +1,12 @@
 package org.zoxweb.server.ds.derby;
 
+import java.io.IOException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
+
 
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
 import org.zoxweb.server.io.IOUtil;
@@ -16,7 +18,6 @@ import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIExceptionHandler;
 import org.zoxweb.shared.api.APISearchResult;
 import org.zoxweb.shared.data.LongSequence;
-import org.zoxweb.shared.data.StatInfo;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
@@ -35,9 +36,13 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   private volatile HashMap<String, NVConfigEntity> metaTables = new HashMap<String, NVConfigEntity>();
 
 
+
+
   class DerbyDBData{
     final StringBuilder columns = new StringBuilder();
     final StringBuilder values = new StringBuilder();
+    final StringBuilder genericValues = new StringBuilder();
+    int genericValuesCount = 0;
   }
   public DerbyDataStore()
   {
@@ -91,7 +96,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           for (NVConfig nvc : nvce.getAttributes())
           {
             // skip referenceID
-            if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName()))
+            if (!DerbyDT.excludeMeta(nvc))
             {
               DerbyDT derbyDT = DerbyDT.metaToDerbyDT(nvc);
               if (derbyDT != null)
@@ -104,8 +109,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
               }
             }
           }
-
-          //sb.append(" PRIMARY KEY(" + MetaToken.GLOBAL_ID.getName()+ ")");
+          
           sb.insert(0, "CREATE TABLE " + tableName + " (");
           sb.append(')');
           String createTable = sb.toString();
@@ -429,6 +433,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     try
     {
       retType = (NVEntity) Class.forName(className).newInstance();
+      NVConfigEntity nvce = (NVConfigEntity) retType.getNVConfig();
 
 
       for (int i = 0; i < ids.length; i++)
@@ -445,15 +450,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       {
         for (NVBase<?> nvb : retType.getAttributes().values())
         {
-          if(!nvb.getName().equals(MetaToken.REFERENCE_ID.getName()))
-            DerbyDT.mapValue(rs, (NVBase<Object>) nvb);
+          if(!DerbyDT.excludeMeta(nvb))
+            DerbyDT.mapValue(rs, nvce.lookup(nvb.getName()) ,nvb);
         }
         ret.add(retType);
         retType = (NVEntity) Class.forName(className).newInstance();
       }
 
     }
-    catch (SQLException | ClassNotFoundException | InstantiationException | IllegalAccessException e)
+    catch (SQLException | ClassNotFoundException | InstantiationException | IllegalAccessException | IOException e)
     {
       e.printStackTrace();
       throw new APIException(e.getMessage());
@@ -479,7 +484,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   public <V extends NVEntity> V insert(V nve)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
     Connection con = null;
-    Statement stmt = null;
+    PreparedStatement stmt = null;
     try {
 
 
@@ -490,19 +495,34 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       }
 
       DerbyDBData ddbd = formatStatement(nve, false);
-      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " (" + ddbd.columns.toString() +
-              ") VALUES (" + ddbd.values.toString() + ")";
-
+//      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " (" + ddbd.columns.toString() +
+//              ") VALUES (" + ddbd.values.toString() + ")";
+//
+//      log.info(statementToken);
+//
+//      con = connect();
+//      stmt = con.createStatement();
+//      stmt.execute(statementToken);
+      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues.toString() + ")";
       log.info(statementToken);
+      log.info("parameter count " + ddbd.genericValuesCount);
 
       con = connect();
-      stmt = con.createStatement();
-      stmt.execute(statementToken);
+      stmt = con.prepareStatement(statementToken);
+      int index = 0;
+      for(NVBase<?> nvb : nve.getAttributes().values()) {
+        if(!DerbyDT.excludeMeta(nvb))
+          DerbyDT.toDerbyValue(stmt, ++index, nvb);
+      }
+
+
+      stmt.execute();
 
 
     }
-    catch (SQLException e)
+    catch (SQLException | IOException e)
     {
+      e.printStackTrace();
       throw new APIException(e.getMessage());
     }
     finally {
@@ -513,27 +533,31 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   }
 
 
-  private DerbyDBData formatStatement(NVEntity nve, boolean nullsAllowed)
-  {
+  private DerbyDBData formatStatement(NVEntity nve, boolean nullsAllowed) throws IOException {
     DerbyDBData ret = new DerbyDBData();
 
+    int index = 0;
     for(NVBase<?> nvb : nve.getAttributes().values())
     {
-      if (nullsAllowed ||  nvb.getValue() != null)
-      {
-        if (ret.columns.length() > 0)
-        {
-          ret.columns.append(',');
+      if (!DerbyDT.excludeMeta(nvb)) {
+        if (ret.genericValues.length() > 0) {
+          ret.genericValues.append(", ");
         }
-        ret.columns.append(nvb.getName());
-        if (ret.values.length() > 0)
-        {
-          ret.values.append(',');
+        ret.genericValues.append('?');
+        index++;
+        if (nullsAllowed || nvb.getValue() != null) {
+          if (ret.columns.length() > 0) {
+            ret.columns.append(',');
+          }
+          ret.columns.append(nvb.getName());
+          if (ret.values.length() > 0) {
+            ret.values.append(',');
+          }
+          DerbyDT.toDerbyValue(ret.values, nvb);
         }
-        DerbyDT.toDerbyValue(ret.values, nvb);
       }
     }
-
+    ret.genericValuesCount = index;
     return ret;
   }
 
