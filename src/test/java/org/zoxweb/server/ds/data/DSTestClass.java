@@ -21,6 +21,7 @@ public class DSTestClass {
             BOOL_VAL(NVConfigManager.createNVConfig("boolean_val", "Bool Value", "BoolVal", false, true, boolean.class)),
             BYTES_VAL(NVConfigManager.createNVConfig("bytes_val", "Byte array", "BytesVal", false, true, byte[].class)),
             INT_VAL(NVConfigManager.createNVConfig("int_val", "Integer Value", "IntVal", false, true, int.class)),
+            UNIQUE_INT_VAL(NVConfigManager.createNVConfig("unique_int_val", "Integer Value", "IntVal", false, true, true, int.class, null)),
             LONG_VAL(NVConfigManager.createNVConfig("long_val", "Long Value", "LongVal", false, true, long.class)),
             FLOAT_VAL(NVConfigManager.createNVConfig("float_val", "Float Value", "FloatVal", false, true, float.class)),
             DOUBLE_VAL(NVConfigManager.createNVConfig("double_val", "Double Value", "DoubleVal", false, true, double.class)),
@@ -99,6 +100,16 @@ public class DSTestClass {
             setValue(Param.INT_VAL, val);
         }
 
+        public int getUniqueInt()
+        {
+            return lookupValue(Param.UNIQUE_INT_VAL);
+        }
+
+        public void setUniqueInt(int val)
+        {
+            setValue(Param.UNIQUE_INT_VAL, val);
+        }
+
         public long getLong()
         {
             return lookupValue(Param.LONG_VAL);
@@ -172,6 +183,7 @@ public class DSTestClass {
                 ret.setDescription("Auto generated.");
                 ret.setBoolean(sr.nextBoolean());
                 ret.setInt(sr.nextInt());
+                ret.setUniqueInt(sr.nextInt());
                 ret.setLong(sr.nextLong());
                 ret.setDouble(sr.nextDouble());
                 ret.setFloat(sr.nextFloat());
@@ -188,6 +200,67 @@ public class DSTestClass {
             return ret;
         }
 
+    }
+
+
+
+    public static class NVETypes
+            extends SetNameDescriptionDAO {
+        public enum Param
+                implements GetNVConfig {
+
+            ALL_TYPES(NVConfigManager.createNVConfigEntity("all_types", "All Types", "AllTypes", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.NOT_ARRAY)),
+
+            ;
+
+            private NVConfig nvc;
+
+            Param(NVConfig nvc) {
+                this.nvc = nvc;
+            }
+
+            public String toString() {
+                return getNVConfig().getName();
+            }
+
+            /* (non-Javadoc)
+             * @see org.zoxweb.shared.util.GetNVConfig#getNVConfig()
+             */
+            @Override
+            public NVConfig getNVConfig() {
+                return nvc;
+            }
+        }
+
+        public static final NVConfigEntity NVC_NVETYPES_DOA = new NVConfigEntityLocal(
+                "nve_types",
+                null,
+                "NVETypes",
+                true,
+                false,
+                false,
+                false,
+                NVETypes.class,
+                SharedUtil.extractNVConfigs(NVETypes.Param.values()),
+                null,
+                false,
+                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
+        );
+
+        public NVETypes()
+        {
+            super(NVC_NVETYPES_DOA);
+        }
+
+        public AllTypes getAllTypes()
+        {
+            return lookupValue(Param.ALL_TYPES);
+        }
+
+        public void setAllTypes(AllTypes at)
+        {
+            setValue(Param.ALL_TYPES, at);
+        }
     }
 
 

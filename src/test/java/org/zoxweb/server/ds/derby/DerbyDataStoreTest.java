@@ -96,6 +96,34 @@ public class DerbyDataStoreTest {
         DSTestClass.AllTypes.testValues(allTypes);
    }
 
+
+    @Test
+    public void testInsertComplex() throws IOException {
+
+
+        DSTestClass.NVETypes nveTypes = null;
+
+        for (int i = 0;i < 10; i++) {
+            DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
+            long ts = System.nanoTime();
+            nveTypes = new DSTestClass.NVETypes();
+            nveTypes.setAllTypes(allTypes);
+            nveTypes = dataStore.insert(nveTypes);
+            ts = System.nanoTime() - ts;
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+        }
+
+        assertNotNull(nveTypes);
+        assertNotNull(nveTypes.getGlobalID());
+        System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
+        List<DSTestClass.NVETypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
+        nveTypes = result.get(0);
+
+        String json = GSONUtil.toJSON(nveTypes, true, false, true);
+        System.out.println(json);
+
+    }
+
     @Test
     public void testRead() {
         AddressDAO addressDAO = new AddressDAO();
@@ -122,13 +150,13 @@ public class DerbyDataStoreTest {
         addressDAO.setCountry("USA");
         addressDAO = (AddressDAO) dataStore.insert(addressDAO);
 
-        System.out.println("Original NVE: " + dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID()));
+        System.out.println("Original NVE: " + dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID()));
 
         addressDAO.setCity("New York");
         addressDAO.setStateOrProvince("NY");
         addressDAO = (AddressDAO) dataStore.update(addressDAO);
 
-        System.out.println("Updated NVE: " + dataStore.lookupByReferenceID(AddressDAO.class.getName(), addressDAO.getReferenceID()));
+        System.out.println("Updated NVE: " + dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID()));
     }
 
     @Test

@@ -39,7 +39,8 @@ public enum DerbyDT
   ;
 
 
-  public static final Set<String> META_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
+  public static final Set<String> META_INSERT_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
+  public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
   private String dbType;
   private int sqlType;
   private Class<?> javaClass;
@@ -162,8 +163,13 @@ public enum DerbyDT
   }
 
 
-  public static void toDerbyValue(StringBuilder sb, NVBase<?> nvb) throws IOException {
+  public static void toDerbyValue(StringBuilder sb, NVBase<?> nvb, boolean addName) throws IOException {
     Object value = nvb.getValue();
+    if (addName)
+    {
+      sb.append(nvb.getName());
+      sb.append("=");
+    }
     if (value == null)
     {
       sb.append("NULL");
@@ -190,6 +196,10 @@ public enum DerbyDT
       sb.append("'");
       sb.append(json);
       sb.append("'");
+    }
+    else if (value instanceof NVEntity)
+    {
+      sb.append("'" + ((NVEntity) value).getNVConfig().getName() + ":" + ((NVEntity) value).getGlobalID());
     }
   }
 
@@ -230,6 +240,10 @@ public enum DerbyDT
       NVGenericMap nvgm = new NVGenericMap();
       nvgm.add((GetNameValue<?>) nvb);
       ps.setString(index, GSONUtil.toJSONGenericMap(nvgm, false, false, false));
+    }
+    else if (nvb instanceof NVEntityReference)
+    {
+      ps.setString(index, nvb.getName() + ":" + ((NVEntity)nvb.getValue()).getGlobalID());
     }
 
   }
@@ -306,18 +320,18 @@ public enum DerbyDT
    }
 
 
-  public static boolean excludeMeta(NVBase<?> nvb)
+  public static boolean excludeMeta(Set<String> exclusion, NVBase<?> nvb)
   {
-    return excludeMeta(nvb.getName());
+    return excludeMeta(exclusion, nvb.getName());
   }
 
-  public static boolean excludeMeta(NVConfig nvc)
+  public static boolean excludeMeta(Set<String> exclusion, NVConfig nvc)
   {
-    return excludeMeta(nvc.getName());
+    return excludeMeta(exclusion, nvc.getName());
   }
-   public static boolean excludeMeta(String name)
+   public static boolean excludeMeta(Set<String> exclusion, String name)
    {
-     return META_EXCLUSION.contains(name);
+     return exclusion.contains(name);
    }
   
 }

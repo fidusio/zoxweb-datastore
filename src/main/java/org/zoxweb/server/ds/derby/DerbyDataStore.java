@@ -96,8 +96,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           for (NVConfig nvc : nvce.getAttributes())
           {
             // skip referenceID
-            if (!DerbyDT.excludeMeta(nvc))
+            if (!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvc))
             {
+              if (nvc instanceof NVConfigEntity)
+                createTable((NVConfigEntity)nvc);
               DerbyDT derbyDT = DerbyDT.metaToDerbyDT(nvc);
               if (derbyDT != null)
               {
@@ -106,10 +108,14 @@ public class DerbyDataStore implements APIDataStore<Connection> {
                   sb.append(',');
                 }
                 sb.append(nvc.getName() + " " + derbyDT.getValue());
+                if (nvc.isUnique())
+                {
+                  sb.append(" UNIQUE");
+                }
               }
             }
           }
-          
+
           sb.insert(0, "CREATE TABLE " + tableName + " (");
           sb.append(')');
           String createTable = sb.toString();
@@ -273,6 +279,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     synchronized (connections) {
       connections.stream().forEach(c -> IOUtil.close(c));
       connections.clear();
+
+      try {
+        DriverManager.getConnection(getAPIConfigInfo().getProperties().getValue(DerbyParam.URL) +";shutdown=true",
+
+                getAPIConfigInfo().getProperties().getValue(DerbyParam.USER),
+                getAPIConfigInfo().getProperties().getValue(DerbyParam.PASSWORD));
+      } catch (SQLException e) {
+        e.printStackTrace();
+      }
     }
   }
 
@@ -450,8 +465,25 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       {
         for (NVBase<?> nvb : retType.getAttributes().values())
         {
-          if(!DerbyDT.excludeMeta(nvb))
-            DerbyDT.mapValue(rs, nvce.lookup(nvb.getName()) ,nvb);
+          if(!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
+            if (nvb instanceof NVEntityReference)
+            {
+              if (rs.getString(nvb.getName()) != null)
+              {
+                String values[] = rs.getString(nvb.getName()).split(":");
+                String tableName = values[0];
+                String globalID = values[1];
+                List<NVEntity> innerValues = searchByID((NVConfigEntity) nvce.lookup(nvb.getName()), globalID);
+                if(innerValues.size() == 1)
+                {
+                  ((NVEntityReference)nvb).setValue(innerValues.get(0));
+                }
+              }
+            }
+            else {
+              DerbyDT.mapValue(rs, nvce.lookup(nvb.getName()), nvb);
+            }
+          }
         }
         ret.add(retType);
         retType = (NVEntity) Class.forName(className).newInstance();
@@ -489,30 +521,37 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
 
       createTable((NVConfigEntity) nve.getNVConfig());
+      con = connect();
       if(SharedStringUtil.isEmpty(nve.getGlobalID()))
       {
         nve.setGlobalID(UUID.randomUUID().toString());
       }
+      else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
+      {
+        // already exit we must update
+        log.info("invoke update for " + nve.getGlobalID());
+        return update(nve);
+      }
 
-      DerbyDBData ddbd = formatStatement(nve, false);
-//      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " (" + ddbd.columns.toString() +
-//              ") VALUES (" + ddbd.values.toString() + ")";
-//
-//      log.info(statementToken);
-//
-//      con = connect();
-//      stmt = con.createStatement();
-//      stmt.execute(statementToken);
+
+
+      DerbyDBData ddbd = formatInsertStatement(nve, false);
+
       String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues.toString() + ")";
       log.info(statementToken);
       log.info("parameter count " + ddbd.genericValuesCount);
 
-      con = connect();
+
       stmt = con.prepareStatement(statementToken);
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values()) {
-        if(!DerbyDT.excludeMeta(nvb))
+        if(!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
+          if (nvb instanceof NVEntityReference) {
+            NVEntity innerNVE = insert(((NVEntityReference) nvb).getValue());
+            ((NVEntityReference) nvb).setValue(innerNVE);
+          }
           DerbyDT.toDerbyValue(stmt, ++index, nvb);
+        }
       }
 
 
@@ -533,13 +572,13 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   }
 
 
-  private DerbyDBData formatStatement(NVEntity nve, boolean nullsAllowed) throws IOException {
+  private DerbyDBData formatInsertStatement(NVEntity nve, boolean nullsAllowed) throws IOException {
     DerbyDBData ret = new DerbyDBData();
 
     int index = 0;
     for(NVBase<?> nvb : nve.getAttributes().values())
     {
-      if (!DerbyDT.excludeMeta(nvb)) {
+      if (!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
         if (ret.genericValues.length() > 0) {
           ret.genericValues.append(", ");
         }
@@ -553,13 +592,42 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           if (ret.values.length() > 0) {
             ret.values.append(',');
           }
-          DerbyDT.toDerbyValue(ret.values, nvb);
+          DerbyDT.toDerbyValue(ret.values, nvb, false);
         }
       }
     }
     ret.genericValuesCount = index;
     return ret;
   }
+
+
+//  private DerbyDBData formatUpdateStatement(NVEntity nve) throws IOException {
+//    DerbyDBData ret = new DerbyDBData();
+//
+//    int index = 0;
+//    for(NVBase<?> nvb : nve.getAttributes().values())
+//    {
+//      if (!DerbyDT.excludeMeta(nvb)) {
+//        if (ret.genericValues.length() > 0) {
+//          ret.genericValues.append(", ");
+//        }
+//        ret.genericValues.append('?');
+//        index++;
+//        if (nullsAllowed || nvb.getValue() != null) {
+//          if (ret.columns.length() > 0) {
+//            ret.columns.append(',');
+//          }
+//          ret.columns.append(nvb.getName());
+//          if (ret.values.length() > 0) {
+//            ret.values.append(',');
+//          }
+//          DerbyDT.toDerbyValue(ret.values, nvb);
+//        }
+//      }
+//    }
+//    ret.genericValuesCount = index;
+//    return ret;
+//  }
 
   @Override
   public <V extends NVEntity> boolean delete(V nve, boolean withReference)
@@ -592,8 +660,79 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   @Override
   public <V extends NVEntity> V update(V nve)
       throws NullPointerException, IllegalArgumentException, APIException {
+    SharedUtil.checkIfNulls("Can't update null nve", nve);
+    Connection con = null;
+    Statement stmt = null;
+    try {
+
+
+      createTable((NVConfigEntity) nve.getNVConfig());
+      con = connect();
+      if(SharedStringUtil.isEmpty(nve.getGlobalID()) || !isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
+      {
+       return insert(nve);
+      }
+
+      // update table table_name set nvb.name = nvb.value ... where global_id = 'nvb.GLOBAL_ID'
+
+      StringBuilder values = new StringBuilder();
+      for(NVBase<?> nvb : nve.getAttributes().values())
+      {
+        if (!DerbyDT.excludeMeta(DerbyDT.META_UPDATE_EXCLUSION, nvb))
+        {
+          if(nvb instanceof NVEntityReference)
+          {
+            NVEntity innerNVE = update(nve);
+            ((NVEntityReference) nvb).setValue(innerNVE);
+          }
+          if(values.length() > 0)
+          {
+            values.append(", ");
+          }
+          DerbyDT.toDerbyValue(values, nvb, true);
+        }
+      }
+      String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE GLOBAL_ID='" + nve.getGlobalID() + "'";
+      log.info(updateStatement);
+      stmt = con.createStatement();
+      stmt.executeUpdate(updateStatement);
+
+
+
+//      DerbyDBData ddbd = formatInsertStatement(nve, false);
+//
+//      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues.toString() + ")";
+//      log.info(statementToken);
+//      log.info("parameter count " + ddbd.genericValuesCount);
+//
+//
+//      stmt = con.prepareStatement(statementToken);
+//      int index = 0;
+//      for(NVBase<?> nvb : nve.getAttributes().values()) {
+//        if(!DerbyDT.excludeMeta(nvb)) {
+//          if (nvb instanceof NVEntityReference) {
+//            NVEntity innerNVE = insert(((NVEntityReference) nvb).getValue());
+//            ((NVEntityReference) nvb).setValue(innerNVE);
+//          }
+//          DerbyDT.toDerbyValue(stmt, ++index, nvb);
+//        }
+//      }
+//
+//
+//      stmt.execute();
+
+
+    }
+    catch (SQLException | IOException e)
+    {
+      e.printStackTrace();
+      throw new APIException(e.getMessage());
+    }
+    finally {
+      close(con, stmt);
+    }
     // TODO Auto-generated method stub
-    return null;
+    return nve;
   }
 
   @Override
@@ -638,6 +777,27 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     // TODO Auto-generated method stub
     
   }
+
+  private boolean isRefCreated(Connection con, String tableName, String globalID) throws SQLException {
+    Statement stmt = null;
+    ResultSet rs = null;
+    try {
+      stmt = con.createStatement();
+      rs = stmt.executeQuery("select GLOBAL_ID from " + tableName + " where GLOBAL_ID='" + globalID + "'");
+      if (rs.next()) {
+        return true;
+      }
+
+    }
+    finally {
+      // Do NOT close  con the connection
+      close(rs, stmt);
+    }
+    return false;
+
+
+  }
+
 
   @SuppressWarnings("unchecked")
   @Override
