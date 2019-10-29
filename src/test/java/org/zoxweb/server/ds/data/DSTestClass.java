@@ -1,17 +1,18 @@
 package org.zoxweb.server.ds.data;
 
-import org.zoxweb.server.security.CryptoUtil;
+
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
 import org.zoxweb.shared.util.*;
 
 import java.security.SecureRandom;
-import java.util.List;
+
 
 
 public class DSTestClass {
 
     static SecureRandom sr =  new SecureRandom();
 
+    @SuppressWarnings("serial")
     public static class AllTypes
         extends SetNameDescriptionDAO
     {
@@ -162,6 +163,7 @@ public class DSTestClass {
 
 
 
+        @SuppressWarnings("unused")
         public static void testValues(AllTypes at)
         {
             boolean bool = at.getBoolean();
@@ -205,6 +207,7 @@ public class DSTestClass {
 
 
 
+    @SuppressWarnings("serial")
     public static class ComplexTypes
             extends SetNameDescriptionDAO {
         public enum Param

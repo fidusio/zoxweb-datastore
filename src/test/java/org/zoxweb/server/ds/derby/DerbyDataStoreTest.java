@@ -19,7 +19,7 @@ package org.zoxweb.server.ds.derby;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.FixMethodOrder;
+
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -42,6 +42,7 @@ public class DerbyDataStoreTest {
 	// local datatore
     private static DerbyDataStore dataStore;
     private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
+   
     private static final String MEMORY_URL = "jdbc:derby:memory:test";
     private static final String DIR_URL = "jdbc:derby:/tmp/derby/test";
     private static final String USER ="APP";
@@ -58,6 +59,7 @@ public class DerbyDataStoreTest {
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
     		System.out.println(dataStore.connect());
+    		System.out.print("USRL:" + MEMORY_URL + " " + DIR_URL);
     	}
 //    	catch(Throwable e)
 //    	{
