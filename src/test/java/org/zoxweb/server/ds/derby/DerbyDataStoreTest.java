@@ -148,7 +148,7 @@ public class DerbyDataStoreTest {
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
-        addressDAO = (AddressDAO) dataStore.insert(addressDAO);
+        addressDAO = (AddressDAO) dataStore.update(addressDAO);
 
         System.out.println("Original NVE: " + dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID()));
 
