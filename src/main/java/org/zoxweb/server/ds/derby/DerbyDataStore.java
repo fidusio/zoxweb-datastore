@@ -437,6 +437,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     return searchByID(nvce.getMetaType().getName(), ids);
   }
 
+  @SuppressWarnings("unchecked")
   @Override
   public <V extends NVEntity> List<V> searchByID(String className, String... ids)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
@@ -460,7 +461,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       con = connect();
       stmt = con.createStatement();
       String select = "SELECT * FROM " + retType.getNVConfig().getName() +
-              " WHERE GLOBAL_ID IN(" + SharedUtil.toCanonicalID(',', ids)+ ")" ;
+              " WHERE GLOBAL_ID IN(" + SharedUtil.toCanonicalID(',', (Object[])ids)+ ")" ;
       rs = stmt.executeQuery(select);
       while(rs.next())
       {
@@ -472,7 +473,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
               if (rs.getString(nvb.getName()) != null)
               {
                 String values[] = rs.getString(nvb.getName()).split(":");
-                String tableName = values[0];
+                //String tableName = values[0];
                 String globalID = values[1];
                 List<NVEntity> innerValues = searchByID((NVConfigEntity) nvce.lookup(nvb.getName()), globalID);
                 if(innerValues.size() == 1)

@@ -184,7 +184,7 @@ public enum DerbyDT
     }
     else if (value instanceof Enum)
     {
-      sb.append("'" +  ((Enum) value).name()+ "'");
+      sb.append("'" +  ((Enum<?>) value).name()+ "'");
     }
     else if (value instanceof Boolean)
     {
@@ -230,7 +230,7 @@ public enum DerbyDT
     }
     else if (nvb instanceof NVEnum)
     {
-      ps.setString(index, ((Enum) nvb.getValue()).name());
+      ps.setString(index, ((Enum<?>) nvb.getValue()).name());
     }
     else if (nvb instanceof NVBoolean)
     {
@@ -275,6 +275,7 @@ public enum DerbyDT
 
 
 
+  @SuppressWarnings("unchecked")
   public static void mapValue(ResultSet rs, NVConfig nvc, NVBase<?> nvb) throws SQLException, IOException {
     //Object value = rs.getObject(nvb.getName());
     if (nvb instanceof NVGenericMap)
@@ -340,12 +341,14 @@ public enum DerbyDT
       ((NVBase<Object>)nvb).setValue(rs.getObject(nvb.getName()));
   }
 
-   public <T> Class<T> getJavaClass()
+   @SuppressWarnings("unchecked")
+  public <T> Class<T> getJavaClass()
    {
      return (Class<T>) javaClass;
    }
 
-   public <T> Class<T> getNVBaseClass()
+   @SuppressWarnings("unchecked")
+  public <T> Class<T> getNVBaseClass()
    {
      return (Class<T>)  nvbClass;
    }
