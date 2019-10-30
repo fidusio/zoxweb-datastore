@@ -31,7 +31,6 @@ import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVEnumList;
 
 import java.io.IOException;
 import java.util.List;
@@ -187,9 +186,12 @@ public class DerbyDataStoreTest {
         nveTypes.setName("batata");
         nveTypes.getAllTypes().setName("harra");
         nveTypes =  dataStore.update(nveTypes);
-        System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
+        String jsonOrig = GSONUtil.toJSON(nveTypes, true, false, false);
+        System.out.println("json:" + jsonOrig);
         List<DSTestClass.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGlobalID());
         nveTypes = result.get(0);
+        String json = GSONUtil.toJSON(nveTypes, true, false, false);
+        assertEquals(jsonOrig, json);
 
 
         System.out.println(nveTypes);

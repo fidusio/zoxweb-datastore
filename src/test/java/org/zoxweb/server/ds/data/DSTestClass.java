@@ -5,7 +5,7 @@ import org.zoxweb.shared.data.SetNameDescriptionDAO;
 import org.zoxweb.shared.util.*;
 
 import java.security.SecureRandom;
-
+import java.util.Date;
 
 
 public class DSTestClass {
@@ -28,7 +28,8 @@ public class DSTestClass {
             FLOAT_VAL(NVConfigManager.createNVConfig("float_val", "Float Value", "FloatVal", false, true, float.class)),
             DOUBLE_VAL(NVConfigManager.createNVConfig("double_val", "Double Value", "DoubleVal", false, true, double.class)),
             ENUM_VAL(NVConfigManager.createNVConfig("enum_val", "Enum Value", "EnumVal", false, true, Const.Status.class)),
-            STRING_ARRAY(NVConfigManager.createNVConfig("string_list", "String array as strinfg list", "StringList", false, true, NVStringList.class)),
+            STRING_ARRAY(NVConfigManager.createNVConfig("string_list", "String array as string list", "StringList", false, true, NVStringList.class)),
+            DATE_VAL(NVConfigManager.createNVConfig("date_val", "Date", "Date", false, true, Date.class)),
             ;
 
             private NVConfig nvc;
@@ -161,6 +162,16 @@ public class DSTestClass {
             ((NVStringList)lookup(Param.STRING_ARRAY)).setValues(vals);
         }
 
+        public void setDate(Date date)
+        {
+            setValue(Param.DATE_VAL, date.getTime());
+        }
+
+        public Date getDate()
+        {
+            return new Date((long)lookupValue(Param.DOUBLE_VAL));
+        }
+
 
 
         @SuppressWarnings("unused")
@@ -193,6 +204,7 @@ public class DSTestClass {
                 ret.setStatus(Const.Status.values()[sr.nextInt(Const.Status.values().length)]);
                 ret.setBytes(sr.generateSeed(64));
                 ret.setStringArray("toto", "titi", "tata");
+                ret.setDate(new Date());
 
             }
             catch(Exception e)
@@ -214,6 +226,7 @@ public class DSTestClass {
                 implements GetNVConfig {
 
             ALL_TYPES(NVConfigManager.createNVConfigEntity("all_types", "All Types", "AllTypes", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.NOT_ARRAY)),
+            ALL_TYPES_ARRAY(NVConfigManager.createNVConfigEntity("all_types_array", "All Types array", "AllTypesArray", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.LIST)),
             INT_ARRAY(NVConfigManager.createNVConfig("int_array", "Integer Value", "IntVal", false, true, int[].class)),
             LONG_ARRAY(NVConfigManager.createNVConfig("long_array", "Long Value", "LongVal", false, true, long[].class)),
             FLOAT_ARRAY(NVConfigManager.createNVConfig("float_array", "Float Value", "FloatVal", false, true, float[].class)),
@@ -282,7 +295,7 @@ public class DSTestClass {
                 ((NVIntList) ret.attributes.get(Param.INT_ARRAY.getNVConfig().getName())).getValue().add(sr.nextInt());
                 ((NVLongList) ret.attributes.get(Param.LONG_ARRAY.getNVConfig().getName())).getValue().add(sr.nextLong());
                 ((NVEnumList) ret.attributes.get(Param.ENUM_ARRAY.getNVConfig().getName())).getValue().add(Const.Status.values()[sr.nextInt(Const.Status.values().length)]);
-
+                ((NVEntityReferenceList) ret.attributes.get(Param.ALL_TYPES_ARRAY.getNVConfig().getName())).getValue().add(AllTypes.autoBuilder());
             }
 
             return ret;
