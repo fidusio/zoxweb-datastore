@@ -3,6 +3,8 @@ package org.zoxweb.server.ds.derby;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.io.UByteArrayOutputStream;
 import org.zoxweb.server.util.GSONUtil;
+import org.zoxweb.shared.db.QueryMarker;
+import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.*;
 
 import java.io.ByteArrayInputStream;
@@ -12,12 +14,14 @@ import java.sql.Blob;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 public class DerbyDBMeta {
     private DerbyDBMeta(){}
+    public static final Set<String> META_INSERT_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
+    public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
+
+
 
     public static  List<NVEntityRefMeta> toNVEntityRefMetaList(NVStringList list)
     {
@@ -223,7 +227,12 @@ public class DerbyDBMeta {
     {
         Class<?> nvcJavaClass = nvc.getMetaType();
         DerbyDT ddt = null;
-        if (nvcJavaClass == Boolean.class)
+
+        if (nvc.getName().equalsIgnoreCase(DerbyDT.SUBJECT_ID.name()))
+        {
+            ddt = DerbyDT.SUBJECT_ID;
+        }
+        else if (nvcJavaClass == Boolean.class)
         {
             ddt = DerbyDT.BOOLEAN;
         }
@@ -248,7 +257,7 @@ public class DerbyDBMeta {
             }
             else
             {
-                ddt = DerbyDT.LONG_VARCHAR;
+                ddt = DerbyDT.K4_VARCHAR;
             }
         }
         else if (nvcJavaClass == Integer.class)
@@ -302,5 +311,63 @@ public class DerbyDBMeta {
                 return ddt;
         }
         throw new IllegalArgumentException("Type not found " + nvc);
+    }
+
+
+
+    public static boolean excludeMeta(Set<String> exclusion, NVBase<?> nvb)
+    {
+        return excludeMeta(exclusion, nvb.getName());
+    }
+
+    public static boolean excludeMeta(Set<String> exclusion, NVConfig nvc)
+    {
+        return excludeMeta(exclusion, nvc.getName());
+    }
+    public static boolean excludeMeta(Set<String> exclusion, String name)
+    {
+        return exclusion.contains(name);
+    }
+
+
+    public static String formatQuery(QueryMarker... queryCriteria)
+    {
+        StringBuilder sb = new StringBuilder();
+
+        for (QueryMarker qm : queryCriteria)
+        {
+            if(sb.length() > 0)
+            {
+                sb.append(' ');
+            }
+            if (qm instanceof QueryMatch)
+            {
+                QueryMatch<?> qMatch = (QueryMatch) qm;
+
+                sb.append((qMatch.getName() + " " +  qMatch.getOperator().getValue() + " ?"));
+            }
+            else if (qm instanceof Const.LogicalOperator)
+            {
+                sb.append(((Const.LogicalOperator) qm).getValue());
+            }
+        }
+
+        return sb.toString();
+    }
+
+    public static void conditionsSetup(PreparedStatement ps,  QueryMarker... queryCriteria) throws SQLException {
+        if (queryCriteria != null) {
+            int index = 0;
+            for (QueryMarker qm : queryCriteria) {
+                if (qm instanceof QueryMatch) {
+                    Object value = ((QueryMatch) qm).getValue();
+                    if(value instanceof Enum)
+                    {
+                        value = ((Enum<?>) value).name();
+                    }
+                    ps.setObject(++index, value);
+                }
+            }
+        }
     }
 }

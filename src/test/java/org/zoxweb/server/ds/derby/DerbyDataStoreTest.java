@@ -28,14 +28,16 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
+import org.zoxweb.shared.data.DeviceDAO;
+import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const;
+
 import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVEntity;
 
 import java.io.IOException;
 import java.util.List;
-
-
+import java.util.UUID;
 
 
 public class DerbyDataStoreTest {
@@ -166,6 +168,34 @@ public class DerbyDataStoreTest {
     }
 
     @Test
+    public void testSearchAll()
+    {
+        DeviceDAO device = DSTestClass.init(new DeviceDAO());
+        device.setName(UUID.randomUUID().toString());
+        device = dataStore.insert(device);
+
+        List<DeviceDAO> result = dataStore.search(DeviceDAO.class.getName(), null, null);
+        System.out.println("size:" + result.size());
+        result = dataStore.search(DeviceDAO.class.getName(), null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
+        System.out.println("size:" + result.size() + " " + result);
+
+        DSTestClass.AllTypes at = DSTestClass.AllTypes.autoBuilder();
+        at.setStatus(Const.Status.SUSPENDED);
+        at = dataStore.insert(at);
+        List<DSTestClass.AllTypes> resultAt = dataStore.search(DSTestClass.AllTypes.class.getName(), null,
+                new QueryMatch<String>(Const.RelationalOperator.EQUAL, Const.Status.SUSPENDED.name(), "enum_val"), Const.LogicalOperator.AND, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
+        System.out.println("size:" + resultAt.size() + " " + resultAt);
+        assert(resultAt.isEmpty());
+
+        resultAt = dataStore.search(DSTestClass.AllTypes.class.getName(), null,
+                new QueryMatch<String>(Const.RelationalOperator.EQUAL, Const.Status.SUSPENDED.name(), "enum_val"), Const.LogicalOperator.OR, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
+        System.out.println("size:" + resultAt.size() + " " + resultAt);
+        assert(!resultAt.isEmpty());
+
+
+    }
+
+    @Test
     public void testUpdateComplex() throws IOException {
         DSTestClass.ComplexTypes nveTypes = null;
 
@@ -207,9 +237,27 @@ public class DerbyDataStoreTest {
 
         dataStore.delete(addressDAO, true);
         List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGlobalID());
-        assert(result.isEmpty());
-    }
+        assert (result.isEmpty());
 
+        DSTestClass.AllTypes at = DSTestClass.AllTypes.autoBuilder();
+        at.setName("to-be-deleted");
+        at = dataStore.insert(at);
+        assert (at.getGlobalID() != null);
+        
+        assert (dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<String>(Const.RelationalOperator.EQUAL, "to-be-deleted", "name")));
+        assert (dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<Boolean>(Const.RelationalOperator.EQUAL, true, "boolean_val")));
+        assert (!dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<String>(Const.RelationalOperator.EQUAL, "to-be-deleted", "name")));
+
+    }
+    @Test
+    public void testInsertDeviceDAO() throws IOException {
+
+        DeviceDAO device = DSTestClass.init(new DeviceDAO());
+        device = dataStore.insert(device);
+        dataStore.insert( DSTestClass.init(new DeviceDAO()));
+
+        assertNotNull(device.getGlobalID());
+    }
 
 
 }

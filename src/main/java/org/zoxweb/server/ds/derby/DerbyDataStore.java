@@ -20,6 +20,7 @@ import org.zoxweb.shared.api.APIExceptionHandler;
 import org.zoxweb.shared.api.APISearchResult;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
+import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
 
@@ -64,9 +65,9 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     Statement stmt = null;
     try {
       con = connect();
-      stmt = con.createStatement();
-      if (!doesTableExists(CACHE_DATA_TB))
-      stmt.execute("create table " + CACHE_DATA_TB + " (GLOBAL_ID VARCHAR(64), CANONICAL_ID VARCHAR(1024), DATA_TXT LONG VARCHAR, PRIMARY KEY(GLOBAL_ID))");
+//      stmt = con.createStatement();
+//      if (!doesTableExists(CACHE_DATA_TB))
+//      stmt.execute("create table " + CACHE_DATA_TB + " (GLOBAL_ID VARCHAR(64), CANONICAL_ID VARCHAR(1024), DATA_TXT LONG VARCHAR, PRIMARY KEY(GLOBAL_ID))");
     }
     catch(Exception e)
     {
@@ -97,7 +98,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           for (NVConfig nvc : nvce.getAttributes())
           {
             // skip referenceID
-            if (!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvc))
+            if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvc))
             {
               if (nvc instanceof NVConfigEntity)
                 createTable((NVConfigEntity)nvc);
@@ -382,15 +383,65 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       QueryMarker... queryCriteria)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
     // TODO Auto-generated method stub
-    return null;
+    return search(nvce.getMetaType().getName(), fieldNames, queryCriteria);
   }
 
   @Override
   public <V extends NVEntity> List<V> search(String className, List<String> fieldNames,
       QueryMarker... queryCriteria)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-    // TODO Auto-generated method stub
-    return null;
+
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    NVEntity retType = null;
+
+    Connection con = null;
+    try
+    {
+      retType = (NVEntity) Class.forName(className).newInstance();
+      NVConfigEntity nvce = (NVConfigEntity) retType.getNVConfig();
+      con = connect();
+      StringBuilder  select = new StringBuilder("SELECT GLOBAL_ID FROM " + retType.getNVConfig().getName());
+      if (queryCriteria != null && queryCriteria.length > 0)
+      {
+        select.append(" WHERE ");
+        select.append(DerbyDBMeta.formatQuery(queryCriteria));
+      }
+      log.info(select.toString());
+      stmt = con.prepareStatement(select.toString());
+      DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
+//      if (queryCriteria != null) {
+//        int index = 0;
+//        for (QueryMarker qm : queryCriteria) {
+//          if (qm instanceof QueryMatch) {
+//            Object value = ((QueryMatch) qm).getValue();
+//            if(value instanceof Enum)
+//            {
+//              value = ((Enum<?>) value).name();
+//            }
+//            stmt.setObject(++index, value);
+//          }
+//        }
+//      }
+      rs = stmt.executeQuery();
+      List<String> ids = new ArrayList<String>();
+      while(rs.next())
+      {
+        ids.add(rs.getString(1));
+      }
+
+      return innerSearchByID(con, className, ids.toArray(new String[0]));
+
+    }
+    catch (SQLException | ClassNotFoundException | InstantiationException | IllegalAccessException  e)
+    {
+      e.printStackTrace();
+      throw new APIException(e.getMessage());
+    }
+    finally {
+      close(stmt, rs, con);
+    }
+
   }
 
   @Override
@@ -464,10 +515,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     ResultSet rs = null;
     NVEntity retType = null;
     List<NVEntity> ret = new ArrayList<NVEntity>();
+    if(ids == null || ids.length == 0)
+    {
+      return (List<V>)ret;
+    }
     try
     {
       retType = (NVEntity) Class.forName(className).newInstance();
       NVConfigEntity nvce = (NVConfigEntity) retType.getNVConfig();
+
 
 
       for (int i = 0; i < ids.length; i++)
@@ -484,7 +540,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       {
         for (NVBase<?> nvb : retType.getAttributes().values())
         {
-          if(!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
+          if(!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvb)) {
             if (nvb instanceof NVEntityReference)
             {
               if (rs.getString(nvb.getName()) != null)
@@ -568,6 +624,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
       createTable((NVConfigEntity) nve.getNVConfig());
       con = connect();
+      MetaUtil.initTimeStamp(nve);
       if(SharedStringUtil.isEmpty(nve.getGlobalID()))
       {
         nve.setGlobalID(UUID.randomUUID().toString());
@@ -589,7 +646,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       stmt = con.prepareStatement(statementToken);
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values()) {
-        if(!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
+        if(!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvb)) {
           if (nvb instanceof NVEntityReference) {
             NVEntity innerNVE = innerInsert(con, ((NVEntityReference) nvb).getValue());
             ((NVEntityReference) nvb).setValue(innerNVE);
@@ -631,7 +688,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     int index = 0;
     for(NVBase<?> nvb : nve.getAttributes().values())
     {
-      if (!DerbyDT.excludeMeta(DerbyDT.META_INSERT_EXCLUSION, nvb)) {
+      if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvb)) {
         if (ret.genericValues.length() > 0) {
           ret.genericValues.append(", ");
         }
@@ -686,28 +743,71 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   public <V extends NVEntity> boolean delete(V nve, boolean withReference)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
     // TODO Auto generated method stub
-    String sql = "DELETE FROM " + nve.getNVConfig().getName() + " WHERE GLOBAL_ID = '" + nve.getGlobalID() + "'";
-    Connection con = null;
-    Statement stmt = null;
-    try
-    {
-      con = connect();
-      stmt = con.createStatement();
-      return stmt.execute(sql);
+//    String sql = "DELETE FROM " + nve.getNVConfig().getName() + " WHERE GLOBAL_ID = '" + nve.getGlobalID() + "'";
+//    Connection con = null;
+//    Statement stmt = null;
+//    try
+//    {
+//      con = connect();
+//      stmt = con.createStatement();
+//      return stmt.execute(sql);
+//
+//    } catch (SQLException e) {
+//      throw new APIException(e.getMessage());
+//    } finally {
+//      close(stmt, con);
+//    }
 
-    } catch (SQLException e) {
-      throw new APIException(e.getMessage());
-    } finally {
-      close(stmt, con);
-    }
-
+    return delete( (NVConfigEntity) nve.getNVConfig(),
+            new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGlobalID(), MetaToken.GLOBAL_ID));
   }
 
   @Override
   public <V extends NVEntity> boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-    // TODO Auto-generated method stub
-    return false;
+    SharedUtil.checkIfNulls("nvce and queryCriteria can not be null", nvce, queryCriteria);
+    if(queryCriteria.length == 0)
+    {
+      throw new IllegalArgumentException("queryCriteria can not be empty");
+    }
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    Connection con = null;
+    try
+    {
+      con = connect();
+      StringBuilder  select = new StringBuilder("DELETE FROM " + nvce.getName());
+      if (queryCriteria != null && queryCriteria.length > 0)
+      {
+        select.append(" WHERE ");
+        select.append(DerbyDBMeta.formatQuery(queryCriteria));
+      }
+      log.info(select.toString());
+      stmt = con.prepareStatement(select.toString());
+      DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
+//      if (queryCriteria != null) {
+//        int index = 0;
+//        for (QueryMarker qm : queryCriteria) {
+//          if (qm instanceof QueryMatch) {
+//            Object value = ((QueryMatch) qm).getValue();
+//            if(value instanceof Enum)
+//            {
+//              value = ((Enum<?>) value).name();
+//            }
+//            stmt.setObject(++index, value);
+//          }
+//        }
+//      }
+      return stmt.executeUpdate() != 0;
+    }
+    catch (SQLException e)
+    {
+      e.printStackTrace();
+      throw new APIException(e.getMessage());
+    }
+    finally {
+      close(stmt, rs, con);
+    }
   }
 
   @Override
@@ -742,7 +842,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       StringBuilder values = new StringBuilder();
       for(NVBase<?> nvb : nve.getAttributes().values())
       {
-        if (!DerbyDT.excludeMeta(DerbyDT.META_UPDATE_EXCLUSION, nvb))
+        if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_UPDATE_EXCLUSION, nvb))
         {
 
           if(values.length() > 0)
@@ -758,7 +858,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values())
       {
-        if (!DerbyDT.excludeMeta(DerbyDT.META_UPDATE_EXCLUSION, nvb))
+        if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_UPDATE_EXCLUSION, nvb))
         {
           if(nvb instanceof NVEntityReference)
           {

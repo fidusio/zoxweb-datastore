@@ -1,11 +1,14 @@
 package org.zoxweb.server.ds.data;
 
 
+import org.zoxweb.server.ds.derby.DerbyDBMeta;
+import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
 import org.zoxweb.shared.util.*;
 
 import java.security.SecureRandom;
 import java.util.Date;
+import java.util.UUID;
 
 
 public class DSTestClass {
@@ -304,7 +307,55 @@ public class DSTestClass {
 
     }
 
+    public static  <V extends NVEntity> V init(V nve)
+    {
+        int index = 0;
+        MetaUtil.initTimeStamp(nve);
+        NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+        if (nve instanceof DeviceID)
+        {
+            ((DeviceID<String>) nve).setDeviceID(UUID.randomUUID().toString());
+        }
+        if (nve instanceof SubjectID)
+        {
+            ((SubjectID<String>) nve).getSubjectID();
+        }
+        for (NVBase<?> nvb : nve.getAttributes().values())
+        {
+            if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_UPDATE_EXCLUSION, nvb))
+            {
+                if(nvce.lookup(nvb.getName()).getMetaType() == Date.class) {
+                }
+                else if(nvb instanceof NVInt)
+                {
+                    ((NVInt)nvb).setValue(sr.nextInt());
+                }
+                else if(nvb instanceof NVLong)
+                {
+                    ((NVLong)nvb).setValue(sr.nextLong());
+                }
+                else if(nvb instanceof NVFloat)
+                {
+                    ((NVFloat)nvb).setValue(sr.nextFloat());
+                }
+                else if(nvb instanceof NVDouble)
+                {
+                    ((NVDouble)nvb).setValue(sr.nextDouble());
+                }
+                else if(nvb instanceof NVPair && nvb.getValue() == null)
+                {
+                    ((NVPair)nvb).setValue("str-" + ++index);
+                }
+            }
+        }
 
+
+
+
+
+
+        return nve;
+    }
 
 
 }

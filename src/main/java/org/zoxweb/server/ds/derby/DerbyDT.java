@@ -28,19 +28,20 @@ public enum DerbyDT
   GLOBAL_ID("VARCHAR(64) NOT NULL PRIMARY KEY", Types.VARCHAR, String.class, null),
   INNER_ARRAY("LONG VARCHAR", Types.LONGNVARCHAR,null, null),
   INTEGER("INTEGER", Types.INTEGER, Integer.class, NVInt.class),
-  LONG_VARCHAR("LONG VARCHAR", Types.LONGNVARCHAR, String.class, NVPair.class),
+  //LONG_VARCHAR("LONG VARCHAR", Types.LONGNVARCHAR, String.class, NVPair.class),
+  K4_VARCHAR("VARCHAR(4096)", Types.LONGNVARCHAR, String.class, NVPair.class),
   OUTER_ARRAY("LONG VARCHAR", Types.LONGNVARCHAR,null, null),
-  REMOTE_REFERENCE("LONG VARCHAR", Types.LONGNVARCHAR,null, null),
+  REMOTE_REFERENCE("VARCHAR(512)", Types.LONGNVARCHAR,null, null),
   STRING_LIST("LONG VARCHAR", Types.LONGNVARCHAR, null, NVStringList.class),
   TIMESTAMP("BIGINT", Types.BIGINT, Date.class, NVLong.class),
   USER_ID("VARCHAR(64)", Types.VARCHAR, String.class, null),
+  SUBJECT_ID("VARCHAR(256)", Types.VARCHAR, String.class, null),
 
 
   ;
 
 
-  public static final Set<String> META_INSERT_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
-  public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
+
   private String dbType;
   private int sqlType;
   private Class<?> javaClass;
@@ -90,18 +91,6 @@ public enum DerbyDT
    }
 
 
-  public static boolean excludeMeta(Set<String> exclusion, NVBase<?> nvb)
-  {
-    return excludeMeta(exclusion, nvb.getName());
-  }
 
-  public static boolean excludeMeta(Set<String> exclusion, NVConfig nvc)
-  {
-    return excludeMeta(exclusion, nvc.getName());
-  }
-   public static boolean excludeMeta(Set<String> exclusion, String name)
-   {
-     return exclusion.contains(name);
-   }
   
 }
