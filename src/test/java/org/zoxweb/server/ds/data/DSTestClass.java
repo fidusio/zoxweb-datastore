@@ -229,7 +229,7 @@ public class DSTestClass {
                 implements GetNVConfig {
 
             ALL_TYPES(NVConfigManager.createNVConfigEntity("all_types", "All Types", "AllTypes", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.NOT_ARRAY)),
-            ALL_TYPES_ARRAY(NVConfigManager.createNVConfigEntity("all_types_array", "All Types array", "AllTypesArray", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.LIST)),
+            ALL_TYPES_ARRAY(NVConfigManager.createNVConfigEntity("array_of_all_types", "All Types array", "AllTypesArray", false, true, AllTypes.NVC_ALLTYPES_DOA, NVConfigEntity.ArrayType.LIST)),
             INT_ARRAY(NVConfigManager.createNVConfig("int_array", "Integer Value", "IntVal", false, true, int[].class)),
             LONG_ARRAY(NVConfigManager.createNVConfig("long_array", "Long Value", "LongVal", false, true, long[].class)),
             FLOAT_ARRAY(NVConfigManager.createNVConfig("float_array", "Float Value", "FloatVal", false, true, float[].class)),
@@ -256,7 +256,7 @@ public class DSTestClass {
             }
         }
 
-        public static final NVConfigEntity NVC_NVETYPES_DOA = new NVConfigEntityLocal(
+        public static final NVConfigEntity NVC_COMPLEX_TYPES = new NVConfigEntityLocal(
                 "complex_types",
                 null,
                 "ComplexTypes",
@@ -273,7 +273,7 @@ public class DSTestClass {
 
         public ComplexTypes()
         {
-            super(NVC_NVETYPES_DOA);
+            super(NVC_COMPLEX_TYPES);
         }
 
         public AllTypes getAllTypes()
@@ -286,11 +286,13 @@ public class DSTestClass {
             setValue(Param.ALL_TYPES, at);
         }
 
-        public static ComplexTypes buildComplex()
+        public static ComplexTypes buildComplex(String name)
         {
             ComplexTypes ret = new ComplexTypes();
-
-            ret.setName("AllTypes-" + Math.abs(sr.nextInt()));
+            if (name != null)
+                ret.setName(name);
+            else
+                ret.setName("AllTypes-" + Math.abs(sr.nextInt()));
             ret.setDescription("Auto generated.");
             for (int i = 0; i < 3; i++) {
                 ((NVDoubleList) ret.attributes.get(Param.DOUBLE_ARRAY.getNVConfig().getName())).getValue().add(sr.nextDouble());
@@ -298,7 +300,7 @@ public class DSTestClass {
                 ((NVIntList) ret.attributes.get(Param.INT_ARRAY.getNVConfig().getName())).getValue().add(sr.nextInt());
                 ((NVLongList) ret.attributes.get(Param.LONG_ARRAY.getNVConfig().getName())).getValue().add(sr.nextLong());
                 ((NVEnumList) ret.attributes.get(Param.ENUM_ARRAY.getNVConfig().getName())).getValue().add(Const.Status.values()[sr.nextInt(Const.Status.values().length)]);
-                ((NVEntityReferenceList) ret.attributes.get(Param.ALL_TYPES_ARRAY.getNVConfig().getName())).getValue().add(AllTypes.autoBuilder());
+                ((NVEntityReferenceList) ret.attributes.get(Param.ALL_TYPES_ARRAY.getNVConfig().getName())).add(AllTypes.autoBuilder());
             }
 
             return ret;

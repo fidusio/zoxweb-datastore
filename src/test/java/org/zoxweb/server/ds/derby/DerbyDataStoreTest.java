@@ -34,6 +34,7 @@ import org.zoxweb.shared.util.Const;
 
 import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
 import java.util.List;
@@ -111,10 +112,11 @@ public class DerbyDataStoreTest {
     public void testInsertComplex() throws IOException {
         DSTestClass.ComplexTypes complexTypes = null;
 
-        for (int i = 0;i < 10; i++) {
+        for (int i = 0;i < 5; i++)
+        {
             DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
             long ts = System.nanoTime();
-            complexTypes = DSTestClass.ComplexTypes.buildComplex();
+            complexTypes = DSTestClass.ComplexTypes.buildComplex(null);
             complexTypes.setAllTypes(allTypes);
             complexTypes = dataStore.insert(complexTypes);
             ts = System.nanoTime() - ts;
@@ -203,7 +205,7 @@ public class DerbyDataStoreTest {
         {
             DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
             long ts = System.nanoTime();
-            nveTypes = DSTestClass.ComplexTypes.buildComplex();
+            nveTypes = DSTestClass.ComplexTypes.buildComplex(null);
             nveTypes.setAllTypes(allTypes);
             nveTypes = dataStore.update(nveTypes);
             ts = System.nanoTime() - ts;
@@ -228,7 +230,7 @@ public class DerbyDataStoreTest {
     }
 
     @Test
-    public void testDelete() {
+    public void testDelete() throws IOException {
         AddressDAO addressDAO = new AddressDAO();
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
@@ -243,19 +245,33 @@ public class DerbyDataStoreTest {
         at.setName("to-be-deleted");
         at = dataStore.insert(at);
         assert (at.getGlobalID() != null);
-        
+
         assert (dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<String>(Const.RelationalOperator.EQUAL, "to-be-deleted", "name")));
         assert (dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<Boolean>(Const.RelationalOperator.EQUAL, true, "boolean_val")));
         assert (!dataStore.delete((NVConfigEntity) at.getNVConfig(), new QueryMatch<String>(Const.RelationalOperator.EQUAL, "to-be-deleted", "name")));
 
+        DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
+        String name = "NEVER" + UUID.randomUUID().toString();
+        allTypes.setName(name);
+        long ts = System.nanoTime();
+        DSTestClass.ComplexTypes complex = DSTestClass.ComplexTypes.buildComplex(name);
+        complex.setAllTypes(allTypes);
+       complex = dataStore.update(complex);
+        ts = System.nanoTime() - ts;
+        System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+        System.out.println("json:" + GSONUtil.toJSON(complex, true, false, false));
+        assert(dataStore.delete(complex, true));
+        assert(dataStore.searchByID((NVConfigEntity) complex.getNVConfig(), complex.getGlobalID()).isEmpty());
+
+
+
     }
     @Test
     public void testInsertDeviceDAO() throws IOException {
-
         DeviceDAO device = DSTestClass.init(new DeviceDAO());
+        device.getProperties().add("toto", "titi");
+        device.getProperties().add(new NVInt("int_val", 100));
         device = dataStore.insert(device);
-        dataStore.insert( DSTestClass.init(new DeviceDAO()));
-
         assertNotNull(device.getGlobalID());
     }
 
