@@ -546,7 +546,6 @@ public class DerbyDataStore implements APIDataStore<Connection> {
               if (rs.getString(nvb.getName()) != null)
               {
                 NVEntityRefMeta nverm = DerbyDBMeta.toNVEntityRefMeta(rs.getString(nvb.getName()));
-
                 List<NVEntity> innerValues = innerSearchByID(con, nverm.className, nverm.globalID);
                 if(innerValues.size() == 1)
                 {
