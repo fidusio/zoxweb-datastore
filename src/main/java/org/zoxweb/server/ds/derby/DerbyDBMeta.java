@@ -42,7 +42,10 @@ public class DerbyDBMeta {
 
     public static String toNVEntityDBToken(NVEntity nve)
     {
-        return nve.getNVConfig().getMetaType().getName() + ":" + nve.getGlobalID();
+        if (nve != null)
+            return nve.getNVConfig().getMetaType().getName() + ":" + nve.getGlobalID();
+        else
+            return null;
     }
 
 

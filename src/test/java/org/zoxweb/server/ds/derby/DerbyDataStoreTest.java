@@ -117,7 +117,7 @@ public class DerbyDataStoreTest {
             DSTestClass.AllTypes allTypes = DSTestClass.AllTypes.autoBuilder();
             long ts = System.nanoTime();
             complexTypes = DSTestClass.ComplexTypes.buildComplex(null);
-            complexTypes.setAllTypes(allTypes);
+            complexTypes.setAllTypes(i%2 == 0 ? allTypes: null);
             complexTypes = dataStore.insert(complexTypes);
             ts = System.nanoTime() - ts;
             System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");

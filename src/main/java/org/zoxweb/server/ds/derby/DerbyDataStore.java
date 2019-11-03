@@ -396,16 +396,16 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     {
       retType = (NVEntity) Class.forName(className).newInstance();
       NVConfigEntity nvce = (NVConfigEntity) retType.getNVConfig();
-      con = connect();
-      StringBuilder  select = new StringBuilder("SELECT GLOBAL_ID FROM " + retType.getNVConfig().getName());
-      if (queryCriteria != null && queryCriteria.length > 0)
-      {
-        select.append(" WHERE ");
-        select.append(DerbyDBMeta.formatQuery(queryCriteria));
-      }
-      log.info(select.toString());
-      stmt = con.prepareStatement(select.toString());
-      DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
+      if(doesTableExists(nvce)) {
+        con = connect();
+        StringBuilder select = new StringBuilder("SELECT GLOBAL_ID FROM " + retType.getNVConfig().getName());
+        if (queryCriteria != null && queryCriteria.length > 0) {
+          select.append(" WHERE ");
+          select.append(DerbyDBMeta.formatQuery(queryCriteria));
+        }
+        log.info(select.toString());
+        stmt = con.prepareStatement(select.toString());
+        DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
 //      if (queryCriteria != null) {
 //        int index = 0;
 //        for (QueryMarker qm : queryCriteria) {
@@ -419,14 +419,18 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 //          }
 //        }
 //      }
-      rs = stmt.executeQuery();
-      List<String> ids = new ArrayList<String>();
-      while(rs.next())
-      {
-        ids.add(rs.getString(1));
-      }
+        rs = stmt.executeQuery();
+        List<String> ids = new ArrayList<String>();
+        while (rs.next()) {
+          ids.add(rs.getString(1));
+        }
 
-      return innerSearchByID(con, className, ids.toArray(new String[0]));
+        return innerSearchByID(con, className, ids.toArray(new String[0]));
+      }
+      else
+      {
+        return (List<V>) new ArrayList<NVEntity>();
+      }
 
     }
     catch (SQLException | ClassNotFoundException | InstantiationException | IllegalAccessException  e)
@@ -660,8 +664,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
             nvb = nveList;
           }
           else if (nvb instanceof NVEntityReference) {
-            NVEntity innerNVE = innerInsert(con, ((NVEntityReference) nvb).getValue());
-            ((NVEntityReference) nvb).setValue(innerNVE);
+            if (nvb.getValue() != null) {
+              NVEntity innerNVE = innerInsert(con, ((NVEntityReference) nvb).getValue());
+              ((NVEntityReference) nvb).setValue(innerNVE);
+            }
           }
           DerbyDBMeta.toDerbyValue(stmt, ++index, nvb);
         }
