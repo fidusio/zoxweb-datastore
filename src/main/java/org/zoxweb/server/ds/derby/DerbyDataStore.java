@@ -179,7 +179,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         DatabaseMetaData dbmd = con.getMetaData();
         rs = dbmd.getTables(null, null, sTablename, null);
         if (rs.next()) {
-          log.info("Table " + rs.getString("TABLE_NAME") + "already exists !!");
+          log.info("Table " + rs.getString("TABLE_NAME") + " already exists !!");
           return true;
         } else {
           log.info("Table " + sTablename + " do not exist.");
@@ -403,7 +403,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           select.append(" WHERE ");
           select.append(DerbyDBMeta.formatQuery(queryCriteria));
         }
-        log.info(select.toString());
+        //log.info(select.toString());
         stmt = con.prepareStatement(select.toString());
         DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
 //      if (queryCriteria != null) {
@@ -632,15 +632,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
       {
         // already exit we must update
-        log.info("invoke update for " + nve.getGlobalID());
+        //log.info("invoke update for " + nve.getGlobalID());
         return innerUpdate(con, nve);
       }
 
       DerbyDBData ddbd = formatInsertStatement(nve, false);
 
       String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues.toString() + ")";
-      log.info(statementToken);
-      log.info("parameter count " + ddbd.genericValuesCount);
+      //log.info(statementToken);
+      //log.info("parameter count " + ddbd.genericValuesCount);
 
 
       stmt = con.prepareStatement(statementToken);
@@ -746,21 +746,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   @Override
   public <V extends NVEntity> boolean delete(V nve, boolean withReference)
       throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-    // TODO Auto generated method stub
-//    String sql = "DELETE FROM " + nve.getNVConfig().getName() + " WHERE GLOBAL_ID = '" + nve.getGlobalID() + "'";
-//    Connection con = null;
-//    Statement stmt = null;
-//    try
-//    {
-//      con = connect();
-//      stmt = con.createStatement();
-//      return stmt.execute(sql);
-//
-//    } catch (SQLException e) {
-//      throw new APIException(e.getMessage());
-//    } finally {
-//      close(stmt, con);
-//    }
+
+    if(nve == null)
+      return false;
+
     if (withReference)
     {
       for(NVBase<?> nvb : nve.getAttributes().values())
@@ -781,7 +770,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       }
     }
 
-    return delete( (NVConfigEntity) nve.getNVConfig(),
+    return delete((NVConfigEntity) nve.getNVConfig(),
             new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGlobalID(), MetaToken.GLOBAL_ID));
   }
 
@@ -805,22 +794,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         select.append(" WHERE ");
         select.append(DerbyDBMeta.formatQuery(queryCriteria));
       }
-      log.info(select.toString());
+      //log.info(select.toString());
       stmt = con.prepareStatement(select.toString());
       DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
-//      if (queryCriteria != null) {
-//        int index = 0;
-//        for (QueryMarker qm : queryCriteria) {
-//          if (qm instanceof QueryMatch) {
-//            Object value = ((QueryMatch) qm).getValue();
-//            if(value instanceof Enum)
-//            {
-//              value = ((Enum<?>) value).name();
-//            }
-//            stmt.setObject(++index, value);
-//          }
-//        }
-//      }
+
       return stmt.executeUpdate() != 0;
     }
     catch (SQLException e)
@@ -876,7 +853,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         }
       }
       String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE GLOBAL_ID='" + nve.getGlobalID() + "'";
-      log.info(updateStatement);
+      //log.info(updateStatement);
       stmt = con.prepareStatement(updateStatement);
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values())

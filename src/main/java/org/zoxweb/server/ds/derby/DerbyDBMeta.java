@@ -358,7 +358,8 @@ public class DerbyDBMeta {
         return sb.toString();
     }
 
-    public static void conditionsSetup(PreparedStatement ps,  QueryMarker... queryCriteria) throws SQLException {
+    public static void conditionsSetup(PreparedStatement ps,  QueryMarker... queryCriteria) throws SQLException
+    {
         if (queryCriteria != null) {
             int index = 0;
             for (QueryMarker qm : queryCriteria) {
