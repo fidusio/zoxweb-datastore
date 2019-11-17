@@ -36,6 +36,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
   private static transient  Logger log = Logger.getLogger(DerbyDataStore.class.getName());
   private volatile Map<String, NVConfigEntity> metaTables = new HashMap<String, NVConfigEntity>();
+  private volatile Map<String, DerbyDBData> ddbdCache= new HashMap<String, DerbyDBData>();
 
 
 
@@ -43,7 +44,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   class DerbyDBData{
     final StringBuilder columns = new StringBuilder();
     final StringBuilder values = new StringBuilder();
-    final StringBuilder genericValues = new StringBuilder();
+    String insertStatement = null;
     int genericValuesCount = 0;
   }
   public DerbyDataStore()
@@ -636,14 +637,14 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         return innerUpdate(con, nve);
       }
 
-      DerbyDBData ddbd = formatInsertStatement(nve, false);
+      //DerbyDBData ddbd = formatInsertStatement(nve, false);
 
-      String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues.toString() + ")";
+      //String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues + ")";
       //log.info(statementToken);
       //log.info("parameter count " + ddbd.genericValuesCount);
 
 
-      stmt = con.prepareStatement(statementToken);
+      stmt = con.prepareStatement(formatInsertStatement(nve, false).insertStatement);
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values())
       {
@@ -687,30 +688,37 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
 
   private DerbyDBData formatInsertStatement(NVEntity nve, boolean nullsAllowed) throws IOException {
-    DerbyDBData ret = new DerbyDBData();
+    DerbyDBData ret = ddbdCache.get(nve.getNVConfig().getName());
 
-    int index = 0;
-    for(NVBase<?> nvb : nve.getAttributes().values())
-    {
-      if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvb)) {
-        if (ret.genericValues.length() > 0) {
-          ret.genericValues.append(", ");
-        }
-        ret.genericValues.append('?');
-        index++;
-        if (nullsAllowed || nvb.getValue() != null) {
-          if (ret.columns.length() > 0) {
-            ret.columns.append(',');
+
+    if (ret == null) {
+      ret = new DerbyDBData();
+      int index = 0;
+      StringBuilder genValues = new StringBuilder();
+      for (NVBase<?> nvb : nve.getAttributes().values()) {
+        if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_INSERT_EXCLUSION, nvb)) {
+          if (genValues.length() > 0) {
+            genValues.append(", ");
           }
-          ret.columns.append(nvb.getName());
-          if (ret.values.length() > 0) {
-            ret.values.append(',');
+          genValues.append('?');
+          index++;
+          if (nullsAllowed || nvb.getValue() != null) {
+            if (ret.columns.length() > 0) {
+              ret.columns.append(',');
+            }
+            ret.columns.append(nvb.getName());
+            if (ret.values.length() > 0) {
+              ret.values.append(',');
+            }
+            DerbyDBMeta.toDerbyValue(ret.values, nvb, false);
           }
-          DerbyDBMeta.toDerbyValue(ret.values, nvb, false);
         }
       }
+      ret.genericValuesCount = index;
+
+      ret.insertStatement = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + genValues.toString() + ")";
+      ddbdCache.put(nve.getNVConfig().getName(), ret);
     }
-    ret.genericValuesCount = index;
     return ret;
   }
 

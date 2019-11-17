@@ -48,7 +48,7 @@ public class DerbyDataStoreTest {
     private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
    
     private static final String MEMORY_URL = "jdbc:derby:memory:test";
-    private static final String DIR_URL = "jdbc:derby:/tmp/derby/test";
+    private static final String DISK_URL = "jdbc:derby:/tmp/derby/test";
     private static final String USER ="APP";
     private static final String PASSWORD ="APP";
 
@@ -60,12 +60,12 @@ public class DerbyDataStoreTest {
     	    NVEntity.GLOBAL_ID_AS_REF_ID = true;
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", DRIVER);
-    		configInfo.getProperties().add("url", DIR_URL);
+    		configInfo.getProperties().add("url", MEMORY_URL);
     		configInfo.getProperties().add("user", USER);
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
     		System.out.println(dataStore.connect());
-    		System.out.print("USRL:" + MEMORY_URL + " " + DIR_URL);
+    		System.out.print("URLs:" + MEMORY_URL + " mem," + DISK_URL + " disk.");
     	}
 //    	catch(Throwable e)
 //    	{
