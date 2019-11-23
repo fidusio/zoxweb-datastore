@@ -2273,6 +2273,7 @@ public class MongoDataStore
 			BasicDBObject doc = new BasicDBObject();
 			doc.put(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
 			DBCollection collection = connect().getCollection(nve.getNVConfig().getName());
+
 			
 			
 			try
@@ -2294,7 +2295,16 @@ public class MongoDataStore
 			
 			if (withReference)
 			{
+
+				// the associated encryption key dao
+				DBCollection ekdCollection = connect().getCollection(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO.getName());
+				//log.info("EncryptedKeyDAO:" + ekdCollection);
+				if(ekdCollection != null)
+					ekdCollection.remove(doc);
+				// end
+
 				NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+
 				for (NVConfig tempNVC : nvce.getAttributes())
 				{
 					if (tempNVC instanceof NVConfigEntity)
