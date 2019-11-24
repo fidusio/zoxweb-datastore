@@ -2003,7 +2003,21 @@ public class MongoDataStore
 //	    return nve;
 //	}
 
-	
+
+	/**
+	 *
+	 * @param nve to be update
+	 * @param updateTS if the NVE instanceof TimeStampInterface will update the timestamp value
+	 * @param sync if true synchronized access
+	 * @param updateReferenceOnly update only reference
+	 * @param includeParam
+	 * @param nvConfigNames
+	 * @param <V>
+	 * @return
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws APIException
+	 */
 	@SuppressWarnings("unchecked")
 	@Override
 	public <V extends NVEntity> V patch(V nve, boolean updateTS, boolean sync, boolean updateReferenceOnly, boolean includeParam, String... nvConfigNames)
