@@ -16,7 +16,7 @@
 package org.zoxweb.server.ds.proxy;
 
 import org.bson.types.ObjectId;
-import org.zoxweb.server.api.APIDocumentStore;
+import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIConfigInfo;

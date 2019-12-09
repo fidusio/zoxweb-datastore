@@ -30,7 +30,7 @@ import com.mongodb.gridfs.GridFSInputFile;
 
 
 import org.bson.types.ObjectId;
-import org.zoxweb.server.api.APIDocumentStore;
+import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.util.MetaUtil;

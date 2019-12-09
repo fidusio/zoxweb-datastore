@@ -8,7 +8,7 @@ import org.apache.shiro.util.Factory;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.zoxweb.server.api.APIDocumentStore;
+import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
