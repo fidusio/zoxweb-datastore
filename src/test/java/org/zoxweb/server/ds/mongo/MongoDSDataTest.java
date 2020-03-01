@@ -207,6 +207,7 @@ public class MongoDSDataTest {
 		System.out.println(GSONUtil.toJSON(jwtHS256, true, false, false));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testRangeInt()
     {
@@ -219,6 +220,7 @@ public class MongoDSDataTest {
     }
 
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testRangeLong()
     {
