@@ -29,6 +29,7 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
+import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const;
 
@@ -38,6 +39,7 @@ import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 
@@ -60,7 +62,7 @@ public class DerbyDataStoreTest {
     	    NVEntity.GLOBAL_ID_AS_REF_ID = true;
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", DRIVER);
-    		configInfo.getProperties().add("url", MEMORY_URL);
+    		configInfo.getProperties().add("url", DISK_URL);
     		configInfo.getProperties().add("user", USER);
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
@@ -273,6 +275,29 @@ public class DerbyDataStoreTest {
         device.getProperties().add(new NVInt("int_val", 100));
         device = dataStore.insert(device);
         assertNotNull(device.getGlobalID());
+    }
+
+    @Test
+    public void testRange()
+    {
+        Range<Float> floatRange = new Range<Float>(1.0f, 6.666f);
+
+        floatRange = dataStore.insert(floatRange);
+        assertNotNull(floatRange.getGlobalID());
+
+
+        floatRange = (Range<Float>) dataStore.searchByID(Range.class.getName(), floatRange.getGlobalID()).get(0);
+
+
+        Range<Integer> intRange = new Range<Integer>(1, 200);
+
+        intRange = dataStore.insert(intRange);
+        assertNotNull(intRange.getGlobalID());
+
+
+        intRange = (Range<Integer>) dataStore.searchByID(Range.class.getName(), intRange.getGlobalID()).get(0);
+
+
     }
 
 

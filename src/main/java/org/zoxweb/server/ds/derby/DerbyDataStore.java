@@ -124,6 +124,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           sb.insert(0, "CREATE TABLE " + tableName + " (");
           sb.append(')');
           String createTable = sb.toString();
+          log.info("Table: " + tableName + "  to be created SQL \n" + createTable);
           con = connect();
           stmt = con.createStatement();
           stmt.execute(createTable);

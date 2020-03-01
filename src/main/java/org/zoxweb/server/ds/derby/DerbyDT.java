@@ -36,6 +36,7 @@ public enum DerbyDT
   TIMESTAMP("BIGINT", Types.BIGINT, Date.class, NVLong.class),
   USER_ID("VARCHAR(64)", Types.VARCHAR, String.class, null),
   SUBJECT_ID("VARCHAR(256)", Types.VARCHAR, String.class, null),
+  NUMBER("VARCHAR(256)", Types.NUMERIC, Number.class, NVNumber.class),
 
 
   ;

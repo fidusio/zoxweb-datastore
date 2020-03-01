@@ -22,6 +22,57 @@ public class DerbyDBMeta {
     public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
 
 
+    public static class NVNCodec
+        implements DataEncoder<NVNumber, String>, DataDecoder<String, Number>
+    {
+        public static final NVNCodec SINGLETON = new NVNCodec();
+        private NVNCodec(){};
+
+
+        @Override
+        public String encode(NVNumber input) {
+            Number v = input.getValue();
+            if (v instanceof Integer)
+            {
+                return "int:" + v.intValue();
+            }
+            else if (v instanceof Long)
+            {
+                return "long:" + v.longValue();
+            }
+            else if (v instanceof Float)
+            {
+                return "float:" + v.floatValue();
+            }
+            else if (v instanceof Double)
+            {
+                return "double:" +v.doubleValue();
+            }
+
+            throw new IllegalArgumentException("Unsupported type " + input);
+        }
+
+        @Override
+        public Number decode(String input) {
+
+            if (input != null) {
+                String tokens[] = input.split(":");
+                switch (tokens[0]) {
+                    case "int":
+                        return Integer.decode(tokens[1]);
+                    case "long":
+                        return Long.decode(tokens[1]);
+                    case "float":
+                        return Float.valueOf(tokens[1]);
+                    case "double":
+                        return Double.valueOf(tokens[1]);
+                }
+            }
+
+            return null;
+        }
+    }
+
 
     public static  List<NVEntityRefMeta> toNVEntityRefMetaList(NVStringList list)
     {
@@ -49,6 +100,8 @@ public class DerbyDBMeta {
     }
 
 
+
+
     public static void toDerbyValue(StringBuilder sb, NVBase<?> nvb, boolean addName) throws IOException {
         Object value = nvb.getValue();
         if (addName)
@@ -68,6 +121,10 @@ public class DerbyDBMeta {
         else if (value instanceof Enum)
         {
             sb.append("'" +  ((Enum<?>) value).name()+ "'");
+        }
+        else if (nvb instanceof NVNumber)
+        {
+            sb.append("'" + NVNCodec.SINGLETON.encode((NVNumber) nvb) + "'");
         }
         else if (value instanceof Boolean)
         {
@@ -114,6 +171,11 @@ public class DerbyDBMeta {
         else if (nvb instanceof NVEnum)
         {
             ps.setString(index, ((Enum<?>) nvb.getValue()).name());
+        }
+        else if (nvb instanceof NVNumber)
+        {
+            ps.setString(index, NVNCodec.SINGLETON.encode((NVNumber) nvb));
+            //sb.append("'" + NVNCodec.SINGLETON.encode((NVNumber) nvb) + "'");
         }
         else if (nvb instanceof NVBoolean)
         {
@@ -222,6 +284,13 @@ public class DerbyDBMeta {
         {
             ((NVBoolean)nvb).setValue(rs.getBoolean(nvb.getName()));
         }
+        else if (nvb instanceof NVNumber)
+        {
+
+            String rsValue = rs.getString(nvb.getName());
+            ((NVNumber)nvb).setValue(NVNCodec.SINGLETON.decode(rsValue));
+
+        }
         else
             ((NVBase<Object>)nvb).setValue(rs.getObject(nvb.getName()));
     }
@@ -282,6 +351,10 @@ public class DerbyDBMeta {
         else if (nvcJavaClass == Date.class)
         {
             ddt = DerbyDT.TIMESTAMP;
+        }
+        else if (nvcJavaClass == Number.class)
+        {
+            ddt = DerbyDT.NUMBER;
         }
         else if (nvcJavaClass == NVStringList.class)
         {
