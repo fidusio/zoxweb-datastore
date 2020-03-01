@@ -24,6 +24,7 @@ import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.data.AppIDDAO;
+import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.JWT;
 import org.zoxweb.shared.security.JWTHeader;
@@ -203,10 +204,30 @@ public class MongoDSDataTest {
 		dataStore.insert(jwtHS256);
 		dataStore.insert(jwtNONE);
 		dataStore.insert(jwtHS512);
-		
-		
 		System.out.println(GSONUtil.toJSON(jwtHS256, true, false, false));
-        
+    }
+
+    @Test
+    public void testRangeInt()
+    {
+        Range<Integer> intRange = new Range<Integer>(1,1000);
+        intRange.setName("INT_RANGE");
+        dataStore.insert(intRange);
+        System.out.println(intRange.getReferenceID());
+        intRange = (Range<Integer>) dataStore.searchByID(Range.class.getName(), intRange.getReferenceID()).get(0);
+        System.out.println(intRange + " " + intRange.getStart().getClass() + " " + intRange.getEnd().getClass());
+    }
+
+
+    @Test
+    public void testRangeLong()
+    {
+        Range<Long> longRange = new Range<Long>(1l, 5000l);
+        longRange.setName("LONG_RANGE");
+        dataStore.insert(longRange);
+        System.out.println(longRange.getReferenceID());
+        longRange = (Range<Long>) dataStore.searchByID(Range.class.getName(), longRange.getReferenceID()).get(0);
+        System.out.println(longRange + " " + longRange.getStart().getClass() + " " + longRange.getEnd().getClass());
     }
     
     @Test

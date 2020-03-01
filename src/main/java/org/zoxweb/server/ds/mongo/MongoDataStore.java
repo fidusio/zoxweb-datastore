@@ -56,50 +56,9 @@ import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessException;
-import org.zoxweb.shared.util.ArrayValues;
-import org.zoxweb.shared.util.CRUD;
-import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.*;
 //import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
-import org.zoxweb.shared.util.DynamicEnumMap;
-import org.zoxweb.shared.util.DynamicEnumMapManager;
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.GetNameValue;
-import org.zoxweb.shared.util.IDGenerator;
-import org.zoxweb.shared.util.NVECRUDMonitor;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVEntityGetNameMap;
-import org.zoxweb.shared.util.NVEntityReference;
-import org.zoxweb.shared.util.NVEntityReferenceIDMap;
-import org.zoxweb.shared.util.NVEntityReferenceList;
-import org.zoxweb.shared.util.NVEnum;
-import org.zoxweb.shared.util.NVEnumList;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.NVGenericMapList;
-import org.zoxweb.shared.util.NVGetNameValueList;
-import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.NVPairGetNameMap;
-import org.zoxweb.shared.util.NVPairList;
-import org.zoxweb.shared.util.NVStringList;
-import org.zoxweb.shared.util.SharedStringUtil;
-import org.zoxweb.shared.util.SharedUtil;
-import org.zoxweb.shared.util.TimeStampInterface;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVBase;
-import org.zoxweb.shared.util.NVBigDecimal;
-import org.zoxweb.shared.util.NVBigDecimalList;
-import org.zoxweb.shared.util.NVBlob;
-import org.zoxweb.shared.util.NVDouble;
-import org.zoxweb.shared.util.NVDoubleList;
-import org.zoxweb.shared.util.NVLong;
-import org.zoxweb.shared.util.NVLongList;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.NVIntList;
-import org.zoxweb.shared.util.NVBoolean;
-import org.zoxweb.shared.util.NVFloat;
-import org.zoxweb.shared.util.NVFloatList;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVConfigEntity;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -971,7 +930,13 @@ public class MongoDataStore
 			return;
 		}
 
-		throw new IllegalArgumentException("Unsupported type: " + nvc);
+		if (clazz == Number.class)
+		{
+			((NVNumber) nvb).setValue((Number)dbObject.get(nvc.getName()));
+			return;
+		}
+
+ 		throw new IllegalArgumentException("Unsupported type: " + nvc + " " + clazz);
 	}
 	
 	/**
