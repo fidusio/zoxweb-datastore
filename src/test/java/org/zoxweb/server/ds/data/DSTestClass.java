@@ -309,6 +309,7 @@ public class DSTestClass {
 
     }
 
+    @SuppressWarnings("unchecked")
     public static  <V extends NVEntity> V init(V nve)
     {
         int index = 0;

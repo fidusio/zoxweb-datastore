@@ -39,7 +39,7 @@ import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Random;
+
 import java.util.UUID;
 
 
@@ -277,6 +277,7 @@ public class DerbyDataStoreTest {
         assertNotNull(device.getGlobalID());
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testRange()
     {

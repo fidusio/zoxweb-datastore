@@ -418,7 +418,7 @@ public class DerbyDBMeta {
             }
             if (qm instanceof QueryMatch)
             {
-                QueryMatch<?> qMatch = (QueryMatch) qm;
+                QueryMatch<?> qMatch = (QueryMatch<?>) qm;
 
                 sb.append((qMatch.getName() + " " +  qMatch.getOperator().getValue() + " ?"));
             }
@@ -437,7 +437,7 @@ public class DerbyDBMeta {
             int index = 0;
             for (QueryMarker qm : queryCriteria) {
                 if (qm instanceof QueryMatch) {
-                    Object value = ((QueryMatch) qm).getValue();
+                    Object value = ((QueryMatch<?>) qm).getValue();
                     if(value instanceof Enum)
                     {
                         value = ((Enum<?>) value).name();
