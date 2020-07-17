@@ -5,9 +5,10 @@ import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
@@ -63,7 +64,8 @@ import java.util.List;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
-import static org.junit.Assert.assertNotNull;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 
 public class MongoDSDataTest {
@@ -82,7 +84,7 @@ public class MongoDSDataTest {
     protected static APIDataStore<?> dataStore;
     protected static APIAppManager appManager = new APIAppManagerProvider();
 
-    @BeforeClass
+    @BeforeAll
     public static void start()
             throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
@@ -119,7 +121,7 @@ public class MongoDSDataTest {
         apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
     }
 
-    @AfterClass
+    @AfterAll
     public static void close()
     {
         apiSecurityManager.logout();

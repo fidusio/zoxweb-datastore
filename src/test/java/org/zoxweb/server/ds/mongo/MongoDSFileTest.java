@@ -5,9 +5,10 @@ import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -32,8 +33,8 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 
 public class MongoDSFileTest {
 
@@ -49,7 +50,7 @@ public class MongoDSFileTest {
     private static APISecurityManager<Subject> apiSecurityManager;
     private static APIDocumentStore<?> documentStore;
 
-    @BeforeClass
+    @BeforeAll
     public static void start()
             throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
@@ -82,7 +83,7 @@ public class MongoDSFileTest {
         apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
     }
 
-    @AfterClass
+    @AfterAll
     public static void close() {
         apiSecurityManager.logout();
     }
@@ -104,7 +105,7 @@ public class MongoDSFileTest {
         assertNotNull(createdFileInfo.getReferenceID());
         assertNotNull(createdFileInfo.getName());
         assertNotNull(createdFileInfo.getDescription());
-        assertTrue(createdFileInfo.getLength() > 0);
+        assert(createdFileInfo.getLength() > 0);
     }
 
     @Test
@@ -125,7 +126,7 @@ public class MongoDSFileTest {
         assertNotNull(readFileInfo.getReferenceID());
         assertNotNull(readFileInfo.getName());
         assertNotNull(readFileInfo.getDescription());
-        assertTrue(readFileInfo.getLength() > 0);
+        assert(readFileInfo.getLength() > 0);
     }
 
     @Test
@@ -146,7 +147,7 @@ public class MongoDSFileTest {
         assertNotNull(updatedFileInfo.getReferenceID());
         assertNotNull(updatedFileInfo.getName());
         assertNotNull(updatedFileInfo.getDescription());
-        assertTrue(updatedFileInfo.getLength() > 0);
+        assert(updatedFileInfo.getLength() > 0);
     }
 
     @Test

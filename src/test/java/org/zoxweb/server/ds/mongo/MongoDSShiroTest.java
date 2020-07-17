@@ -6,10 +6,11 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
+import org.apache.shiro.util.Assert;
 import org.apache.shiro.util.Factory;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -58,6 +59,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.logging.Logger;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 public class MongoDSShiroTest
 {
 	private static final transient Logger log = Logger.getLogger(MongoDSShiroTest.class.getName());
@@ -88,7 +91,7 @@ public class MongoDSShiroTest
 	private static  APIAppManagerProvider appManager;
 
 	
-	@Before
+	@BeforeAll
 	public void start() throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
 	{
 		if (appManager == null)
@@ -416,15 +419,15 @@ public class MongoDSShiroTest
 		
 	}
 	
-	@Test(expected = AccessException.class)
+	@Test()
 	public void loadKeyFailed()
 	{
-		
-		apiSecurityManager.logout();
-		apiSecurityManager.login(ILLEGAL_USER, ILLEGAL_PASSWORD, DOMAIN_ID, APP_ID, true);
-	
-	
-		appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, true);
+		assertThrows(AccessException.class, ()->{apiSecurityManager.logout();
+			apiSecurityManager.login(ILLEGAL_USER, ILLEGAL_PASSWORD, DOMAIN_ID, APP_ID, true);
+
+
+			appManager.lookupSubjectAPIKey(DEFAULT_API_KEY, true);});
+
 		
 	}
 	
@@ -599,9 +602,9 @@ public class MongoDSShiroTest
         hmc = appManager.create(hmc);
         String str = GSONUtil.toJSON(hmc, true);
         List<HTTPMessageConfig> ret = appManager.search(HTTPMessageConfig.NVC_HTTP_MESSAGE_CONFIG, new QueryMatchString(RelationalOperator.EQUAL, hmc.getReferenceID(), HTTPMessageConfig.NVC_REFERENCE_ID));
-        Assert.assertEquals(ret.size(), 1);
+        assert(ret.size() == 1);
         System.out.println(GSONUtil.toJSON(ret.get(0), true));
-        Assert.assertEquals(GSONUtil.toJSON(ret.get(0), true), str);
+        assert(GSONUtil.toJSON(ret.get(0), true).equals(str));
         
         System.out.println(ret.get(0).getParameters().getClass().getName());
         System.out.println(ret.get(0).getHeaderParameters().getClass().getName());

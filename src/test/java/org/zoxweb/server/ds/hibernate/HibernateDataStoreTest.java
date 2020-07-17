@@ -17,15 +17,18 @@ package org.zoxweb.server.ds.hibernate;
 
 
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import static org.junit.Assert.*;
 
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.util.NVPair;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class HibernateDataStoreTest {
 
@@ -33,7 +36,7 @@ public class HibernateDataStoreTest {
     private static HibernateDataStore dataStore;
     private static final String RESOURCE_FILE = "hibernate.cfg.xml";
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
 //    	try
     	{
@@ -51,7 +54,7 @@ public class HibernateDataStoreTest {
     	System.out.println("Setup done");
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDown() {
         dataStore.close();
     }

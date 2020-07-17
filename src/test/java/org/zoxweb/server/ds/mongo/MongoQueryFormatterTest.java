@@ -2,8 +2,8 @@ package org.zoxweb.server.ds.mongo;
 
 import com.mongodb.DBObject;
 
-import org.junit.Test;
 
+import org.junit.jupiter.api.Test;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.data.UserPreferenceDAO;
 import org.zoxweb.shared.db.QueryMatch;
@@ -11,8 +11,9 @@ import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.MetaToken;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 
 public class MongoQueryFormatterTest {
 

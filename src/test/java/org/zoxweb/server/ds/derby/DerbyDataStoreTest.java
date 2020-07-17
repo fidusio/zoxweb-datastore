@@ -17,12 +17,11 @@ package org.zoxweb.server.ds.derby;
 
 
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.zoxweb.server.ds.data.DSTestClass;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
@@ -42,6 +41,9 @@ import java.util.List;
 
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 
 public class DerbyDataStoreTest {
 
@@ -55,7 +57,7 @@ public class DerbyDataStoreTest {
     private static final String PASSWORD ="APP";
 
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
 //    	try
     	{
@@ -77,7 +79,7 @@ public class DerbyDataStoreTest {
     	System.out.println("Setup done");
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDown() {
         dataStore.close();
     }
