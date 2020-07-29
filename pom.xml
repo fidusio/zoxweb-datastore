@@ -18,6 +18,7 @@
     <properties>
         <hibernate.version>5.2.9.Final</hibernate.version>
         <apache.derby.version>10.14.2.0</apache.derby.version>
+        <xlogistx-default>1.0.0</xlogistx-default>
     </properties>
 
     <build>
@@ -106,9 +107,9 @@
     	
     	
     	 <dependency>
-	        <groupId>org.zoxweb</groupId>
-	        <artifactId>zoxweb-shiro</artifactId>
-	        <version>${zoxweb-shiro.version}</version>
+	        <groupId>io.xlogistx</groupId>
+	        <artifactId>xlogistx-shiro</artifactId>
+	        <version>${xlogistx-default}</version>
 	        <scope>provided</scope>
     	</dependency>
 

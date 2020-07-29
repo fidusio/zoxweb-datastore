@@ -6,7 +6,7 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.Assert;
+
 import org.apache.shiro.util.Factory;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -16,9 +16,9 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import org.zoxweb.server.security.shiro.APISecurityManagerProvider;
-import org.zoxweb.server.security.shiro.ShiroUtil;
-import org.zoxweb.server.security.shiro.authc.DomainUsernamePasswordToken;
+import io.xlogistx.shiro.APISecurityManagerProvider;
+import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
