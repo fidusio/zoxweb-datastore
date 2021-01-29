@@ -20,19 +20,15 @@ import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.SubjectIDDAO;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
 import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
+import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
-import org.zoxweb.shared.util.SetName;
-import org.zoxweb.shared.util.SharedUtil;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -452,26 +448,25 @@ public class ShiroDSRealm
 	
 
 	@Override
-	public PasswordDAO getUserPassword(String domainID, String userID)
+	public PasswordDAO getSubjectPassword(String domainID, String userID)
 	{
 		UserIDCredentialsDAO uicd = lookupUserIDCredentials(userID);
 		return uicd != null ? uicd.getPassword() : null;
 	}
 
 	@Override
-	protected Set<String> getUserRoles(String domainID, String userID) {
+	public Set<String> getSubjectRoles(String domainID, String userID) {
 		// TODO Auto-generated method stub
 		return  new HashSet<String>();
 	}
 
 	@Override
-	protected Set<String> getUserPermissions(String domainID, String userID, Set<String> roleNames) {
+	public Set<String> getSubjectPermissions(String domainID, String userID, Set<String> roleNames) {
 		// TODO Auto-generated method stub
 		return new HashSet<String>();
 	}
-	
-	
-	
+
+
 
 //	public void createUser(UserIDDAO userID, UserStatus userIDstatus, String password)
 //			throws NullPointerException, IllegalArgumentException, AccessException, APIException
@@ -586,7 +581,7 @@ public class ShiroDSRealm
 //	}
 	
 	
-	public Set<String> getRecusiveNVEReferenceIDFromForm(String formReferenceID)
+	public Set<String> getRecursiveNVEReferenceIDFromForm(String formReferenceID)
 	{
 		HashSet<String> ret = null;
 		
@@ -711,8 +706,8 @@ public class ShiroDSRealm
 	public void setUserDefaultRoles(String userDefaultRoles) {
 		this.userDefaultRoles = userDefaultRoles;
 	}
-	
-	
+
+
 
 	
 	
