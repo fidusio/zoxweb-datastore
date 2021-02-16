@@ -20,6 +20,7 @@ import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.AccessException;
+
 import org.zoxweb.shared.security.SubjectIDDAO;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -444,14 +445,47 @@ public class ShiroDSRealm
 		
 		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria.toArray(new QueryMarker[queryCriteria.size()]));
 	}
-	
-	
+
+
+	/**
+	 * Add a subject
+	 *
+	 * @param subject
+	 * @return ShiroSubjectDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public SubjectIDDAO addSubject(SubjectIDDAO subject) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
 
 	@Override
 	public PasswordDAO getSubjectPassword(String domainID, String userID)
 	{
 		UserIDCredentialsDAO uicd = lookupUserIDCredentials(userID);
 		return uicd != null ? uicd.getPassword() : null;
+	}
+
+	@Override
+	public PasswordDAO setSubjectPassword(SubjectIDDAO subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	@Override
+	public PasswordDAO setSubjectPassword(String subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	@Override
+	public PasswordDAO setSubjectPassword(SubjectIDDAO subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	@Override
+	public PasswordDAO setSubjectPassword(String subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
 	}
 
 	@Override
