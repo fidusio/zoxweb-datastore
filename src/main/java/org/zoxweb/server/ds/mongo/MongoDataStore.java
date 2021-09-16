@@ -63,6 +63,7 @@ import org.zoxweb.shared.util.Const.RelationalOperator;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -123,7 +124,7 @@ public class MongoDataStore
 	//private APIExceptionHandler exceptionHandler;
 	private NVECRUDMonitor dataCacheMonitor = null;
 	
-	private Lock updateLock = new ReentrantLock();
+	private final Lock updateLock = new ReentrantLock();
 	
 	//private Set<String> sequenceSet = new HashSet<String>();
 	
@@ -143,10 +144,10 @@ public class MongoDataStore
 		USER_ID("user_id", "_user_id")
 		;
 
-		private String name;
-		private String value;
+		private final String name;
+		private final String value;
 		
-		private ReservedID(String name, String value)
+		ReservedID(String name, String value)
 		{
 			this.name = name;
 			this.value = value;
@@ -2661,10 +2662,11 @@ public class MongoDataStore
 
 		try 
 		{
-			tempNVE = (NVEntity) Class.forName(className).newInstance();
+			tempNVE = (NVEntity) Class.forName(className).getConstructor().newInstance();
 			return userSearchByID(null, (NVConfigEntity)tempNVE.getNVConfig(), ids);
 		}
-		catch (InstantiationException | IllegalAccessException | ClassNotFoundException e)
+		catch (InstantiationException | IllegalAccessException | ClassNotFoundException |
+				NoSuchMethodException | InvocationTargetException e)
 		{
 			throw new APIException("Invalid class name " + className);
 		}
