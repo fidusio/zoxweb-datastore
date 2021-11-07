@@ -16,8 +16,8 @@
     <url>http://maven.apache.org</url>
 
     <properties>
-        <hibernate.version>5.2.9.Final</hibernate.version>
-        <apache.derby.version>10.14.2.0</apache.derby.version>
+        <hibernate.version>5.6.1.Final</hibernate.version>
+        <apache.derby.version>10.15.2.0</apache.derby.version>
         <xlogistx-default>1.0.0</xlogistx-default>
     </properties>
 
