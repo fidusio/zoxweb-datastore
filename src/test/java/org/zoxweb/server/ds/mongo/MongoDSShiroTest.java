@@ -595,9 +595,9 @@ public class MongoDSShiroTest
         hmc.setHTTPParameterFormatter(HTTPEncoder.URI_REST_ENCODED);
         hmc.getParameters().add(new NVPair("name", "John Smith"));
         hmc.getParameters().add(new NVPair("year", "2017"));
-        hmc.getHeaderParameters().add(new NVPair("bozo", "the clown"));
-        hmc.getHeaderParameters().add(new NVPair("bozo", "the donkey"));
-        hmc.getHeaderParameters().add(new NVPair("toto", "the clown"));
+        hmc.getHeaders().add(new NVPair("bozo", "the clown"));
+        hmc.getHeaders().add(new NVPair("bozo", "the donkey"));
+        hmc.getHeaders().add(new NVPair("toto", "the clown"));
        
         hmc = appManager.create(hmc);
         String str = GSONUtil.toJSON(hmc, true);
@@ -607,7 +607,7 @@ public class MongoDSShiroTest
         assert(GSONUtil.toJSON(ret.get(0), true).equals(str));
         
         System.out.println(ret.get(0).getParameters().getClass().getName());
-        System.out.println(ret.get(0).getHeaderParameters().getClass().getName());
+        System.out.println(ret.get(0).getHeaders().getClass().getName());
     }
 
 }
