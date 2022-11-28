@@ -9,6 +9,10 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
+
+    <properties>
+    </properties>
+
     <artifactId>zoxweb-datastore</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
