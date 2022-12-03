@@ -108,7 +108,7 @@
     	 <dependency>
 	        <groupId>io.xlogistx</groupId>
 	        <artifactId>xlogistx-shiro</artifactId>
-	        <version>${xlogistx-version}</version>
+	        <version>${xlogistx.version}</version>
 	        <scope>provided</scope>
     	</dependency>
 
