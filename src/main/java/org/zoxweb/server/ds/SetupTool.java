@@ -11,6 +11,7 @@ import org.zoxweb.server.ds.mongo.MongoDataStore;
 import org.zoxweb.server.ds.mongo.MongoDataStoreCreator;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import io.xlogistx.shiro.APISecurityManagerProvider;
@@ -58,7 +59,7 @@ import java.util.logging.Logger;
  */
 public class SetupTool 
 {
-	private static final transient Logger log = Logger.getLogger(SetupTool.class.getName());
+	public static final LogWrapper log = new LogWrapper(SetupTool.class);
 
 	public static final String MONGO_CONF = "mongod_conf";
 	public static final String KEYSTORE_INFO = "key_store_info";
@@ -80,7 +81,7 @@ public class SetupTool
 		apiSecurityManager.login(subjectID, password, null, null, false);
 		
 		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
-		log.info("App created:" + aid.getAppGID());
+		if(log.isEnabled()) log.getLogger().info("App created:" + aid.getAppGID());
 		apiSecurityManager.logout();
 	}
 	
@@ -89,7 +90,7 @@ public class SetupTool
 		apiSecurityManager.logout();
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
 		
-		log.info("USER ID********************************:" + ShiroUtil.subjectUserID());
+		if(log.isEnabled()) log.getLogger().info("USER ID********************************:" + ShiroUtil.subjectUserID());
 		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
 		sard.setAssociatedTo(ShiroUtil.subjectUserID());
 		sard.setAssociate(SecurityModel.toSubjectID(domainID, appID, Role.SUPER_ADMIN));
@@ -190,7 +191,7 @@ public class SetupTool
 		
 		
 		
-		log.info("" + ret.appConfig);
+		if(log.isEnabled()) log.getLogger().info("" + ret.appConfig);
 		
 		
 		ret.dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, MONGO_CONF)), APIConfigInfoDAO.class);
@@ -215,7 +216,7 @@ public class SetupTool
 //
 //	    //2.
 //	    SecurityManager securityManager = factory.getInstance();
-//	    log.info("security manager " + securityManager);
+//	    if(log.isEnabled()) log.getLogger().info("security manager " + securityManager);
 //
 //	    //3.
 //	    SecurityUtils.setSecurityManager(securityManager);
@@ -246,7 +247,7 @@ public class SetupTool
 
 		    //2.
 		    SecurityManager securityManager = factory.getInstance();
-		    log.info("security manager " + securityManager);
+		    if(log.isEnabled()) log.getLogger().info("security manager " + securityManager);
 
 		    //3.
 		    SecurityUtils.setSecurityManager(securityManager);

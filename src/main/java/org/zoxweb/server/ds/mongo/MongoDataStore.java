@@ -30,6 +30,7 @@ import com.mongodb.gridfs.GridFSInputFile;
 
 
 import org.bson.types.ObjectId;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
@@ -77,10 +78,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 
-//import org.zoxweb.shared.security.KeyMaker;
-//import org.apache.shiro.subject.Subject;
-//import com.zoxweb.fidusstore.server.data.DataCacheMonitor;
-//import org.zoxweb.server.ds.mongo.MongoDataStoreCreator.MongoParam;
+
 
 /**
  * This class is used to define the MongoDB object for data storage. This object primarily contains methods 
@@ -92,7 +90,7 @@ public class MongoDataStore
     extends APIServiceProviderBase<DB>
 	implements APIDataStore<DB>, APIDocumentStore<DB>
 {
-    private static final transient Logger log = Logger.getLogger(MongoDataStore.class.getName());
+    public static final LogWrapper log = new LogWrapper(MongoDataStore.class);
     
     public static final IDGenerator<String, ObjectId> MongoIDGenerator = new IDGenerator<String, ObjectId>()
 	{
@@ -492,7 +490,7 @@ public class MongoDataStore
 			{
 				if (nve.getReferenceID() == null)
 				{
-					//log.info("NVE do not exist we need to create it");
+					//if(log.isEnabled()) log.getLogger().info("NVE do not exist we need to create it");
 					insert(nve);
 				}
 				else
@@ -506,7 +504,7 @@ public class MongoDataStore
 					}
 					else
 					{
-						log.info("Not updated:" + nve.getClass().getName());
+						if(log.isEnabled()) log.getLogger().info("Not updated:" + nve.getClass().getName());
 					}
 				}
 				return mapNVEntityReference(db, nve);
@@ -736,7 +734,7 @@ public class MongoDataStore
 
 			if (clazz == String[].class)
 			{
-				//log.info("nvc:" + nvc.getName());
+				//if(log.isEnabled()) log.getLogger().info("nvc:" + nvc.getName());
 				boolean isFixed = dbObject.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()));
 				
 				ArrayList<BasicDBObject> list = (ArrayList<BasicDBObject>) dbObject.get(nvc.getName());
@@ -955,7 +953,7 @@ public class MongoDataStore
 			
 			if (value instanceof DBObject)
 			{
-				//log.info("userID:" + userID);
+				//if(log.isEnabled()) log.getLogger().info("userID:" + userID);
 				try 
 				{
 					value = configInfo.getAPISecurityManager().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
@@ -1416,11 +1414,11 @@ public class MongoDataStore
 			}
 			else if (nvb instanceof NVPairGetNameMap)
 			{	
-				//log.info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
+				//if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
 				//doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
 				ArrayList<DBObject> vals =  mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
 				doc.append(nvc.getName(), vals);
-				//log.info("vals:" + vals);
+				//if(log.isEnabled()) log.getLogger().info("vals:" + vals);
 			}
 			else if (nvb instanceof NVEnum)
 			{
@@ -1626,11 +1624,11 @@ public class MongoDataStore
 			}
 			else if (nvb instanceof NVPairGetNameMap)
 			{	
-				//log.info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
+				//if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
 				//doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
 				ArrayList<DBObject> vals =  mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync);
 				doc.append(nvc.getName(), vals);
-				//log.info("vals:" + vals);
+				//if(log.isEnabled()) log.getLogger().info("vals:" + vals);
 			}
 			else if (nvb instanceof NVEnum)
 			{
@@ -1833,7 +1831,7 @@ public class MongoDataStore
 //				}
 //				else if (nvb instanceof NVPairGetNameMap)
 //				{
-//					//log.info("Unpdating NVPairGetNameMap:"+nvc.getName()+", isarray:"+nvc.isArray() + ":"+nvb);
+//					//if(log.isEnabled()) log.getLogger().info("Unpdating NVPairGetNameMap:"+nvc.getName()+", isarray:"+nvc.isArray() + ":"+nvb);
 //					//updatedDoc.put(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
 //					updatedDoc.put(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
 //				}
@@ -2278,7 +2276,7 @@ public class MongoDataStore
 
 				// the associated encryption key dao
 				DBCollection ekdCollection = connect().getCollection(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO.getName());
-				//log.info("EncryptedKeyDAO:" + ekdCollection);
+				//if(log.isEnabled()) log.getLogger().info("EncryptedKeyDAO:" + ekdCollection);
 				if(ekdCollection != null)
 					ekdCollection.remove(doc);
 				// end
@@ -2420,7 +2418,7 @@ public class MongoDataStore
 			throws IllegalArgumentException, IOException, NullPointerException 
 	{
 		SharedUtil.checkIfNulls("Null value", file, is);
-		log.info(file.getOriginalFileInfo().getName());
+		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		DB temp = null;
 		OutputStream os = null;
 		try
@@ -2514,7 +2512,7 @@ public class MongoDataStore
 				}
 			}
 		}
-		log.info(file.getOriginalFileInfo().getName());
+		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		return file;
 	}
 
@@ -2530,7 +2528,7 @@ public class MongoDataStore
 	{
 		
 		deleteFile(file);
-		log.info(file.getOriginalFileInfo().getName());
+		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		return createFile(null,  file, is, closeStream);
 		
 		
@@ -2570,7 +2568,7 @@ public class MongoDataStore
 			throws IllegalArgumentException, IOException, NullPointerException 
 	{
 		SharedUtil.checkIfNulls("Null value", file);
-		log.info(file.getOriginalFileInfo().getName());
+		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		GridFS fs = new GridFS(connect());
 		
 		fs.remove(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
@@ -2797,18 +2795,18 @@ public class MongoDataStore
 		
 		
 		String demName = (String) obj.get(MetaToken.NAME.getName());
-		//log.info("DynamicEnumMap Name : " + demName);
+		//if(log.isEnabled()) log.getLogger().info("DynamicEnumMap Name : " + demName);
 		DynamicEnumMap dem = new DynamicEnumMap(demName, nvpl);
 		dem.setReferenceID(objectID.toHexString());
-		//log.info("values " + dem.getValue());
+		//if(log.isEnabled()) log.getLogger().info("values " + dem.getValue());
 		dem = DynamicEnumMapManager.SINGLETON.addDynamicEnumMap(dem);
-		//log.info(dem.getName() + ":" + dem.getValue());
+		//if(log.isEnabled()) log.getLogger().info(dem.getName() + ":" + dem.getValue());
 		
 		
 		
 //		for ( DynamicEnumMap dems : DynamicEnumMapManager.SINGLETON.getAll())
 //		{
-//			log.info("dem name: " + dems.getName() + ": " +  dems.getValue());
+//			if(log.isEnabled()) log.getLogger().info("dem name: " + dems.getName() + ": " +  dems.getValue());
 //		}
 		
 		return dem;

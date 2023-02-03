@@ -7,6 +7,7 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
 import io.xlogistx.shiro.DomainPrincipalCollection;
 import io.xlogistx.shiro.ResourcePrincipalCollection;
@@ -45,7 +46,7 @@ public class ShiroDSRealm
 	implements SetName
 {
 
-	private static final transient Logger log = Logger.getLogger(ShiroDSRealm.class.getName());
+	private static final LogWrapper log = new LogWrapper(ShiroDSRealm.class);
 
 	private volatile Set<ShiroAssociationRuleDAO> cachedSARD = null;
 	
@@ -55,7 +56,7 @@ public class ShiroDSRealm
 
 	public ShiroDSRealm()
 	{
-		log.info("started");
+		if(log.isEnabled()) log.getLogger().info("started");
 	}
 	
 	protected Set<ShiroAssociationRuleDAO> getCachedSARDs()
@@ -70,13 +71,13 @@ public class ShiroDSRealm
 					if(userDefaultRoles != null)
 					{
 						ShiroRoleDAO role = lookupRole(userDefaultRoles);
-						log.info("role:" + role);
+						if(log.isEnabled()) log.getLogger().info("role:" + role);
 					
 						if (role != null)
 						{
 							for (NVEntity nve : role.getPermissions().values())
 							{
-								log.info(""+nve);
+								if(log.isEnabled()) log.getLogger().info(""+nve);
 							}
 							ShiroAssociationRuleDAO toAdd = new ShiroAssociationRuleDAO();
 							toAdd.setAssociation(role);
@@ -86,7 +87,7 @@ public class ShiroDSRealm
 						}
 					}
 				}
-				log.info("cachedSARD size:" + cachedSARD.size());
+				if(log.isEnabled()) log.getLogger().info("cachedSARD size:" + cachedSARD.size());
 			}
 		}
 		return cachedSARD;
@@ -110,7 +111,7 @@ public class ShiroDSRealm
 	@Override
 	protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) 
 	{
-		log.info("Getting: " + principals);
+		if(log.isEnabled()) log.getLogger().info("Getting: " + principals);
        //null usernames are invalid
        if (principals == null) 
        {
@@ -134,10 +135,10 @@ public class ShiroDSRealm
 	        {
 	        
 	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(domainID, userID);
-	        	log.info("++-+-+-+-++-+-+++-+-+-rules:" + rules.size());
+	        	if(log.isEnabled()) log.getLogger().info("++-+-+-+-++-+-+++-+-+-rules:" + rules.size());
 //	        	for(ShiroAssociationRuleDAO rule : rules)
 //	        	{
-//	        		log.info("" + rule.getAssociationType());
+//	        		if(log.isEnabled()) log.getLogger().info("" + rule.getAssociationType());
 //	        	}
 	        	info.addShiroAssociationRule(rules);
 	        	info.addShiroAssociationRule(getCachedSARDs(), 
@@ -155,10 +156,10 @@ public class ShiroDSRealm
     	   if (isPermissionsLookupEnabled()) 
 	        {
 	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(null, refID);
-	        	log.info("Resource rules:" + rules.size());
+	        	if(log.isEnabled()) log.getLogger().info("Resource rules:" + rules.size());
 //	        	for(ShiroAssociationRuleDAO rule : rules)
 //	        	{
-//	        		log.info("" + rule.getAssociationType());
+//	        		if(log.isEnabled()) log.getLogger().info("" + rule.getAssociationType());
 //	        	}
 	        	info.addShiroAssociationRule(rules, new NVPair(PermissionToken.RESOURCE_ID.getValue(), refID));
 	        }
@@ -184,11 +185,11 @@ public class ShiroDSRealm
 //	protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token)
 //			throws AuthenticationException
 //	{
-//		log.info("AuthenticationToken:" + token);
+//		if(log.isEnabled()) log.getLogger().info("AuthenticationToken:" + token);
 //		
 //		if (token instanceof DomainUsernamePasswordToken)
 //		{
-//			log.info("DomainUsernamePasswordToken based authentication");
+//			if(log.isEnabled()) log.getLogger().info("DomainUsernamePasswordToken based authentication");
 //			DomainUsernamePasswordToken upToken = (DomainUsernamePasswordToken) token;
 //	        //String userName = upToken.getUsername();
 //	        //String domainID = upToken.getDomainID();
@@ -203,7 +204,7 @@ public class ShiroDSRealm
 //	        }
 //	        upToken.setUserID(userIDDAO.getUserID());
 //	        // String userID = upToken.getUserID();
-//	        log.info( upToken.getUsername() +":"+upToken.getUserID());
+//	        if(log.isEnabled()) log.getLogger().info( upToken.getUsername() +":"+upToken.getUserID());
 //	        // Null username is invalid
 //	        
 //	        PasswordDAO password = getUserPassword(null, upToken.getUsername());
@@ -216,7 +217,7 @@ public class ShiroDSRealm
 //	    }
 //		else if (token instanceof JWTAuthenticationToken)
 //		{
-//			log.info("JWTAuthenticationToken based authentication");
+//			if(log.isEnabled()) log.getLogger().info("JWTAuthenticationToken based authentication");
 //			// lookup AppDeviceDAO or SubjectAPIKey
 //			// in oder to do that we need to switch the user to SUPER_ADMIN or DAEMON user
 //			JWTAuthenticationToken jwtAuthToken = (JWTAuthenticationToken) token;
@@ -321,7 +322,7 @@ public class ShiroDSRealm
 //			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
 				ShiroRoleDAO role = lookupRole(sard.getAssociate());
-				log.info("Role:"+role);
+				if(log.isEnabled()) log.getLogger().info("Role:"+role);
 				if (role != null)
 				{
 					// maybe check role permission
@@ -329,7 +330,7 @@ public class ShiroDSRealm
 					List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
 						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
 						   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
-					log.info("roleSard:" + roleSard);
+					if(log.isEnabled()) log.getLogger().info("roleSard:" + roleSard);
 					if (roleSard == null || roleSard.size() == 0)
 					{
 						getAPIDataStore().insert(sard);
@@ -407,7 +408,7 @@ public class ShiroDSRealm
 		else
 		{
 			ShiroAssociationRuleDAO match = lookupSARD(sard);
-			log.info("Match:" + match);
+			if(log.isEnabled()) log.getLogger().info("Match:" + match);
 			if (match != null)
 			{
 				getAPIDataStore().delete(match, false);
@@ -514,11 +515,11 @@ public class ShiroDSRealm
 //			throw new APIException("User already exist");
 //		}
 //			
-//		log.info("User Name: " + userID.getPrimaryEmail());
-//		log.info("First Name: " + userID.getUserInfo().getFirstName());
-//		log.info("Middle Name: " + userID.getUserInfo().getMiddleName());
-//		log.info("Last Name: " + userID.getUserInfo().getLastName());
-//		log.info("Birthday: " + userID.getUserInfo().getDOB());
+//		if(log.isEnabled()) log.getLogger().info("User Name: " + userID.getPrimaryEmail());
+//		if(log.isEnabled()) log.getLogger().info("First Name: " + userID.getUserInfo().getFirstName());
+//		if(log.isEnabled()) log.getLogger().info("Middle Name: " + userID.getUserInfo().getMiddleName());
+//		if(log.isEnabled()) log.getLogger().info("Last Name: " + userID.getUserInfo().getLastName());
+//		if(log.isEnabled()) log.getLogger().info("Birthday: " + userID.getUserInfo().getDOB());
 //		
 //		userID.setReferenceID(null);
 //		SharedUtil.validate(userID, true, true);

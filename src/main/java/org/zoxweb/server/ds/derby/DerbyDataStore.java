@@ -10,6 +10,7 @@ import java.util.logging.Logger;
 
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
 import org.zoxweb.server.io.IOUtil;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.IDGeneratorUtil;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.api.APIBatchResult;
@@ -34,7 +35,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   public static final String CACHE_DATA_TB  = "CACHE_DATA_TB";
   private Lock lock = new ReentrantLock();
 
-  private static transient  Logger log = Logger.getLogger(DerbyDataStore.class.getName());
+  public static LogWrapper log = new LogWrapper(DerbyDataStore.class);
   private volatile Map<String, NVConfigEntity> metaTables = new HashMap<String, NVConfigEntity>();
   private volatile Map<String, DerbyDBData> ddbdCache= new HashMap<String, DerbyDBData>();
 
@@ -124,13 +125,13 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           sb.insert(0, "CREATE TABLE " + tableName + " (");
           sb.append(')');
           String createTable = sb.toString();
-          log.info("Table: " + tableName + "  to be created SQL \n" + createTable);
+          if(log.isEnabled()) log.getLogger().info("Table: " + tableName + "  to be created SQL \n" + createTable);
           con = connect();
           stmt = con.createStatement();
           stmt.execute(createTable);
 
           boolean ret =  doesTableExists(nvce);
-          log.info("Table: " + tableName + " stat "+ ret + " created SQL " + createTable);
+          if(log.isEnabled()) log.getLogger().info("Table: " + tableName + " stat "+ ret + " created SQL " + createTable);
           return ret;
         }
       } finally {
@@ -181,10 +182,10 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         DatabaseMetaData dbmd = con.getMetaData();
         rs = dbmd.getTables(null, null, sTablename, null);
         if (rs.next()) {
-          log.info("Table " + rs.getString("TABLE_NAME") + " already exists !!");
+          if(log.isEnabled()) log.getLogger().info("Table " + rs.getString("TABLE_NAME") + " already exists !!");
           return true;
         } else {
-          log.info("Table " + sTablename + " do not exist.");
+          if(log.isEnabled()) log.getLogger().info("Table " + sTablename + " do not exist.");
           return false;
         }
       } finally {
@@ -289,7 +290,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 //        e.printStackTrace();
 //      }
     }
-    log.info("Closed");
+    if(log.isEnabled()) log.getLogger().info("Closed");
   }
 
   @Override
@@ -405,7 +406,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           select.append(" WHERE ");
           select.append(DerbyDBMeta.formatQuery(queryCriteria));
         }
-        //log.info(select.toString());
+        //if(log.isEnabled()) log.getLogger().info(select.toString());
         stmt = con.prepareStatement(select.toString());
         DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
 //      if (queryCriteria != null) {
@@ -634,15 +635,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
       {
         // already exit we must update
-        //log.info("invoke update for " + nve.getGlobalID());
+        //if(log.isEnabled()) log.getLogger().info("invoke update for " + nve.getGlobalID());
         return innerUpdate(con, nve);
       }
 
       //DerbyDBData ddbd = formatInsertStatement(nve, false);
 
       //String statementToken = "INSERT INTO " + nve.getNVConfig().getName() + " VALUES (" + ddbd.genericValues + ")";
-      //log.info(statementToken);
-      //log.info("parameter count " + ddbd.genericValuesCount);
+      //if(log.isEnabled()) log.getLogger().info(statementToken);
+      //if(log.isEnabled()) log.getLogger().info("parameter count " + ddbd.genericValuesCount);
 
 
       stmt = con.prepareStatement(formatInsertStatement(nve, false).insertStatement);
@@ -803,7 +804,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         select.append(" WHERE ");
         select.append(DerbyDBMeta.formatQuery(queryCriteria));
       }
-      //log.info(select.toString());
+      //if(log.isEnabled()) log.getLogger().info(select.toString());
       stmt = con.prepareStatement(select.toString());
       DerbyDBMeta.conditionsSetup(stmt, queryCriteria);
 
@@ -862,7 +863,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         }
       }
       String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE GLOBAL_ID='" + nve.getGlobalID() + "'";
-      //log.info(updateStatement);
+      //if(log.isEnabled()) log.getLogger().info(updateStatement);
       stmt = con.prepareStatement(updateStatement);
       int index = 0;
       for(NVBase<?> nvb : nve.getAttributes().values())
