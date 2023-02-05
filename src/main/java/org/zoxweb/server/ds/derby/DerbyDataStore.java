@@ -1,29 +1,22 @@
 package org.zoxweb.server.ds.derby;
 
-import java.io.IOException;
-import java.sql.*;
-import java.util.*;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Logger;
-
-
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.IDGeneratorUtil;
 import org.zoxweb.server.util.MetaUtil;
-import org.zoxweb.shared.api.APIBatchResult;
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIExceptionHandler;
-import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
+
+import java.io.IOException;
+import java.sql.*;
+import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 @SuppressWarnings("serial")
 public class DerbyDataStore implements APIDataStore<Connection> {
@@ -79,6 +72,12 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       close(con, stmt);
     }
   }
+
+
+//  public DataSource getDataSource()
+//  {
+//
+//  }
 
 
   public boolean createTable(NVConfigEntity nvce) throws SQLException {
@@ -219,6 +218,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     // TODO Auto-generated method stub
     apiConfig = configInfo;
   }
+
 
   @Override
   public Connection connect() throws APIException {

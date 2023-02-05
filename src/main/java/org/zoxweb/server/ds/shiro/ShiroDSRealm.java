@@ -46,7 +46,7 @@ public class ShiroDSRealm
 	implements SetName
 {
 
-	private static final LogWrapper log = new LogWrapper(ShiroDSRealm.class);
+	public static final LogWrapper log = new LogWrapper(ShiroDSRealm.class);
 
 	private volatile Set<ShiroAssociationRuleDAO> cachedSARD = null;
 	

@@ -15,33 +15,17 @@
  */
 package org.zoxweb.server.ds.mongo;
 
-import com.mongodb.BasicDBList;
-import com.mongodb.BasicDBObject;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoException;
-import com.mongodb.ServerAddress;
+import com.mongodb.*;
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
-
-
 import org.bson.types.ObjectId;
-import org.zoxweb.server.logging.LogWrapper;
-import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.server.util.ServerUtil;
-import org.zoxweb.shared.api.APIBatchResult;
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIFileInfoMap;
-import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.crypto.PasswordDAO;
@@ -58,7 +42,6 @@ import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
-//import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 
 import java.io.IOException;
@@ -67,16 +50,9 @@ import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Logger;
 
 
 

@@ -1,5 +1,7 @@
 package org.zoxweb.server.ds;
 
+import io.xlogistx.shiro.APISecurityManagerProvider;
+import io.xlogistx.shiro.ShiroUtil;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
@@ -14,8 +16,6 @@ import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import io.xlogistx.shiro.APISecurityManagerProvider;
-import io.xlogistx.shiro.ShiroUtil;
 import org.zoxweb.server.task.TaskUtil;
 import org.zoxweb.server.util.ApplicationConfigManager;
 import org.zoxweb.server.util.GSONUtil;
@@ -28,7 +28,6 @@ import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.security.SecurityConsts;
-
 import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -50,7 +49,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * The setup tool is used to create and setup a new system
