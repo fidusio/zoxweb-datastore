@@ -20,12 +20,16 @@ package org.zoxweb.server.ds.derby;
 
 
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.server.ds.data.DSTestClass;
+import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.crypto.CryptoConst;
+import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.Range;
@@ -37,6 +41,7 @@ import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 import java.util.UUID;
@@ -303,5 +308,17 @@ public class DerbyDataStoreTest {
 
     }
 
+
+
+    @Test
+    public void testPassword() throws NoSuchAlgorithmException {
+        PasswordDAO p = CryptoUtil.hashedPassword(CryptoConst.MDType.SHA_256, 24, 8192, "password");
+        dataStore.insert(p);
+
+        PasswordDAO found = dataStore.lookupByReferenceID(PasswordDAO.class.getName(), p.getGlobalID());
+        Assertions.assertNotEquals(found, p);
+        CryptoUtil.validatePassword(found, "password");
+        Assertions.assertEquals(GSONUtil.toJSONDefault(p), GSONUtil.toJSONDefault(found));
+    }
 
 }

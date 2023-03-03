@@ -985,14 +985,15 @@ public class DerbyDataStore implements APIDataStore<Connection> {
   @Override
   public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId) {
 
+    List<?> ret = searchByID(metaTypeName, (String)objectId);
     // TODO Auto-generated method stub
-    return null;
+    return (NT) (ret.size() > 0 ?  ret.get(0) : null) ;
   }
 
   @Override
   public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT objectId, NIT projection) {
     // TODO Auto-generated method stub
-    return null;
+    throw new NotFoundException("Method not implements");
   }
 
   @Override
