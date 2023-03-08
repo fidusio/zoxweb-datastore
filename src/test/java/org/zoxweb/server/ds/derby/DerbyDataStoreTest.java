@@ -307,7 +307,7 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
-        PasswordDAO p = HashUtil.toPassword(CryptoConst.AlgoType.BCRYPT, 0, 10, "password");
+        PasswordDAO p = HashUtil.toPassword(CryptoConst.HASHType.BCRYPT, 0, 10, "password");
         dataStore.insert(p);
 
         PasswordDAO found = dataStore.lookupByReferenceID(PasswordDAO.class.getName(), p.getGlobalID());
