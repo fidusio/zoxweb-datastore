@@ -1,17 +1,12 @@
 package org.zoxweb.server.ds.mongo;
 
-import java.io.File;
-import java.io.FileInputStream;
-
-import java.security.KeyStore;
-import java.util.Collection;
-import java.util.logging.Logger;
+import io.xlogistx.shiro.APISecurityManagerProvider;
+import io.xlogistx.shiro.ShiroUtil;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.Realm;
-
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -19,19 +14,22 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import io.xlogistx.shiro.APISecurityManagerProvider;
-import io.xlogistx.shiro.ShiroUtil;
-
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APISecurityManager;
+import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
-import org.zoxweb.shared.security.SecurityConsts;
 import org.zoxweb.shared.security.SubjectAPIKey;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.security.KeyStore;
+import java.util.Collection;
+import java.util.logging.Logger;
 
 public class MongoDSTest 
 {
@@ -120,7 +118,7 @@ public class MongoDSTest
 			userInfo.setFirstName("N/S");
 			userInfo.setLastName("N/S");
 			userID.setUserInfo(userInfo);
-			appManager.createUserIDDAO(userID, SecurityConsts.UserStatus.ACTIVE, password);
+			appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
 			
 		    
 			Subject currentUser = apiSecurityManager.login(subjectID, password, null, null, false);

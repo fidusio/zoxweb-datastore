@@ -22,12 +22,12 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIAppManager;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
+import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
-import org.zoxweb.shared.security.SecurityConsts;
 import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -283,7 +283,7 @@ public class SetupTool
 		userInfo.setLastName(lastname);
 		userID.setUserInfo(userInfo);
 		APIAppManager appManager = ResourceManager.SINGLETON.lookup(Resource.API_APP_MANAGER);
-		return appManager.createUserIDDAO(userID, SecurityConsts.UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	

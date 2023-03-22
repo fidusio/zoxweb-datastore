@@ -1,14 +1,15 @@
 package org.zoxweb.server.ds.mongo;
 
 
+import io.xlogistx.shiro.APISecurityManagerProvider;
+import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.authc.DomainUsernamePasswordToken;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
-
 import org.apache.shiro.util.Factory;
-
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -16,26 +17,17 @@ import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import io.xlogistx.shiro.APISecurityManagerProvider;
-import io.xlogistx.shiro.ShiroUtil;
-import io.xlogistx.shiro.authc.DomainUsernamePasswordToken;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.api.APISecurityManager;
-import org.zoxweb.shared.data.AppDeviceDAO;
-import org.zoxweb.shared.data.AppIDDAO;
-import org.zoxweb.shared.data.DeviceDAO;
-import org.zoxweb.shared.data.UserIDDAO;
-import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.crypto.CryptoConst;
+import org.zoxweb.shared.data.*;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.HTTPEncoder;
 import org.zoxweb.shared.http.HTTPMessageConfig;
 import org.zoxweb.shared.http.HTTPMethod;
-
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
-import org.zoxweb.shared.security.SecurityConsts;
-
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
 import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
@@ -377,7 +369,7 @@ public class MongoDSShiroTest
 		userInfo.setFirstName("N/S");
 		userInfo.setLastName("N/S");
 		userID.setUserInfo(userInfo);
-		return appManager.createUserIDDAO(userID, SecurityConsts.UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
