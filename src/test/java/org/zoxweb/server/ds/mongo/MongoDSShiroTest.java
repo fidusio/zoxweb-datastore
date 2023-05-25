@@ -94,7 +94,7 @@ public class MongoDSShiroTest
 		KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
 		
 		KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
-			 	  CryptoUtil.KEY_STORE_TYPE,
+				CryptoConst.KEY_STORE_TYPE,
 			 	  ksid.getKeyStorePassword().toCharArray());
 	
 		

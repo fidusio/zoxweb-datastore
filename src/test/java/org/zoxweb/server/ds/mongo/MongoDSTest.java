@@ -56,10 +56,10 @@ public class MongoDSTest
 			KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), KeyStoreInfoDAO.class);
 			
 			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
-				 	  CryptoUtil.KEY_STORE_TYPE,
+					CryptoConst.KEY_STORE_TYPE,
 				 	  ksid.getKeyStorePassword().toCharArray());
 			
-			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test", CryptoUtil.PKCS12), true, false, false));
+			System.out.println(GSONUtil.toJSON(CryptoUtil.generateKeyStoreInfo("test", "test", CryptoConst.PKCS12), true, false, false));
 			
 			KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getAliasPassword());
 			// setup the ms

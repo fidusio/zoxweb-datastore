@@ -17,6 +17,7 @@ import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.*;
+import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.crypto.CryptoConst.JWTAlgorithm;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
@@ -66,7 +67,7 @@ public class MongoDSDataTest {
             throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
         KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
-                CryptoUtil.KEY_STORE_TYPE,
+                CryptoConst.KEY_STORE_TYPE,
                 ksid.getKeyStorePassword().toCharArray());
 
         KeyMakerProvider.SINGLETON.setMasterKey(ks, ksid.getAlias(), ksid.getAliasPassword());
