@@ -18,7 +18,7 @@ import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CryptoConst;
-import org.zoxweb.shared.crypto.CryptoConst.JWTAlgorithm;
+import org.zoxweb.shared.crypto.CryptoConst.JWTAlgo;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
 import org.zoxweb.shared.data.AppIDDAO;
@@ -113,10 +113,10 @@ public class MongoDSDataTest {
     	jwtHS256.setName("jwtHS256");
 		JWTHeader header = jwtHS256.getHeader();
 		
-		header.setJWTAlgorithm(JWTAlgorithm.HS256);
+		header.setJWTAlgorithm(JWTAlgo.HS256);
 		header.setTokenType("JWT");
 		header.getProperties().add(new NVBoolean("boolean", true));
-		header.getProperties().add(new NVEnum("enum", JWTAlgorithm.HS256));
+		header.getProperties().add(new NVEnum("enum", JWTAlgo.HS256));
 		header.getProperties().add(new NVInt("int", 1000));
 		header.getProperties().add(new NVLong("long", 1000000));
 		header.getProperties().add(new NVFloat("float", (float) 32.554));
@@ -156,7 +156,7 @@ public class MongoDSDataTest {
 		JWT jwtNONE = new JWT();
 		jwtNONE.setName("jwtNONE");
 		header = jwtNONE.getHeader();
-		header.setJWTAlgorithm(JWTAlgorithm.none);
+		header.setJWTAlgorithm(JWTAlgo.none);
 		
 		payload = jwtNONE.getPayload();
 		payload.setDomainID("xlogistx.io");
@@ -172,7 +172,7 @@ public class MongoDSDataTest {
 		
 		header = jwtHS512.getHeader();
 			
-		header.setJWTAlgorithm(JWTAlgorithm.HS512);
+		header.setJWTAlgorithm(JWTAlgo.HS512);
 		header.setTokenType("JWT");
 	
 		payload =jwtHS512.getPayload();
