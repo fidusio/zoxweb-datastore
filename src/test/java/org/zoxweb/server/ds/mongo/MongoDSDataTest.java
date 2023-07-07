@@ -84,17 +84,17 @@ public class MongoDSDataTest {
 
         MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
 
-        ResourceManager.SINGLETON.map(Resource.DATA_STORE, mdsc.createAPI(null, dsConfig));
-        dataStore = ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
-        documentStore = ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
+        ResourceManager.SINGLETON.register(Resource.DATA_STORE, mdsc.createAPI(null, dsConfig));
+        dataStore = ResourceManager.lookupResource(Resource.DATA_STORE);
+        documentStore = ResourceManager.lookupResource(Resource.DATA_STORE);
         
 
-        appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+        appManager.setAPIDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
         appManager.setAPISecurityManager(apiSecurityManager);
 
         ShiroDSRealm realm = ShiroUtil.getRealm(ShiroDSRealm.class);
         realm.setAPISecurityManager(apiSecurityManager);
-        realm.setDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+        realm.setDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
 
         apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
     }

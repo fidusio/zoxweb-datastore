@@ -97,7 +97,7 @@ public class ShiroDSRealm
 	
 	public APIDataStore<?> getAPIDataStore()
 	{
-		return dataStore != null ? dataStore : ResourceManager.SINGLETON.lookup(Resource.DATA_STORE);
+		return dataStore != null ? dataStore : ResourceManager.lookupResource(Resource.DATA_STORE);
 	}
 
 	public void setDataStore(APIDataStore<?> dataStore)

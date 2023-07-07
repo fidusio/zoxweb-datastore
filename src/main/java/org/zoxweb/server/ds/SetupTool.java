@@ -225,16 +225,16 @@ public class SetupTool
          MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
 
 
-         ResourceManager.SINGLETON.map(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, ret.dsConfig));
+         ResourceManager.SINGLETON.register(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, ret.dsConfig));
 //		realm.setAPISecurityManager(apiSecurityManager);
 //		realm.setDataStore(DefaultMongoDS.SIGLETON.getDataStore());
 
          ret.appManager = new APIAppManagerProvider();
 
-         ret.appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+         ret.appManager.setAPIDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
          ret.appManager.setAPISecurityManager(ret.apiSecurityManager);
-         ResourceManager.SINGLETON.map(Resource.API_APP_MANAGER, ret.appManager);
-         ResourceManager.SINGLETON.map(Resource.API_SECURITY_MANAGER, ret.apiSecurityManager);
+         ResourceManager.SINGLETON.register(Resource.API_APP_MANAGER, ret.appManager);
+         ResourceManager.SINGLETON.register(Resource.API_SECURITY_MANAGER, ret.apiSecurityManager);
          TaskUtil.getDefaultTaskProcessor();
          TaskUtil.getDefaultTaskScheduler();
          
@@ -258,11 +258,11 @@ public class SetupTool
 			
 			
 			realm.setAPISecurityManager(ret.apiSecurityManager);
-			realm.setDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+			realm.setDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
 			
 			ret.appManager = new APIAppManagerProvider();
 			
-			ret.appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+			ret.appManager.setAPIDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
 			ret.appManager.setAPISecurityManager(ret.apiSecurityManager);
 
 	        
@@ -282,7 +282,7 @@ public class SetupTool
 		userInfo.setFirstName(name);
 		userInfo.setLastName(lastname);
 		userID.setUserInfo(userInfo);
-		APIAppManager appManager = ResourceManager.SINGLETON.lookup(Resource.API_APP_MANAGER);
+		APIAppManager appManager = ResourceManager.lookupResource(Resource.API_APP_MANAGER);
 		return appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}

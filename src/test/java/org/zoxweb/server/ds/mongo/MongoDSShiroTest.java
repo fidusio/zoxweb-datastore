@@ -121,16 +121,16 @@ public class MongoDSShiroTest
 		MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
 		
 		
-		ResourceManager.SINGLETON.map(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, dsConfig));
+		ResourceManager.SINGLETON.register(Resource.DATA_STORE, (MongoDataStore) mdsc.createAPI(null, dsConfig));
 		
 		
 		
 		realm.setAPISecurityManager(apiSecurityManager);
-		realm.setDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+		realm.setDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
 		
 		appManager = new APIAppManagerProvider();
 		
-		appManager.setAPIDataStore(ResourceManager.SINGLETON.lookup(Resource.DATA_STORE));
+		appManager.setAPIDataStore(ResourceManager.lookupResource(Resource.DATA_STORE));
 		appManager.setAPISecurityManager(apiSecurityManager);
 
         
