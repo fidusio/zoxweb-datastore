@@ -13,6 +13,7 @@ import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
@@ -103,7 +104,24 @@ public class DerbyDataStore implements APIDataStore<Connection> {
             {
               if (nvc instanceof NVConfigEntity && ((NVConfigEntity) nvc).getArrayType() == NVConfigEntity.ArrayType.NOT_ARRAY)
               {
-                createTable((NVConfigEntity)nvc);
+                //log.getLogger().info("Table to be inserted: " + nvc + "\n" + nvc.getName() + ":" +  ((NVConfigEntity)nvc).getAttributes());
+
+
+                try
+                {
+                  NVEntity toAdd = (NVEntity) nvc.getMetaType().getDeclaredConstructor().newInstance();
+
+                  createTable((NVConfigEntity)toAdd.getNVConfig());
+                } catch (InstantiationException e) {
+                  throw new RuntimeException(e);
+                } catch (IllegalAccessException e) {
+                  throw new RuntimeException(e);
+                } catch (InvocationTargetException e) {
+                  throw new RuntimeException(e);
+                } catch (NoSuchMethodException e) {
+                  throw new RuntimeException(e);
+                }
+
               }
               DerbyDT derbyDT = DerbyDBMeta.metaToDerbyDT(nvc);
               if (derbyDT != null)
@@ -127,6 +145,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           if(log.isEnabled()) log.getLogger().info("Table: " + tableName + "  to be created SQL \n" + createTable);
           con = connect();
           stmt = con.createStatement();
+          if(log.isEnabled()) log.getLogger().info(createTable);
           stmt.execute(createTable);
 
           boolean ret =  doesTableExists(nvce);

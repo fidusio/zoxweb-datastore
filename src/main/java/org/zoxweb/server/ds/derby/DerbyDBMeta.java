@@ -160,7 +160,7 @@ public class DerbyDBMeta {
         {
             ps.setObject(index, null);
         }
-        if (nvb instanceof NVBlob)
+        else if (nvb instanceof NVBlob)
         {
             ps.setBinaryStream(index, new ByteArrayInputStream(((NVBlob)nvb).getValue()));
         }
@@ -225,7 +225,7 @@ public class DerbyDBMeta {
         //Object value = rs.getObject(nvb.getName());
         if (nvb instanceof NVGenericMap)
         {
-            NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null);
+            NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null, true );
             ((NVGenericMap)nvb).setValue(nvgm.getValue());
         }
         else if (MetaToken.isPrimitiveArray(nvb))
@@ -259,10 +259,13 @@ public class DerbyDBMeta {
         else if(nvb instanceof NVBlob)
         {
             Blob b = rs.getBlob(nvb.getName());
-            InputStream is = b.getBinaryStream();
-            UByteArrayOutputStream baos = new UByteArrayOutputStream();
-            IOUtil.relayStreams(is, baos, true);
-            ((NVBlob)nvb).setValue(baos.toByteArray());
+            if(b != null)
+            {
+                InputStream is = b.getBinaryStream();
+                UByteArrayOutputStream baos = new UByteArrayOutputStream();
+                IOUtil.relayStreams(is, baos, true);
+                ((NVBlob)nvb).setValue(baos.toByteArray());
+            }
         }
         else if (nvb instanceof NVFloat)
         {

@@ -31,10 +31,8 @@ import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
-import org.zoxweb.shared.util.Const;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVInt;
+import org.zoxweb.shared.http.*;
+import org.zoxweb.shared.util.*;
 
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
@@ -314,6 +312,42 @@ public class DerbyDataStoreTest {
         Assertions.assertNotEquals(found, p);
         HashUtil.validatePassword(found, "password");
         Assertions.assertEquals(GSONUtil.toJSONDefault(p), GSONUtil.toJSONDefault(found));
+    }
+
+    @Test
+    public void testHMCI()
+    {
+        HTTPMessageConfigInterface hmci = HTTPMessageConfig.createAndInit("https://api.xlogistx.io", "login", HTTPMethod.PATCH);
+        hmci.setAccept(HTTPMediaType.APPLICATION_JSON);
+        hmci.setContentType(HTTPMediaType.APPLICATION_JSON);
+        hmci.setURLEncodingEnabled(false);
+        hmci.getHeaders().add("revision", "2023-07-15");
+        HTTPAuthorization authorization = new HTTPAuthorization("XlogistX-KEY", "ABB-CC-DDSFS-664554");
+        //dataStore.insert(authorization);
+
+
+        hmci.setAuthorization(authorization);
+
+        HTTPMessageConfig httpMessageConfig = dataStore.insert((HTTPMessageConfig)hmci);
+        System.out.println(httpMessageConfig.getGlobalID());
+
+
+        httpMessageConfig = (HTTPMessageConfig) dataStore.searchByID(HTTPMessageConfig.class.getName(), httpMessageConfig.getGlobalID()).get(0);
+
+
+
+        String json = GSONUtil.toJSONDefault(hmci);
+        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);
+
+        System.out.println((hmci == httpMessageConfig) + " " + json.equals(jsonFromDB));
+        System.out.println(json);
+        System.out.println(jsonFromDB);
+
+        authorization = hmci.getAuthorization();
+
+        System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
+
+
     }
 
 }
