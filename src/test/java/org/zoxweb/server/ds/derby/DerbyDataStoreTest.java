@@ -327,6 +327,12 @@ public class DerbyDataStoreTest {
 
 
         hmci.setAuthorization(authorization);
+        NVGenericMap nvgm = new NVGenericMap();
+        nvgm.add("name", "mario");
+        nvgm.add("email", "mario@mario.com");
+        nvgm.add(new NVInt("age", 31));
+        hmci.setContent(GSONUtil.toJSONDefault(nvgm));
+
 
         HTTPMessageConfig httpMessageConfig = dataStore.insert((HTTPMessageConfig)hmci);
         System.out.println(httpMessageConfig.getGlobalID());
@@ -334,7 +340,7 @@ public class DerbyDataStoreTest {
 
         httpMessageConfig = (HTTPMessageConfig) dataStore.searchByID(HTTPMessageConfig.class.getName(), httpMessageConfig.getGlobalID()).get(0);
 
-
+        System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
 
         String json = GSONUtil.toJSONDefault(hmci);
         String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);
@@ -344,6 +350,7 @@ public class DerbyDataStoreTest {
         System.out.println(jsonFromDB);
 
         authorization = hmci.getAuthorization();
+        dataStore.delete(httpMessageConfig, true);
 
         System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
 
