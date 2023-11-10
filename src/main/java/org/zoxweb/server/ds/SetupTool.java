@@ -235,8 +235,8 @@ public class SetupTool
          ret.appManager.setAPISecurityManager(ret.apiSecurityManager);
          ResourceManager.SINGLETON.register(Resource.API_APP_MANAGER, ret.appManager);
          ResourceManager.SINGLETON.register(Resource.API_SECURITY_MANAGER, ret.apiSecurityManager);
-         TaskUtil.getDefaultTaskProcessor();
-         TaskUtil.getDefaultTaskScheduler();
+         TaskUtil.defaultTaskProcessor();
+         TaskUtil.defaultTaskScheduler();
          
          
          File shiroFile = ApplicationConfigManager.locateFile(ret.appConfig.lookupValue(SHIRO_INI));

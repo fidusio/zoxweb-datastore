@@ -350,7 +350,7 @@ public class DerbyDataStoreTest {
         System.out.println(jsonFromDB);
 
         authorization = hmci.getAuthorization();
-        dataStore.delete(httpMessageConfig, true);
+        //dataStore.delete(httpMessageConfig, true);
 
         System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
 
