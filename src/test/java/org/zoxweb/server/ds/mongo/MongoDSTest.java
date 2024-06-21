@@ -3,12 +3,12 @@ package org.zoxweb.server.ds.mongo;
 import io.xlogistx.shiro.APISecurityManagerProvider;
 import io.xlogistx.shiro.ShiroUtil;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.config.IniSecurityManagerFactory;
+import org.apache.shiro.ini.IniSecurityManagerFactory;
+import org.apache.shiro.lang.util.Factory;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
@@ -34,7 +34,7 @@ import java.util.logging.Logger;
 public class MongoDSTest 
 {
 	
-	private static final transient Logger log = Logger.getLogger(MongoDSTest.class.getName());
+	private static final Logger log = Logger.getLogger(MongoDSTest.class.getName());
 	
 	
 	

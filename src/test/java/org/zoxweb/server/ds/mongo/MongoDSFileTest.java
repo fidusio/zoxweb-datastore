@@ -1,23 +1,22 @@
 package org.zoxweb.server.ds.mongo;
 
+import io.xlogistx.shiro.APISecurityManagerProvider;
+import io.xlogistx.shiro.ShiroUtil;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.config.IniSecurityManagerFactory;
+import org.apache.shiro.ini.IniSecurityManagerFactory;
+import org.apache.shiro.lang.util.Factory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.Factory;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.server.ds.shiro.ShiroDSRealm;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
-import io.xlogistx.shiro.APISecurityManagerProvider;
-import io.xlogistx.shiro.ShiroUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.FileInfoDAO;

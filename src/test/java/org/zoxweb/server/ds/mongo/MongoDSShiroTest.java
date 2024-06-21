@@ -6,10 +6,10 @@ import io.xlogistx.shiro.ShiroUtil;
 import io.xlogistx.shiro.authc.DomainUsernamePasswordToken;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
-import org.apache.shiro.config.IniSecurityManagerFactory;
+import org.apache.shiro.ini.IniSecurityManagerFactory;
+import org.apache.shiro.lang.util.Factory;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.Factory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -84,7 +84,7 @@ public class MongoDSShiroTest
 
 	
 	@BeforeAll
-	public void start() throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
+	public static void start() throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException
 	{
 		if (appManager == null)
 		{
@@ -331,7 +331,7 @@ public class MongoDSShiroTest
 	
 	
 	
-	 public void registerSubjectAPIKey(String apiKey, String userID, String password)
+	 public static void registerSubjectAPIKey(String apiKey, String userID, String password)
 	 {
 
 	    UserInfoDAO userInfoDAO = new UserInfoDAO();
@@ -359,7 +359,7 @@ public class MongoDSShiroTest
         log.info(""+val);
     }
 	
-	private UserIDDAO createUser(String subjectID, String password)
+	private static UserIDDAO createUser(String subjectID, String password)
 	{
 		
 		UserIDDAO userID = new UserIDDAO();
@@ -373,7 +373,7 @@ public class MongoDSShiroTest
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
-	public void createAPP(String domainID, String appID)
+	public static void createAPP(String domainID, String appID)
 	{
 //		String subjectID = SUPER_ADMIN;
 //		String password  = SUPER_PASSWORD;
@@ -434,7 +434,7 @@ public class MongoDSShiroTest
 		
 	}
 	
-	public void createSuperAdminRole()
+	public static void createSuperAdminRole()
 	{
 		apiSecurityManager.logout();
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
@@ -485,7 +485,7 @@ public class MongoDSShiroTest
 	}
 	
 	
-	public void associateAdminRole()
+	public static void associateAdminRole()
 	{
 		
 		apiSecurityManager.logout();
