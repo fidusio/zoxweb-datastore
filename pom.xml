@@ -97,6 +97,17 @@
             <scope>provided</scope>
         </dependency>
 
+
+
+        <dependency>
+            <groupId>org.apache.derby</groupId>
+            <artifactId>derbyclient</artifactId>
+            <version>${apache.derby.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+
+
         <dependency>
 	        <groupId>org.mongodb</groupId>
 	        <artifactId>mongodb-driver-legacy</artifactId>

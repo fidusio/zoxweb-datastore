@@ -32,6 +32,9 @@ import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.http.*;
+import org.zoxweb.shared.iot.DeviceInfo;
+import org.zoxweb.shared.iot.PortInfo;
+import org.zoxweb.shared.iot.ProtocolInfo;
 import org.zoxweb.shared.util.*;
 
 import java.io.IOException;
@@ -47,10 +50,13 @@ public class DerbyDataStoreTest {
 
 	// local datatore
     private static DerbyDataStore dataStore;
-    private static final String DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
+    private static final String EMBEDDED_DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
+    private static final String CLIENT_DRIVER = "org.apache.derby.jdbc.ClientDriver";
    
     private static final String MEMORY_URL = "jdbc:derby:memory:test";
-    private static final String DISK_URL = "jdbc:derby:/tmp/derby/test";
+    private static final String EMBEDDED_DISK_URL = "jdbc:derby:/tmp/derby/test";
+    private static final String CLIENT_URL = "jdbc:derby://localhost:1527/test-db";
+
     private static final String USER ="APP";
     private static final String PASSWORD ="APP";
 
@@ -61,13 +67,13 @@ public class DerbyDataStoreTest {
     	{
     	    NVEntity.GLOBAL_ID_AS_REF_ID = true;
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
-    		configInfo.getProperties().add("driver", DRIVER);
-    		configInfo.getProperties().add("url", DISK_URL);
+    		configInfo.getProperties().add("driver", CLIENT_DRIVER);
+    		configInfo.getProperties().add("url", CLIENT_URL);
     		configInfo.getProperties().add("user", USER);
     		configInfo.getProperties().add("password", PASSWORD);
     		dataStore = new DerbyDataStore(configInfo);
     		System.out.println(dataStore.connect());
-    		System.out.print("URLs:" + MEMORY_URL + " mem," + DISK_URL + " disk.");
+    		System.out.print("URLs:" + MEMORY_URL + " mem," + EMBEDDED_DISK_URL + " disk, " + CLIENT_URL);
     	}
 //    	catch(Throwable e)
 //    	{
@@ -142,6 +148,7 @@ public class DerbyDataStoreTest {
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
+        addressDAO.setZIPOrPostalCode("90001");
         addressDAO = dataStore.insert(addressDAO);
         assertNotNull(addressDAO);
 
@@ -258,7 +265,7 @@ public class DerbyDataStoreTest {
         long ts = System.nanoTime();
         DSTestClass.ComplexTypes complex = DSTestClass.ComplexTypes.buildComplex(name);
         complex.setAllTypes(allTypes);
-       complex = dataStore.update(complex);
+        complex = dataStore.update(complex);
         ts = System.nanoTime() - ts;
         System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
         System.out.println("json:" + GSONUtil.toJSON(complex, true, false, false));
@@ -353,8 +360,49 @@ public class DerbyDataStoreTest {
         //dataStore.delete(httpMessageConfig, true);
 
         System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
+    }
 
 
+    @Test
+    public void deviceInfoTest()
+    {
+        DeviceInfo deviceInfo = new DeviceInfo();
+        deviceInfo.setName("ATTINY84-M");
+        deviceInfo.setDescription("14 pin Atmel microcontroller");
+        deviceInfo.setManufacturer("Microchip");
+        deviceInfo.setModel("PU");
+
+
+        ProtocolInfo i2c = new ProtocolInfo();
+        i2c.setName("I2C");
+        i2c.setDescription("Inter-Integrated Circuit Protocol");
+        deviceInfo.addProtocol(i2c);
+
+        deviceInfo.addPort(new PortInfo("VCC", "Input voltage").setPort(1));
+        deviceInfo.addPort(new PortInfo("PB0", "General pin").setPort(2).setFunctions("PCINT8", "10", "0", "XTAL1"));
+        deviceInfo.addPort(new PortInfo("PB1", "General pin").setPort(3).setFunctions("PCINT9", "9", "1", "XTAL2"));
+        deviceInfo.addPort(new PortInfo("PB3", "General pin").setPort(4).setFunctions("PCINT11", "11", "11", "RESET"));
+        deviceInfo.addPort(new PortInfo("PB2", "General pin").setPort(5).setFunctions("PCINT10", "8", "2", "OC0A", "INT0"));
+        deviceInfo.addPort(new PortInfo("PA7", "General pin").setPort(6).setFunctions("PCINT7", "7", "3", "OC0B", "ADC7"));
+        deviceInfo.addPort(new PortInfo("PA6", "General pin").setPort(7).setFunctions("PCINT6", "6", "4", "MOSI", "DI", "SDA", "OC1A", "ADC6"));
+        deviceInfo.addPort(new PortInfo("PA5", "General pin").setPort(8).setFunctions("PCINT5", "5", "5", "MISO", "DO", "OC1B", "ADC5"));
+        deviceInfo.addPort(new PortInfo("PA4", "General pin").setPort(9).setFunctions("PCINT4", "4", "6", "SCK", "SCL", "ADC4"));
+        deviceInfo.addPort(new PortInfo("PA3", "General pin").setPort(10).setFunctions("PCINT3", "3", "7", "ADC3"));
+        deviceInfo.addPort(new PortInfo("PA2", "General pin").setPort(11).setFunctions("PCINT2", "2", "8", "AIN1", "ADC2"));
+        deviceInfo.addPort(new PortInfo("PA1", "General pin").setPort(12).setFunctions("PCINT1", "1", "9", "AIN0", "ADC1"));
+        deviceInfo.addPort(new PortInfo("PA0", "General pin").setPort(13).setFunctions("PCINT0", "0", "10", "AREF", "ADC0"));
+
+
+
+
+        deviceInfo.addPort(new PortInfo("GND", "ground").setPort(14));
+
+
+
+
+        deviceInfo = dataStore.insert(deviceInfo);
+
+        System.out.println(GSONUtil.toJSONDefault(deviceInfo));
     }
 
 }
