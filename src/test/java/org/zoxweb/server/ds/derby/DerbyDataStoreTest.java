@@ -400,9 +400,11 @@ public class DerbyDataStoreTest {
 
 
 
-        deviceInfo = dataStore.insert(deviceInfo);
+        //deviceInfo = dataStore.insert(deviceInfo);
 
-        System.out.println(GSONUtil.toJSONDefault(deviceInfo));
+        List<DeviceInfo> results = dataStore.search(DeviceInfo.NVC_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
+
+        System.out.println(GSONUtil.toJSONDefault(results.get(0), true));
     }
 
 }

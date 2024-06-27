@@ -2,6 +2,7 @@ package org.zoxweb.server.ds.derby;
 
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.io.UByteArrayOutputStream;
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
@@ -20,6 +21,7 @@ public class DerbyDBMeta {
     private DerbyDBMeta(){}
     public static final Set<String> META_INSERT_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
     public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
+    public static final LogWrapper log = new LogWrapper(DerbyDBMeta.class).setEnabled(false);
 
 
     public static class NVNCodec
@@ -243,13 +245,14 @@ public class DerbyDBMeta {
                         ((NVEnumList)nvb).getValue().add(SharedUtil.enumValue(nvc.getMetaTypeBase(), enumName));
                     }
                 }
-                else {
+                else
+                {
                     ((NVBase<Object>) nvb).setValue(nvgm.values()[0].getValue());
                 }
             }
             else
             {
-                System.out.println("ERROR !!! : " + nvgm + " " + strValue);
+                if(log.isEnabled()) log.getLogger().info("ERROR !!! : " + nvgm + " " + strValue + " nvmg size: " + nvgm.size());
             }
         }
         else if (nvb instanceof NVEnum)
