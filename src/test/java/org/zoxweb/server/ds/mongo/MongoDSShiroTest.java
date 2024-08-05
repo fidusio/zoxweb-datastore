@@ -30,10 +30,10 @@ import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.KeyStoreInfoDAO;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
-import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
+import org.zoxweb.shared.security.shiro.ShiroAssociationRule;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
-import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
-import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
+import org.zoxweb.shared.security.shiro.ShiroPermission;
+import org.zoxweb.shared.security.shiro.ShiroRole;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.NVPair;
@@ -234,7 +234,7 @@ public class MongoDSShiroTest
 			
 			apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 			
-			ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+			ShiroAssociationRule sard = new ShiroAssociationRule();
 			sard.setName(SecurityModel.Role.APP_ADMIN.getName());
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_ADMIN));
@@ -242,7 +242,7 @@ public class MongoDSShiroTest
 			//sard.setExpiration(null);
 			apiSecurityManager.addShiroRule(sard);
 			
-			sard = new ShiroAssociationRuleDAO();
+			sard = new ShiroAssociationRule();
 			sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
 			sard.setAssociatedTo(adminUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
@@ -253,7 +253,7 @@ public class MongoDSShiroTest
 			
 			
 			
-			sard = new ShiroAssociationRuleDAO();
+			sard = new ShiroAssociationRule();
 			sard.setName(SecurityModel.Role.APP_SERVICE_PROVIDER.getName());
 			sard.setAssociatedTo(spUserID);
 			sard.setAssociate(SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, SecurityModel.Role.APP_SERVICE_PROVIDER));
@@ -461,11 +461,11 @@ public class MongoDSShiroTest
 //		realm.addRole(superAdminRole);
 		
 		
-		ShiroRoleDAO superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(DOMAIN_ID, APP_ID);
+		ShiroRole superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(DOMAIN_ID, APP_ID);
 		
 		for (SecurityModel.Permission permission : SecurityModel.Permission.values())
 		{
-			ShiroPermissionDAO permDAO = permission.toPermission(DOMAIN_ID, APP_ID);
+			ShiroPermission permDAO = permission.toPermission(DOMAIN_ID, APP_ID);
 			apiSecurityManager.addPermission(permDAO);
 			SecurityModel.Role.addPermission(superAdminRole, permDAO);
 		}
@@ -492,7 +492,7 @@ public class MongoDSShiroTest
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
 		
 		log.info("USER ID********************************:" + ShiroUtil.subjectUserID());
-		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+		ShiroAssociationRule sard = new ShiroAssociationRule();
 		sard.setAssociatedTo(ShiroUtil.subjectUserID());
 		sard.setAssociate(SecurityModel.toSubjectID(DOMAIN_ID, APP_ID, Role.SUPER_ADMIN));
 		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);

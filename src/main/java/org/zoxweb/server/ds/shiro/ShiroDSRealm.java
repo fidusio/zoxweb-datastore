@@ -2,6 +2,10 @@ package org.zoxweb.server.ds.shiro;
 
 
 import com.mongodb.BasicDBObject;
+import io.xlogistx.shiro.DomainPrincipalCollection;
+import io.xlogistx.shiro.ResourcePrincipalCollection;
+import io.xlogistx.shiro.ShiroBaseRealm;
+import io.xlogistx.shiro.authz.ShiroAuthorizationInfo;
 import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
@@ -9,10 +13,6 @@ import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
-import io.xlogistx.shiro.DomainPrincipalCollection;
-import io.xlogistx.shiro.ResourcePrincipalCollection;
-import io.xlogistx.shiro.ShiroBaseRealm;
-import io.xlogistx.shiro.authz.ShiroAuthorizationInfo;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.DataConst.DataParam;
@@ -21,25 +21,15 @@ import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.AccessException;
-
-import org.zoxweb.shared.security.SubjectIDDAO;
+import org.zoxweb.shared.security.SubjectIdentifier;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
-import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
-import org.zoxweb.shared.security.shiro.ShiroAssociationType;
-import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
-import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.security.shiro.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
+import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.logging.Logger;
+import java.util.*;
 
 public class ShiroDSRealm
 	extends ShiroBaseRealm
@@ -48,7 +38,7 @@ public class ShiroDSRealm
 
 	public static final LogWrapper log = new LogWrapper(ShiroDSRealm.class);
 
-	private volatile Set<ShiroAssociationRuleDAO> cachedSARD = null;
+	private volatile Set<ShiroAssociationRule> cachedSARD = null;
 	
 	private String userDefaultRoles = null;
 	
@@ -59,7 +49,7 @@ public class ShiroDSRealm
 		if(log.isEnabled()) log.getLogger().info("started");
 	}
 	
-	protected Set<ShiroAssociationRuleDAO> getCachedSARDs()
+	protected Set<ShiroAssociationRule> getCachedSARDs()
 	{
 		if (cachedSARD == null)
 		{
@@ -67,10 +57,10 @@ public class ShiroDSRealm
 			{
 				if (cachedSARD == null)
 				{
-					cachedSARD = new LinkedHashSet<ShiroAssociationRuleDAO>();
+					cachedSARD = new LinkedHashSet<ShiroAssociationRule>();
 					if(userDefaultRoles != null)
 					{
-						ShiroRoleDAO role = lookupRole(userDefaultRoles);
+						ShiroRole role = lookupRole(userDefaultRoles);
 						if(log.isEnabled()) log.getLogger().info("role:" + role);
 					
 						if (role != null)
@@ -79,7 +69,7 @@ public class ShiroDSRealm
 							{
 								if(log.isEnabled()) log.getLogger().info(""+nve);
 							}
-							ShiroAssociationRuleDAO toAdd = new ShiroAssociationRuleDAO();
+							ShiroAssociationRule toAdd = new ShiroAssociationRule();
 							toAdd.setAssociation(role);
 							toAdd.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
 							toAdd.setReferenceID(UUID.randomUUID().toString());
@@ -134,9 +124,9 @@ public class ShiroDSRealm
 	        if (isPermissionsLookupEnabled()) 
 	        {
 	        
-	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(domainID, userID);
+	        	List<ShiroAssociationRule> rules = getUserShiroAssociationRule(domainID, userID);
 	        	if(log.isEnabled()) log.getLogger().info("++-+-+-+-++-+-+++-+-+-rules:" + rules.size());
-//	        	for(ShiroAssociationRuleDAO rule : rules)
+//	        	for(ShiroAssociationRule rule : rules)
 //	        	{
 //	        		if(log.isEnabled()) log.getLogger().info("" + rule.getAssociationType());
 //	        	}
@@ -155,9 +145,9 @@ public class ShiroDSRealm
     	   ShiroAuthorizationInfo  info = new ShiroAuthorizationInfo(this);
     	   if (isPermissionsLookupEnabled()) 
 	        {
-	        	List<ShiroAssociationRuleDAO> rules = getUserShiroAssociationRule(null, refID);
+	        	List<ShiroAssociationRule> rules = getUserShiroAssociationRule(null, refID);
 	        	if(log.isEnabled()) log.getLogger().info("Resource rules:" + rules.size());
-//	        	for(ShiroAssociationRuleDAO rule : rules)
+//	        	for(ShiroAssociationRule rule : rules)
 //	        	{
 //	        		if(log.isEnabled()) log.getLogger().info("" + rule.getAssociationType());
 //	        	}
@@ -170,9 +160,9 @@ public class ShiroDSRealm
        throw new AuthorizationException("Not a domain info");
 	}
 	
-	protected List<ShiroAssociationRuleDAO> getUserShiroAssociationRule(String domainID, String resourceID)
+	protected List<ShiroAssociationRule> getUserShiroAssociationRule(String domainID, String resourceID)
 	{
-		List<ShiroAssociationRuleDAO> sardList = search(new QueryMatchString(RelationalOperator.EQUAL, resourceID, ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
+		List<ShiroAssociationRule> sardList = search(new QueryMatchString(RelationalOperator.EQUAL, resourceID, ShiroAssociationRule.Param.ASSOCIATED_TO));
 		return sardList;
 	}
 	
@@ -268,21 +258,21 @@ public class ShiroDSRealm
 
 
 	@Override
-	public void addShiroRule(ShiroAssociationRuleDAO sard) 
+	public void addShiroRule(ShiroAssociationRule sard)
 	{
 		SharedUtil.checkIfNulls("Association parameters can't be null", sard, sard.getName(), sard.getAssociationType(), sard.getAssociatedTo()/*, sard.getAssociate()*/);
 		List<QueryMarker> queryCriteria = null;
-		List<ShiroAssociationRuleDAO> list = null;
+		List<ShiroAssociationRule> list = null;
 		switch(sard.getAssociationType())
 		{
 		case PERMISSION_TO_SUBJECT:
 			queryCriteria = new ArrayList<QueryMarker>();
 			if (sard.getAssociate() != null)
-				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRule.Param.ASSOCIATE));
 			
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRuleDAO.Param.ASSOCIATION_CRUD));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRule.Param.ASSOCIATED_TO));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRule.Param.ASSOCIATION_TYPE));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRule.Param.ASSOCIATION_CRUD));
 			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getName(), DataParam.NAME));
 			
 			//System.out.println(queryCriteria);
@@ -307,29 +297,29 @@ public class ShiroDSRealm
 		case ROLE_TO_RESOURCE:
 			// assign a role to a subject
 			// associated_to must be user_id or user_info_dao referenceid
-			// associate should be ShiroRoleDAO
+			// associate should be ShiroRole
 			
 			
 //			queryCriteria = new ArrayList<QueryMarker>();
 //			if (sard.getAssociate() != null)
-//				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+//				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRule.Param.ASSOCIATE));
 //			
-//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
-//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRule.Param.ASSOCIATED_TO));
+//			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRule.Param.ASSOCIATION_TYPE));
 //			
 //			
 //			list = search(queryCriteria.toArray(new QueryMarker[0]));
 //			if (list.size() == 0 && sard.getReferenceID() == null)
 			{
-				ShiroRoleDAO role = lookupRole(sard.getAssociate());
+				ShiroRole role = lookupRole(sard.getAssociate());
 				if(log.isEnabled()) log.getLogger().info("Role:"+role);
 				if (role != null)
 				{
 					// maybe check role permission
 					sard.setAssociation(role);
-					List<ShiroAssociationRuleDAO> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
-						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
-						   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+					List<ShiroAssociationRule> roleSard = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRule.Param.ASSOCIATE),
+						   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRule.Param.ASSOCIATED_TO),
+						   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRule.Param.ASSOCIATION_TYPE));
 					if(log.isEnabled()) log.getLogger().info("roleSard:" + roleSard);
 					if (roleSard == null || roleSard.size() == 0)
 					{
@@ -339,7 +329,7 @@ public class ShiroDSRealm
 				}
 			}
 			// check if the role exist
-			//getDataStore().search(ShiroRoleDAO.NVC_SHIRO_ROLE_DAO, null, queryCriteria);
+			//getDataStore().search(ShiroRole.NVC_SHIRO_ROLE_DAO, null, queryCriteria);
 			
 			
 			break;
@@ -350,20 +340,20 @@ public class ShiroDSRealm
 		}
 	}
 	
-	ShiroAssociationRuleDAO lookupSARD(ShiroAssociationRuleDAO sard)
+	ShiroAssociationRule lookupSARD(ShiroAssociationRule sard)
 	{
-		List<ShiroAssociationRuleDAO> matches = null;
+		List<ShiroAssociationRule> matches = null;
 		ArrayList<QueryMarker> queryCriteria = null;
 		switch(sard.getAssociationType())
 		{
 		case PERMISSION_TO_RESOURCE:
 			queryCriteria = new ArrayList<QueryMarker>();
 			if (sard.getAssociate() != null)
-				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE));
+				queryCriteria.add(new QueryMatchObjectId(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRule.Param.ASSOCIATE));
 			
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO));
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
-			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRuleDAO.Param.ASSOCIATION_CRUD));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRule.Param.ASSOCIATED_TO));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRule.Param.ASSOCIATION_TYPE));
+			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getCRUD(), ShiroAssociationRule.Param.ASSOCIATION_CRUD));
 			queryCriteria.add(new QueryMatchString(RelationalOperator.EQUAL, sard.getName(), DataParam.NAME));
 			matches = search(queryCriteria.toArray(new QueryMarker[0]));
 			break;
@@ -378,9 +368,9 @@ public class ShiroDSRealm
 			break;
 		case ROLE_TO_SUBJECT:
 		case ROLE_TO_RESOURCE:
-			matches = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRuleDAO.Param.ASSOCIATE),
-					   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRuleDAO.Param.ASSOCIATED_TO),
-					   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRuleDAO.Param.ASSOCIATION_TYPE));
+			matches = search(new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociate(), ShiroAssociationRule.Param.ASSOCIATE),
+					   new QueryMatchString(RelationalOperator.EQUAL, sard.getAssociatedTo(), ShiroAssociationRule.Param.ASSOCIATED_TO),
+					   new QueryMatchString(RelationalOperator.EQUAL, ""+sard.getAssociationType(), ShiroAssociationRule.Param.ASSOCIATION_TYPE));
 			break;
 		default:
 			break;
@@ -399,7 +389,7 @@ public class ShiroDSRealm
 	}
 
 	@Override
-	public void deleteShiroRule(ShiroAssociationRuleDAO sard)
+	public void deleteShiroRule(ShiroAssociationRule sard)
 	{
 		if (sard.getReferenceID() != null)
 		{
@@ -407,7 +397,7 @@ public class ShiroDSRealm
 		}
 		else
 		{
-			ShiroAssociationRuleDAO match = lookupSARD(sard);
+			ShiroAssociationRule match = lookupSARD(sard);
 			if(log.isEnabled()) log.getLogger().info("Match:" + match);
 			if (match != null)
 			{
@@ -419,14 +409,14 @@ public class ShiroDSRealm
 	}
 
 	@Override
-	public void updateShiroRule(ShiroAssociationRuleDAO sard)
+	public void updateShiroRule(ShiroAssociationRule sard)
 	{
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public List<ShiroAssociationRuleDAO> search(QueryMarker... queryCriteria)
+	public List<ShiroAssociationRule> search(QueryMarker... queryCriteria)
 	{
 		if (queryCriteria == null || queryCriteria.length == 0)
 		{
@@ -434,17 +424,17 @@ public class ShiroDSRealm
 			
 		}
 		
-		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria);
+		return getAPIDataStore().search(ShiroAssociationRule.NVC_SHIRO_ASSOCIATION_RULE, null, queryCriteria);
 	}
 	
-	public List<ShiroAssociationRuleDAO> search(Collection<QueryMarker> queryCriteria)
+	public List<ShiroAssociationRule> search(Collection<QueryMarker> queryCriteria)
 	{
 		if (queryCriteria == null || queryCriteria.size() == 0)
 		{
 			throw new NullPointerException("null or empty search parameters");
 		}
 		
-		return getAPIDataStore().search(ShiroAssociationRuleDAO.NVC_SHIRO_ASSOCIATION_RULE_DAO, null, queryCriteria.toArray(new QueryMarker[queryCriteria.size()]));
+		return getAPIDataStore().search(ShiroAssociationRule.NVC_SHIRO_ASSOCIATION_RULE, null, queryCriteria.toArray(new QueryMarker[queryCriteria.size()]));
 	}
 
 
@@ -458,7 +448,177 @@ public class ShiroDSRealm
 	 * @throws AccessException
 	 */
 	@Override
-	public SubjectIDDAO addSubject(SubjectIDDAO subject) throws NullPointerException, IllegalArgumentException, AccessException {
+	public ShiroSubject addSubject(ShiroSubject subject) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Add a subject
+	 *
+	 * @param subject
+	 * @return ShiroSubjectDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public SubjectIdentifier addSubject(SubjectIdentifier subject) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Delete a subject
+	 *
+	 * @param subject
+	 * @param withRoles
+	 * @return ShiroSubjectDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroSubject deleteSubject(ShiroSubject subject, boolean withRoles) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Updates a subject, usually the password.
+	 *
+	 * @param subject
+	 * @return ShiroSubjectDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroSubject updateSubject(ShiroSubject subject) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Add a role
+	 *
+	 * @param role
+	 * @return ShiroRoleDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRole addRole(ShiroRole role) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Delete a role.
+	 *
+	 * @param role
+	 * @param withPermissions
+	 * @return ShiroRoleDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRole deleteRole(ShiroRole role, boolean withPermissions) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Updates a role
+	 *
+	 * @param role
+	 * @return ShiroRoleDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRole updateRole(ShiroRole role) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Adds a role group.
+	 *
+	 * @param rolegroup
+	 * @return ShiroRoleGroupDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRoleGroup addRoleGroup(ShiroRoleGroup rolegroup) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Delete a role group.
+	 *
+	 * @param rolegroup
+	 * @return ShiroRoleGroupDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRoleGroup deleteRoleGroup(ShiroRoleGroup rolegroup) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Update a role group.
+	 *
+	 * @param rolegroup
+	 * @return ShiroRoleGroupDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroRoleGroup updateRoleGroup(ShiroRoleGroup rolegroup) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Add a permission
+	 *
+	 * @param permission
+	 * @return ShiroPermissionDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroPermission addPermission(ShiroPermission permission) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Delete a permission
+	 *
+	 * @param permission
+	 * @return ShiroPermissionDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroPermission deletePermission(ShiroPermission permission) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Updates a permission.
+	 *
+	 * @param permission
+	 * @return ShiroPermissionDAO
+	 * @throws NullPointerException
+	 * @throws IllegalArgumentException
+	 * @throws AccessException
+	 */
+	@Override
+	public ShiroPermission updatePermission(ShiroPermission permission) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
@@ -470,7 +630,7 @@ public class ShiroDSRealm
 	}
 
 	@Override
-	public PasswordDAO setSubjectPassword(SubjectIDDAO subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
@@ -480,7 +640,7 @@ public class ShiroDSRealm
 	}
 
 	@Override
-	public PasswordDAO setSubjectPassword(SubjectIDDAO subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 

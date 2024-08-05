@@ -32,10 +32,10 @@ import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.model.SecurityModel.Role;
-import org.zoxweb.shared.security.shiro.ShiroAssociationRuleDAO;
+import org.zoxweb.shared.security.shiro.ShiroAssociationRule;
 import org.zoxweb.shared.security.shiro.ShiroAssociationType;
-import org.zoxweb.shared.security.shiro.ShiroPermissionDAO;
-import org.zoxweb.shared.security.shiro.ShiroRoleDAO;
+import org.zoxweb.shared.security.shiro.ShiroPermission;
+import org.zoxweb.shared.security.shiro.ShiroRole;
 import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
@@ -89,7 +89,7 @@ public class SetupTool
 		apiSecurityManager.login(subjectID, password, domainID, appID, true);
 		
 		if(log.isEnabled()) log.getLogger().info("USER ID********************************:" + ShiroUtil.subjectUserID());
-		ShiroAssociationRuleDAO sard = new ShiroAssociationRuleDAO();
+		ShiroAssociationRule sard = new ShiroAssociationRule();
 		sard.setAssociatedTo(ShiroUtil.subjectUserID());
 		sard.setAssociate(SecurityModel.toSubjectID(domainID, appID, Role.SUPER_ADMIN));
 		sard.setAssociationType(ShiroAssociationType.ROLE_TO_SUBJECT);
@@ -115,15 +115,15 @@ public class SetupTool
 
 //		ShiroRoleDAO superAdminRole = new ShiroRoleDAO(DOMAIN_ID, APP_ID, "super_admin_role", "Super admin role");
 //		
-//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_read_all", "Read all nves", "nventity:read:*")));
-//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_delete_all", "Delete all nves", "nventity:delete:*")));
-//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_update_all", "Update all nves", "nventity:update:*")));
-//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_create_all", "Create all nves", "nventity:create:*")));
-//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermissionDAO(DOMAIN_ID, APP_ID, "nve_move_all", "Move all nves", "nventity:move:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermission(DOMAIN_ID, APP_ID, "nve_read_all", "Read all nves", "nventity:read:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermission(DOMAIN_ID, APP_ID, "nve_delete_all", "Delete all nves", "nventity:delete:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermission(DOMAIN_ID, APP_ID, "nve_update_all", "Update all nves", "nventity:update:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermission(DOMAIN_ID, APP_ID, "nve_create_all", "Create all nves", "nventity:create:*")));
+//		superAdminRole.getPermissions().add(realm.addPermission(new ShiroPermission(DOMAIN_ID, APP_ID, "nve_move_all", "Move all nves", "nventity:move:*")));
 //		realm.addRole(superAdminRole);
 		
 		
-		ShiroRoleDAO superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(domainID, appID);
+		ShiroRole superAdminRole = SecurityModel.Role.SUPER_ADMIN.toRole(domainID, appID);
 		Set<SecurityModel.Permission> exclusion = new HashSet<SecurityModel.Permission>();
 		exclusion.add(SecurityModel.Permission.RESOURCE_READ_PRIVATE);
 		exclusion.add(SecurityModel.Permission.RESOURCE_READ_PUBLIC);
@@ -137,7 +137,7 @@ public class SetupTool
 		{
 			if (!exclusion.contains(permission))
 			{
-				ShiroPermissionDAO permDAO = permission.toPermission(domainID, appID);
+				ShiroPermission permDAO = permission.toPermission(domainID, appID);
 				
 				for (PermissionToken pr: pTokens)
 					permDAO.setPermissionPattern(PPEncoder.SINGLETON.encodePattern(permDAO.getPermissionPattern(), pr, "*"));
@@ -146,13 +146,13 @@ public class SetupTool
 				SecurityModel.Role.addPermission(superAdminRole, permDAO);
 			}
 		}
-		SecurityModel.Role.addPermission(superAdminRole, SecurityModel.toPermission(domainID, appID, "assign_all", "Assign super admin mode", SecurityModel.PERM_ASSIGN + ":*"));
+		SecurityModel.Role.addPermission(superAdminRole, SecurityModel.toPermission(domainID, appID, "assign_all", "Assign super admin mode", SecurityModel.PERM_ASSIGN_PERMISSION + ":*"));
 		
 		apiSecurityManager.addRole(superAdminRole);
 		
 		
-		ShiroRoleDAO userRole = SecurityModel.Role.USER.toRole(domainID, appID);
-		ShiroPermissionDAO permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectID());
+		ShiroRole userRole = SecurityModel.Role.USER.toRole(domainID, appID);
+		ShiroPermission permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectID());
 		
 		SecurityModel.Role.addPermission(userRole, permDAO);
 		permDAO = SecurityModel.Permission.SELF_USER.toPermission(domainID, appID);
@@ -160,7 +160,7 @@ public class SetupTool
 		SecurityModel.Role.addPermission(userRole, permDAO);
 		apiSecurityManager.addRole(userRole);
 	
-//		ShiroRoleDAO resourceRole = SecurityModel.Role.RESOURCE_ROLE.toRole(domainID, appID);
+//		ShiroRole resourceRole = SecurityModel.Role.RESOURCE_ROLE.toRole(domainID, appID);
 //		permDAO = SecurityModel.AppPermission.RESOURCE_READ_PRIVATE.toPermission(domainID, appID);
 //		apiSecurityManager.addPermission(permDAO);
 //		SecurityModel.Role.addPermission(resourceRole, permDAO);
