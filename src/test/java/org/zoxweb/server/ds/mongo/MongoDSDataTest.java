@@ -27,7 +27,7 @@ import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.security.JWT;
 import org.zoxweb.shared.security.JWTHeader;
 import org.zoxweb.shared.security.JWTPayload;
-import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.KeyStoreInfo;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.ResourceManager.Resource;
@@ -65,7 +65,7 @@ public class MongoDSDataTest {
     @BeforeAll
     public static void start()
             throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
-        KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfoDAO.class);
+        KeyStoreInfo ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(KEYSTORE_INFO)), KeyStoreInfo.class);
         KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
                 CryptoConst.KEY_STORE_TYPE,
                 ksid.getKeyStorePassword().toCharArray());

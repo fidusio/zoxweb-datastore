@@ -22,7 +22,7 @@ import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
-import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.KeyStoreInfo;
 import org.zoxweb.shared.security.SubjectAPIKey;
 
 import java.io.File;
@@ -53,7 +53,7 @@ public class MongoDSTest
 			APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), APIConfigInfoDAO.class);
 			
 			// load the Master Key
-			KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), KeyStoreInfoDAO.class);
+			KeyStoreInfo ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(args[index++])), KeyStoreInfo.class);
 			
 			KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(IOUtil.locateFile(ksid.getKeyStore())),
 					CryptoConst.KEY_STORE_TYPE,

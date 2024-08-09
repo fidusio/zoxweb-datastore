@@ -27,7 +27,7 @@ import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
-import org.zoxweb.shared.security.KeyStoreInfoDAO;
+import org.zoxweb.shared.security.KeyStoreInfo;
 import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -195,7 +195,7 @@ public class SetupTool
 		ret.dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, MONGO_CONF)), APIConfigInfoDAO.class);
          
          // load the Master Key
-         KeyStoreInfoDAO ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, KEYSTORE_INFO)), KeyStoreInfoDAO.class);
+         KeyStoreInfo ksid = GSONUtil.fromJSON(IOUtil.inputStreamToString(ApplicationConfigManager.SINGLETON.locateFile(ret.appConfig, KEYSTORE_INFO)), KeyStoreInfo.class);
 
          KeyStore ks = CryptoUtil.loadKeyStore(new FileInputStream(ApplicationConfigManager.locateFile(ksid.getKeyStore())),
          		ksid.getKeyStoreType(),
