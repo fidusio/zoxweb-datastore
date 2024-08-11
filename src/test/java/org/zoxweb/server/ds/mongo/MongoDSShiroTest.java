@@ -369,7 +369,7 @@ public class MongoDSShiroTest
 		userInfo.setFirstName("N/S");
 		userInfo.setLastName("N/S");
 		userID.setUserInfo(userInfo);
-		return appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	

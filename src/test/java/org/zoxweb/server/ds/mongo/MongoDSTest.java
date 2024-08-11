@@ -118,7 +118,7 @@ public class MongoDSTest
 			userInfo.setFirstName("N/S");
 			userInfo.setLastName("N/S");
 			userID.setUserInfo(userInfo);
-			appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
+			appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
 			
 		    
 			Subject currentUser = apiSecurityManager.login(subjectID, password, null, null, false);

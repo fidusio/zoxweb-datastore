@@ -283,7 +283,7 @@ public class SetupTool
 		userInfo.setLastName(lastname);
 		userID.setUserInfo(userInfo);
 		APIAppManager appManager = ResourceManager.lookupResource(Resource.API_APP_MANAGER);
-		return appManager.createUserIDDAO(userID, CryptoConst.UserStatus.ACTIVE, password);
+		return appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
 		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
 	}
 	
