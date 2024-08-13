@@ -308,9 +308,9 @@ public class HibernateDataStore
             nve.setReferenceID(UUID.randomUUID().toString());
         }
         
-        if (nve.getGlobalID() == null)
+        if (nve.getGUID() == null)
         {
-        	 nve.setGlobalID(UUID.randomUUID().toString());
+        	 nve.setGUID(UUID.randomUUID().toString());
         }
 
         try 

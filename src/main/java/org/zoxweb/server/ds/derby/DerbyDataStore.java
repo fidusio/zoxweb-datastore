@@ -647,11 +647,11 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       createTable((NVConfigEntity) nve.getNVConfig());
       con = connect();
       MetaUtil.initTimeStamp(nve);
-      if(SharedStringUtil.isEmpty(nve.getGlobalID()))
+      if(SharedStringUtil.isEmpty(nve.getGUID()))
       {
-        nve.setGlobalID(UUID.randomUUID().toString());
+        nve.setGUID(UUID.randomUUID().toString());
       }
-      else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
+      else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID()))
       {
         // already exit we must update
         //if(log.isEnabled()) log.getLogger().info("invoke update for " + nve.getGlobalID());
@@ -800,7 +800,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     }
 
     return delete((NVConfigEntity) nve.getNVConfig(),
-            new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGlobalID(), MetaToken.GLOBAL_ID));
+            new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGUID(), MetaToken.GLOBAL_ID));
   }
 
   @Override
@@ -861,7 +861,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     try {
       createTable((NVConfigEntity) nve.getNVConfig());
       con = connect();
-      if(SharedStringUtil.isEmpty(nve.getGlobalID()) || !isRefCreated(con, nve.getNVConfig().getName(), nve.getGlobalID()))
+      if(SharedStringUtil.isEmpty(nve.getGUID()) || !isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID()))
       {
         return innerInsert(con, nve);
       }
@@ -881,7 +881,8 @@ public class DerbyDataStore implements APIDataStore<Connection> {
           DerbyDBMeta.toDerbyValue(values, nvb, true);
         }
       }
-      String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE GLOBAL_ID='" + nve.getGlobalID() + "'";
+
+      String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE " + MetaToken.GLOBAL_ID.name() + "='" + nve.getGUID() + "'";
       //if(log.isEnabled()) log.getLogger().info(updateStatement);
       stmt = con.prepareStatement(updateStatement);
       int index = 0;

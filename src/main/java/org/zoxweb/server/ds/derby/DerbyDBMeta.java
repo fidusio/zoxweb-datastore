@@ -96,7 +96,7 @@ public class DerbyDBMeta {
     public static String toNVEntityDBToken(NVEntity nve)
     {
         if (nve != null)
-            return nve.getNVConfig().getMetaType().getName() + ":" + nve.getGlobalID();
+            return nve.getNVConfig().getMetaType().getName() + ":" + nve.getGUID();
         else
             return null;
     }
@@ -151,7 +151,7 @@ public class DerbyDBMeta {
         }
         else if (value instanceof NVEntity)
         {
-            sb.append("'" + ((NVEntity) value).getNVConfig().getName() + ":" + ((NVEntity) value).getGlobalID());
+            sb.append("'" + ((NVEntity) value).getNVConfig().getName() + ":" + ((NVEntity) value).getGUID());
         }
     }
 

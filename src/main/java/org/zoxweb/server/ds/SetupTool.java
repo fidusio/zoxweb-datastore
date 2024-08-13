@@ -79,7 +79,7 @@ public class SetupTool
 		apiSecurityManager.login(subjectID, password, null, null, false);
 		
 		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
-		if(log.isEnabled()) log.getLogger().info("App created:" + aid.getAppGID());
+		if(log.isEnabled()) log.getLogger().info("App created:" + aid.getAppGUID());
 		apiSecurityManager.logout();
 	}
 	

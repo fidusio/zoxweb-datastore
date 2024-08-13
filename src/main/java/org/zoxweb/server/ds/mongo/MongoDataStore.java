@@ -1357,9 +1357,9 @@ public class MongoDataStore
 			nve.setReferenceID(ObjectId.get().toHexString());
 		}
 
-		if (nve.getGlobalID() == null)
+		if (nve.getGUID() == null)
 		{
-			nve.setGlobalID(UUID.randomUUID().toString());
+			nve.setGUID(UUID.randomUUID().toString());
 		}
 
 		if (nve instanceof TimeStampInterface)
@@ -1978,9 +1978,9 @@ public class MongoDataStore
 				return insert(nve);
 			}
 			
-			if(nve.getGlobalID() == null)
+			if(nve.getGUID() == null)
 			{
-				nve.setGlobalID(UUID.randomUUID().toString());
+				nve.setGUID(UUID.randomUUID().toString());
 			}
 			
 			DBCollection collection = connect().getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
