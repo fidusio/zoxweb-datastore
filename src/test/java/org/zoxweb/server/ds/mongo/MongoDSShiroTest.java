@@ -226,10 +226,10 @@ public class MongoDSShiroTest
 		String pwd = "T1stpwd!";
 		apiSecurityManager.logout();
 		try {
-			String adminUserID = createUser(admin, pwd).getUserID();
+			String adminUserID = createUser(admin, pwd).getSubjectID();
 		
 		
-			String spUserID = createUser(sp, pwd).getUserID();//apiSecurityManager.currentUserID();
+			String spUserID = createUser(sp, pwd).getSubjectID();//apiSecurityManager.currentUserID();
 			
 			
 			apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, DOMAIN_ID, APP_ID, true);
@@ -346,7 +346,7 @@ public class MongoDSShiroTest
         deviceDAO.setVersion("10");
 
         AppDeviceDAO appDeviceDAO = new AppDeviceDAO();
-        appDeviceDAO.setAppGID(appIDDAO.getAppGID());
+        appDeviceDAO.setAppGUID(appIDDAO.getAppGUID());
         appDeviceDAO.setDevice(deviceDAO);
         if (apiKey != null)
         	appDeviceDAO.setSubjectID(apiKey);
@@ -396,7 +396,7 @@ public class MongoDSShiroTest
 		apiSecurityManager.login(SUPER_ADMIN, SUPER_PASSWORD, null, null, false);
 		
 		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
-		log.info("App created:" + aid.getAppGID());
+		log.info("App created:" + aid.getAppGUID());
 		apiSecurityManager.logout();
 	}
 	

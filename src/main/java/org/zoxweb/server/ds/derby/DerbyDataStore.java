@@ -800,7 +800,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     }
 
     return delete((NVConfigEntity) nve.getNVConfig(),
-            new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGUID(), MetaToken.GLOBAL_ID));
+            new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGUID(), MetaToken.GUID));
   }
 
   @Override
@@ -882,7 +882,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         }
       }
 
-      String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE " + MetaToken.GLOBAL_ID.name() + "='" + nve.getGUID() + "'";
+      String updateStatement = "UPDATE " + nve.getNVConfig().getName() + " set " + values.toString() + " WHERE " + MetaToken.GUID.name() + "='" + nve.getGUID() + "'";
       //if(log.isEnabled()) log.getLogger().info(updateStatement);
       stmt = con.prepareStatement(updateStatement);
       int index = 0;

@@ -20,7 +20,7 @@ import java.util.*;
 public class DerbyDBMeta {
     private DerbyDBMeta(){}
     public static final Set<String> META_INSERT_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName()}));
-    public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GLOBAL_ID.getName()}));
+    public static final Set<String> META_UPDATE_EXCLUSION = new HashSet<String>(Arrays.asList(new String[] {MetaToken.REFERENCE_ID.getName(), MetaToken.GUID.getName()}));
     public static final LogWrapper log = new LogWrapper(DerbyDBMeta.class).setEnabled(false);
 
 
@@ -321,13 +321,13 @@ public class DerbyDBMeta {
         }
         else if (nvcJavaClass == String.class)
         {
-            if (nvc.getName().equals(MetaToken.GLOBAL_ID.getName()))
+            if (nvc.getName().equals(MetaToken.GUID.getName()))
             {
                 ddt = DerbyDT.GLOBAL_ID;
             }
-            else if (nvc.getName().equals(MetaToken.USER_ID.getName()))
+            else if (nvc.getName().equals(MetaToken.SUBJECT_GUID.getName()))
             {
-                ddt = DerbyDT.USER_ID;
+                ddt = DerbyDT.SUBJECT_GUID;
             }
             else if (nvc.getName().equals(MetaToken.ACCOUNT_ID.getName()))
             {

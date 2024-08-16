@@ -1,10 +1,10 @@
 package org.zoxweb.server.ds.derby;
 
 
-import java.sql.*;
-import java.util.Date;
-
 import org.zoxweb.shared.util.*;
+
+import java.sql.Types;
+import java.util.Date;
 
 
 public enum DerbyDT
@@ -26,7 +26,7 @@ public enum DerbyDT
   REMOTE_REFERENCE("VARCHAR(512)", Types.LONGNVARCHAR,null, null),
   STRING_LIST("LONG VARCHAR", Types.LONGNVARCHAR, null, NVStringList.class),
   TIMESTAMP("BIGINT", Types.BIGINT, Date.class, NVLong.class),
-  USER_ID("VARCHAR(64)", Types.VARCHAR, String.class, null),
+  SUBJECT_GUID("VARCHAR(64)", Types.VARCHAR, String.class, null),
   SUBJECT_ID("VARCHAR(256)", Types.VARCHAR, String.class, null),
   NUMBER("VARCHAR(256)", Types.NUMERIC, Number.class, NVNumber.class),
 

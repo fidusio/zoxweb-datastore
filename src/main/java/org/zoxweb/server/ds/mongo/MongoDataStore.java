@@ -276,7 +276,7 @@ public class MongoDataStore
 		
 		if (container != null && (ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT_MASK)))
 		{
-			configInfo.getKeyMaker().createNVEntityKey(this, container, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), container.getUserID()));
+			configInfo.getKeyMaker().createNVEntityKey(this, container, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), container.getSubjectGUID()));
 			value = configInfo.getAPISecurityManager().encryptValue(this, container, null, nvp, null);
 		}
 		
@@ -517,7 +517,7 @@ public class MongoDataStore
 		
 		// for encryption support we must set the referenced id and user id prehand
 		updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.REFERENCE_ID.getName()), nve.lookup(MetaToken.REFERENCE_ID.getName()));
-		updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.USER_ID.getName()), nve.lookup(MetaToken.USER_ID.getName()));
+		updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.SUBJECT_GUID.getName()), nve.lookup(MetaToken.SUBJECT_GUID.getName()));
 		//updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.DOMAIN_ID.getName()), nve.lookup(MetaToken.DOMAIN_ID.getName()));
 		
 		for (NVConfig nvc : nvce.getAttributes())
@@ -1371,7 +1371,7 @@ public class MongoDataStore
 		{
 			if (ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT_MASK))
 			{
-				configInfo.getKeyMaker().createNVEntityKey(this, nve, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), nve.getUserID()));
+				configInfo.getKeyMaker().createNVEntityKey(this, nve, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), nve.getSubjectGUID()));
 			}
 			
 			NVBase<?> nvb = nve.lookup(nvc.getName());
