@@ -106,6 +106,7 @@ public class MongoDataStore
 	//private APISecurityManager<Subject> apiSecurityManager;
 	
 	//private LockQueue updateLock = new LockQueue(5);
+	private final static HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
     /**
      * Contains reference ID, account ID, and user ID.
@@ -113,18 +114,27 @@ public class MongoDataStore
 	public enum ReservedID 
 		implements GetNameValue<String>
 	{
-		REFERENCE_ID(MetaToken.REFERENCE_ID .getName(), "_id"),
-//		ACCOUNT_ID("account_id", "_account_id"),
-		USER_ID("user_id", "_user_id")
+		REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
+//		SUBJECT_GUID(MetaToken.Subject_GUID),
+		SUBJECT_GUID(MetaToken.SUBJECT_GUID),
+		GUID(MetaToken.GUID)
 		;
 
 		private final String name;
 		private final String value;
-		
+
+
+		ReservedID(GetName gnv)
+		{
+			this(gnv.getName() , gnv.getName());
+		}
+
+
 		ReservedID(String name, String value)
 		{
 			this.name = name;
 			this.value = value;
+			reservedIDMap.put(name, this);
 		}
 		
 		@Override
@@ -138,18 +148,14 @@ public class MongoDataStore
 		{
 			return value;
 		}
-		
+
+		public static ReservedID lookupByName(GetName gn)
+		{
+			return reservedIDMap.get(gn.getName());
+		}
 		public static ReservedID lookupByName(String name)
 		{
-			for (ReservedID ri : ReservedID.values())
-			{
-				if (ri.getName().equals(name))
-                {
-                    return ri;
-                }
-			}
-			
-			return null;
+			return reservedIDMap.get(name);
 		}
 
 		public static String map(NVConfig nvc, String name)
@@ -227,7 +233,7 @@ public class MongoDataStore
 					try 
 					{
 						mongoDB = newConnection();
-						mongoClient = (MongoClient) mongoDB.getMongoClient();
+						mongoClient =  mongoDB.getMongoClient();
 					}
 					catch (MongoException e)
 					{
@@ -277,7 +283,7 @@ public class MongoDataStore
 		if (container != null && (ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT_MASK)))
 		{
 			configInfo.getKeyMaker().createNVEntityKey(this, container, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), container.getSubjectGUID()));
-			value = configInfo.getAPISecurityManager().encryptValue(this, container, null, nvp, null);
+			value = configInfo.getSecurityController().encryptValue(this, container, null, nvp, null);
 		}
 		
 		db.append(MetaToken.NAME.getName(), nvp.getName());
@@ -508,21 +514,23 @@ public class MongoDataStore
 	 * @throws IllegalAccessException
 	 */
 	@SuppressWarnings("unchecked")
-	public <V extends NVEntity> V fromDB(String userID, DB db, BasicDBObject dbObject, Class<? extends NVEntity> clazz) 
+	public <V extends NVEntity> V fromDB(String subjectGUID, DB db, BasicDBObject dbObject, Class<? extends NVEntity> clazz)
 			throws InstantiationException, IllegalAccessException
 	{
 		NVEntity nve = clazz.newInstance();
 		NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
 		
 		
-		// for encryption support we must set the referenced id and user id prehand
-		updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.REFERENCE_ID.getName()), nve.lookup(MetaToken.REFERENCE_ID.getName()));
-		updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.SUBJECT_GUID.getName()), nve.lookup(MetaToken.SUBJECT_GUID.getName()));
-		//updateMappedValue(userID, db, dbObject, nve, nvce.lookup(MetaToken.DOMAIN_ID.getName()), nve.lookup(MetaToken.DOMAIN_ID.getName()));
+		// for encryption support we must set the referenced id and user id pre-hand
+//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.REFERENCE_ID.getName()), nve.lookup(MetaToken.REFERENCE_ID.getName()));
+//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.GUID.getName()), nve.lookup(MetaToken.GUID.getName()));
+//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.SUBJECT_GUID.getName()), nve.lookup(MetaToken.SUBJECT_GUID.getName()));
+
 		
 		for (NVConfig nvc : nvce.getAttributes())
 		{
-			updateMappedValue(userID, db, dbObject, nve, nvc, nve.lookup(nvc.getName()));
+			//if (ReservedID.lookupByName(nvc) == null)
+				updateMappedValue(subjectGUID, db, dbObject, nve, nvc, nve.lookup(nvc.getName()));
 		}
 		
 		
@@ -539,7 +547,7 @@ public class MongoDataStore
 	 * @throws IllegalAccessException
 	 */
 	@SuppressWarnings("unchecked")
-	private void updateMappedValue(String userID, DB db, BasicDBObject dbObject, NVEntity container, NVConfig nvc, NVBase<?> nvb) 
+	private void updateMappedValue(String subjectGUID, DB db, BasicDBObject dbObject, NVEntity container, NVConfig nvc, NVBase<?> nvb)
 			throws InstantiationException, IllegalAccessException
 	{
 		// This issue must be investigated further, seems to be object reference is null.
@@ -552,47 +560,38 @@ public class MongoDataStore
 		Class<?> clazz = nvc.getMetaType();
 		// step 2 check if the parameter name is reference_id
 		// NB: this procedure must be set up at the start of the function
-		if (nvc.isTypeReferenceID() && clazz == String.class) 
-		{
-			//ReservedID ri = ReservedID.lookupByName(nvc.getName());
-			
-			String mappedName = ReservedID.map(nvc, nvc.getName());
-			if (mappedName != null)
-			{
-				ObjectId oi = dbObject.getObjectId(mappedName);
-				if (oi != null)
-				{
-					((NVPair) nvb).setValue(oi.toHexString());
-					return;
-				}
-			}
-			
-//			if (ri != null)
+//		if (nvc.isTypeReferenceID() && clazz == String.class)
+//		{
+//			//ReservedID ri = ReservedID.lookupByName(nvc.getName());
+//
+//			String mappedName = ReservedID.map(nvc, nvc.getName());
+//			if (mappedName != null)
 //			{
-//				ObjectId oi = null;
-//				switch (ri)
+//				ObjectId oi = dbObject.getObjectId(mappedName);
+//				if (oi != null)
 //				{
-//					case REFERENCE_ID:
-//								
-//						oi = dbObject.getObjectId(
-//								ri.getValue());
-//						if (oi != null)
-//						{
-//							((NVPair) nvb).setValue(oi.toHexString()); 
-//						}
-//					
-//						return;
-//					case USER_ID:
-//					case ACCOUNT_ID:
-//						 // this case we user the name of the object
-//						oi = dbObject.getObjectId(ri.getValue());
-//						if (oi != null)
-//						{
-//							((NVPair) nvb).setValue(oi.toHexString()); 
-//						}
-//						return;
-//				}	
-//			}			
+//					((NVPair) nvb).setValue(oi.toHexString());
+//					return;
+//				}
+//			}
+//		}
+
+
+		ReservedID resID = ReservedID.lookupByName(nvc);
+		if (resID != null && clazz == String.class)
+		{
+			if (container.lookupValue(nvc) != null)
+				return;
+
+			Object value = dbObject.get(resID.getValue());
+			if (value instanceof UUID)
+				((NVPair) nvb).setValue(value.toString());
+			else if (value instanceof ObjectId)
+				((NVPair) nvb).setValue(((ObjectId) value).toHexString());
+			else if (value instanceof String)
+				((NVPair) nvb).setValue((String) value);
+
+			return;
 		}
 		
 		
@@ -722,7 +721,7 @@ public class MongoDataStore
 					{
 						for (int i = 0; i < list.size(); i++)
 						{
-							((NVGetNameValueList)nvb).add(toNVPair(userID, container, list.get(i)));
+							((NVGetNameValueList)nvb).add(toNVPair(subjectGUID, container, list.get(i)));
 						}
 					}
 					((NVGetNameValueList)nvb).setFixed(isFixed);
@@ -735,7 +734,7 @@ public class MongoDataStore
 					{
 						for (int i = 0; i < list.size(); i++)
 						{
-							arrayValues.add(toNVPair(userID, container, list.get(i)));
+							arrayValues.add(toNVPair(subjectGUID, container, list.get(i)));
 						}
 					}
 					
@@ -760,7 +759,7 @@ public class MongoDataStore
 						// if the actual object was delete from the collection
 						// by still referenced by a list or set
 						if (tempDBObject.getContent() != null)
-						((ArrayValues<NVEntity>) nvb).add(fromDB(userID, db, tempDBObject.getContent(), (Class<? extends NVEntity>) tempDBObject.getNVConfigEntity().getMetaTypeBase()));
+						((ArrayValues<NVEntity>) nvb).add(fromDB(subjectGUID, db, tempDBObject.getContent(), (Class<? extends NVEntity>) tempDBObject.getNVConfigEntity().getMetaTypeBase()));
 					}
 					
 					
@@ -786,7 +785,7 @@ public class MongoDataStore
 			{
 				try 
 				{
-					((NVEntityReference) nvb).setValue(fromDB(userID, db, obj, (Class<? extends NVEntity>) Class.forName((String)className)));
+					((NVEntityReference) nvb).setValue(fromDB(subjectGUID, db, obj, (Class<? extends NVEntity>) Class.forName((String)className)));
 				} catch (ClassNotFoundException e) {
 					e.printStackTrace();
 				}
@@ -795,7 +794,7 @@ public class MongoDataStore
 			MongoDBObjectMeta mdbom = lookupByReferenceID(obj);
 			if (mdbom != null && mdbom.getContent() != null)
 			{
-				((NVEntityReference) nvb).setValue(fromDB(userID, db, mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase()));
+				((NVEntityReference) nvb).setValue(fromDB(subjectGUID, db, mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase()));
 			}
 //			if (!SharedStringUtil.isEmpty(dbObject.getObjectId(nvc.getName()).toHexString()))
 //			{
@@ -818,10 +817,10 @@ public class MongoDataStore
 			Object tempValue = dbObject.get(nvc.getName());
 			if (tempValue instanceof DBObject)
 			{
-				tempValue = fromDB(userID, db, (BasicDBObject) tempValue, EncryptedDAO.class);	
+				tempValue = fromDB(subjectGUID, db, (BasicDBObject) tempValue, EncryptedDAO.class);
 			}
 		
-			((NVPair)nvb).setValue((String)configInfo.getAPISecurityManager().decryptValue(this, container, nvb, tempValue, null));
+			((NVPair)nvb).setValue((String)configInfo.getSecurityController().decryptValue(this, container, nvb, tempValue, null));
 			
 			return;
 		}
@@ -849,7 +848,7 @@ public class MongoDataStore
 		{
 			NVGenericMap nvgm = (NVGenericMap) nvb;
 			DBObject dbNVGM = (DBObject) dbObject.get(nvc.getName());
-			fromNVGenericMap(userID, nvgm, dbNVGM);	
+			fromNVGenericMap(subjectGUID, nvgm, dbNVGM);
 			return;
 			
 		}
@@ -932,7 +931,7 @@ public class MongoDataStore
 				//if(log.isEnabled()) log.getLogger().info("userID:" + userID);
 				try 
 				{
-					value = configInfo.getAPISecurityManager().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
+					value = configInfo.getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
 				}
 				catch (InstantiationException | IllegalAccessException e)
 				{
@@ -1039,7 +1038,7 @@ public class MongoDataStore
 					{
 						subClass = Class.forName(classType);
 					} catch (ClassNotFoundException e) {
-						// TODO Auto-generated catch block
+
 						e.printStackTrace();
 					}
 					if (subClass.isEnum())
@@ -1351,7 +1350,10 @@ public class MongoDataStore
 		BasicDBObject doc = new BasicDBObject();
 		
 		NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
-		configInfo.getAPISecurityManager().associateNVEntityToSubjectUserID(nve, null);
+		// TODO need to revisit
+
+		configInfo.getSecurityController().associateNVEntityToSubjectGUID(nve, null);
+
 		if (nve.getReferenceID() == null)
 		{
 			nve.setReferenceID(ObjectId.get().toHexString());
@@ -1511,10 +1513,10 @@ public class MongoDataStore
 			{	
 				//if (nvc.getMetaTypeBase() == String.class)
 				{
-					Object tempValue = configInfo.getAPISecurityManager().encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = configInfo.getSecurityController().encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
-						doc.append(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, false, false));
+						doc.append(nvc.getName(),toDBObject((EncryptedDAO)tempValue, true, false, false));
 					}
 					else
 					{
@@ -1971,7 +1973,8 @@ public class MongoDataStore
 			{
 				updateLock.lock();
 			}
-			configInfo.getAPISecurityManager().associateNVEntityToSubjectUserID(nve, null);
+			// TODO revisit logic
+			configInfo.getSecurityController().associateNVEntityToSubjectGUID(nve, null);
 			
 			if (nve.lookupValue(MetaToken.REFERENCE_ID) == null)
 			{
@@ -2036,13 +2039,13 @@ public class MongoDataStore
 					
 					if (exclusionSet.size() > 0)
 					{
-					for (NVConfig nvc : nvce.getAttributes())
-					{
-						if (!exclusionSet.contains(nvc.getName()))
+						for (NVConfig nvc : nvce.getAttributes())
 						{
-							paramsToUpdate.add(nvc);
+							if (!exclusionSet.contains(nvc.getName()))
+							{
+								paramsToUpdate.add(nvc);
+							}
 						}
-					}
 					}
 				}
 			}
@@ -2160,7 +2163,7 @@ public class MongoDataStore
 				}
 				else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName()))
 				{
-					Object tempValue = configInfo.getAPISecurityManager().encryptValue(this, nve, nvc, nvb, null);
+					Object tempValue = configInfo.getSecurityController().encryptValue(this, nve, nvc, nvb, null);
 					if (tempValue instanceof EncryptedDAO)
 					{
 						updatedDoc.put(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, sync, updateReferenceOnly));
@@ -3000,8 +3003,8 @@ public class MongoDataStore
 	public DB newConnection() throws APIException
 	{
 		try
-		{	
-		    return (DB) new MongoClient(getDBAddress(configInfo)).getDB(SharedUtil.lookupValue(getAPIConfigInfo().getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName())));
+		{
+		    return new MongoClient(getDBAddress(configInfo)).getDB(getAPIConfigInfo().getProperties().getValue(MongoDataStoreCreator.MongoParam.DB_NAME));
 		}
 		catch(Exception e)
 		{
@@ -3013,8 +3016,8 @@ public class MongoDataStore
 
 	private static ServerAddress getDBAddress(APIConfigInfo aci) throws NumberFormatException, UnknownHostException
 	{
-		return new ServerAddress(SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.HOST.getName())), 
-				Integer.valueOf(SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.PORT.getName())))); 
+		return new ServerAddress((String)aci.getProperties().getValue(MongoDataStoreCreator.MongoParam.HOST),
+				aci.getProperties().getValue(MongoDataStoreCreator.MongoParam.PORT));
 						//SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName())));
 	}
 
@@ -3192,19 +3195,19 @@ public class MongoDataStore
 			{	
 				List<String> fieldNames = new ArrayList<String>();
 				fieldNames.add(ReservedID.REFERENCE_ID.getValue());
-				fieldNames.add("_user_id");
-				
+				fieldNames.add(MetaToken.GUID.getName());
+				fieldNames.add(MetaToken.SUBJECT_GUID.getName());
 				cur = collection.find(query, formatSearchFields(fieldNames));
 	
 				while (cur.hasNext())
 				{
 					DBObject dbObject = cur.next();
-					ObjectId refID = (ObjectId) dbObject.get(ReservedID.REFERENCE_ID.getValue());
-					ObjectId userID = (ObjectId) dbObject.get("_user_id");
-					
-					if (refID != null && userID != null && configInfo.getAPISecurityManager().isNVEntityAccessible(refID.toHexString(), userID.toHexString(), CRUD.READ))
+					String guid = (String)dbObject.get(MetaToken.GUID.getName());
+					String subjectGUID = (String)dbObject.get(MetaToken.SUBJECT_GUID.getName());
+					// check if the user has access to the object
+					if (guid != null && subjectGUID != null && configInfo.getSecurityController().isNVEntityAccessible(guid,subjectGUID, CRUD.READ))
 					{
-						list.add((T) refID);
+						list.add((T) guid);
 					}
 				}
 			}
@@ -3302,32 +3305,13 @@ public class MongoDataStore
 		return batch;
 	}
 
-//	public APISecurityManager<Subject> getAPISecurityManager()
-//	{
-//		return apiSecurityManager;
-//	}
-//
-//	public void setAPISecurityManager(APISecurityManager<Subject> securityManagerAPI)
-//	{
-//		this.apiSecurityManager = securityManagerAPI;
-//	}
-//
-//	public KeyMaker getKeyMaker()
-//	{
-//		return keyMaker;
-//	}
-//
-//	public void setKeyMaker(KeyMaker keyMaker) 
-//	{
-//		this.keyMaker = keyMaker;
-//	}
+
 
 	@Override
 	public LongSequence createSequence(String sequenceName, long startValue, long defaultIncrement)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		sequenceName = LowerCaseFilter.SINGLETON.validate(sequenceName);
-		// TODO Auto-generated method stub
 		SharedUtil.checkIfNulls("Null sequence name", sequenceName);
 		if (startValue < 0)
 			throw new IllegalArgumentException("Sequence start value can't be negative:" + startValue);
@@ -3370,7 +3354,6 @@ public class MongoDataStore
 	public long nextSequenceValue(String sequenceName)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		// TODO Auto-generated method stub
 		return localNextSequenceValue(sequenceName, 0, true);
 	}
 
@@ -3409,7 +3392,6 @@ public class MongoDataStore
 	public LongSequence createSequence(String sequenceName)
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
-		// TODO Auto-generated method stub
 		return createSequence(sequenceName, 0, 1);
 	}
 
@@ -3439,7 +3421,6 @@ public class MongoDataStore
 	{
 		try
 		{
-		// TODO Auto-generated method stub
 			return ObjectId.isValid(refID);
 		}
 		catch(Exception e)

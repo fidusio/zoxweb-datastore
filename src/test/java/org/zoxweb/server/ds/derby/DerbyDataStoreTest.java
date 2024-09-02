@@ -65,7 +65,7 @@ public class DerbyDataStoreTest {
     public static void setUp() {
 //    	try
     	{
-    	    NVEntity.GLOBAL_ID_AS_REF_ID = true;
+    	    //NVEntity.GLOBAL_ID_AS_REF_ID = true;
     		APIConfigInfo configInfo = new APIConfigInfoDAO();
     		configInfo.getProperties().add("driver", CLIENT_DRIVER);
     		configInfo.getProperties().add("url", CLIENT_URL);

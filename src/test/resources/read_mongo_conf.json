@@ -6,18 +6,24 @@
     "DOCUMENT_STORAGE"
   ],
   "api_version": "3.6.2",
-  "configuration_parameters": [
-    {
-      "name": "db_name",
-      "value": "xlogistx"
-    },
-    {
-      "name": "host",
-      "value": "localhost"
-    },
-    {
-      "name": "port",
-      "value": "27017"
-    }
-  ]
+//  "configuration_parameters": [
+//    {
+//      "name": "db_name",
+//      "value": "xlogistx"
+//    },
+//    {
+//      "name": "host",
+//      "value": "localhost"
+//    },
+//    {
+//      "name": "port",
+//      "value": "27017"
+//    }
+//  ]
+  "properties":
+  {
+    "db_name" : "xlogistx_test",
+    "host" : "localhost",
+    "port" : 27017
+  }
 }

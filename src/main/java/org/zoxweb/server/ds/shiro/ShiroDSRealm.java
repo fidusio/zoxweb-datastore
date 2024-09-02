@@ -20,8 +20,7 @@ import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
-import org.zoxweb.shared.security.AccessException;
-import org.zoxweb.shared.security.SubjectIdentifier;
+import org.zoxweb.shared.security.*;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
 import org.zoxweb.shared.security.shiro.*;
@@ -30,7 +29,7 @@ import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.ResourceManager.Resource;
 
 import java.util.*;
-
+@Deprecated
 public class ShiroDSRealm
 	extends ShiroBaseRealm
 	implements SetName
@@ -257,7 +256,7 @@ public class ShiroDSRealm
 //	}
 
 
-	@Override
+
 	public void addShiroRule(ShiroAssociationRule sard)
 	{
 		SharedUtil.checkIfNulls("Association parameters can't be null", sard, sard.getName(), sard.getAssociationType(), sard.getAssociatedTo()/*, sard.getAssociate()*/);
@@ -388,7 +387,7 @@ public class ShiroDSRealm
 		
 	}
 
-	@Override
+
 	public void deleteShiroRule(ShiroAssociationRule sard)
 	{
 		if (sard.getReferenceID() != null)
@@ -408,14 +407,14 @@ public class ShiroDSRealm
 		
 	}
 
-	@Override
+
 	public void updateShiroRule(ShiroAssociationRule sard)
 	{
 		// TODO Auto-generated method stub
 		
 	}
 
-	@Override
+
 	public List<ShiroAssociationRule> search(QueryMarker... queryCriteria)
 	{
 		if (queryCriteria == null || queryCriteria.length == 0)
@@ -438,19 +437,6 @@ public class ShiroDSRealm
 	}
 
 
-	/**
-	 * Add a subject
-	 *
-	 * @param subject
-	 * @return ShiroSubjectDAO
-	 * @throws NullPointerException
-	 * @throws IllegalArgumentException
-	 * @throws AccessException
-	 */
-	@Override
-	public ShiroSubject addSubject(ShiroSubject subject) throws NullPointerException, IllegalArgumentException, AccessException {
-		return null;
-	}
 
 	/**
 	 * Add a subject
@@ -477,7 +463,7 @@ public class ShiroDSRealm
 	 * @throws AccessException
 	 */
 	@Override
-	public ShiroSubject deleteSubject(ShiroSubject subject, boolean withRoles) throws NullPointerException, IllegalArgumentException, AccessException {
+	public SubjectIdentifier deleteSubject(SubjectIdentifier subject, boolean withRoles) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
@@ -491,7 +477,7 @@ public class ShiroDSRealm
 	 * @throws AccessException
 	 */
 	@Override
-	public ShiroSubject updateSubject(ShiroSubject subject) throws NullPointerException, IllegalArgumentException, AccessException {
+	public SubjectIdentifier updateSubject(SubjectIdentifier subject) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
@@ -539,6 +525,18 @@ public class ShiroDSRealm
 	}
 
 	/**
+	 * Delete a shiro role
+	 *
+	 * @param shiroRole to be deleted
+	 * @return the deleted shiro role
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public ShiroRole deleteRole(ShiroRole shiroRole) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
 	 * Adds a role group.
 	 *
 	 * @param rolegroup
@@ -567,6 +565,65 @@ public class ShiroDSRealm
 	}
 
 	/**
+	 * Add a shiro authorization info
+	 *
+	 * @param shiroAuthzInfo to added
+	 * @return the added shiro authorization info
+	 * @throws AccessSecurityException if no permitted
+	 */
+	@Override
+	public ShiroAuthzInfo addShiroAuthzInfo(ShiroAuthzInfo shiroAuthzInfo) throws AccessSecurityException {
+		return null;
+	}
+
+	@Override
+	public Set<ShiroAuthzInfo> lookupSubjectAuthzInfo(String subjectIdentifier) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Update a shiro authorization info
+	 *
+	 * @param shiroAuthzInfo to updated
+	 * @return the updated shiro authorization info
+	 * @throws AccessSecurityException if no permitted
+	 */
+	@Override
+	public ShiroAuthzInfo updateShiroAuthzInfo(ShiroAuthzInfo shiroAuthzInfo) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Delete a shiro authorization info
+	 *
+	 * @param shiroAuthzInfo to delted
+	 * @return the deleted shiro authorization info
+	 * @throws AccessSecurityException if no permitted
+	 */
+	@Override
+	public ShiroAuthzInfo deleteShiroAuthzInfo(ShiroAuthzInfo shiroAuthzInfo) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * @return the key maker associated with shiro realm controller
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public KeyMaker getKeyMaker() throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * @param keyMaker to be set for the shiro realm controller
+	 * @throws AccessSecurityException if no permitted
+	 */
+	@Override
+	public void setKeyMaker(KeyMaker keyMaker) throws AccessSecurityException {
+
+	}
+
+	/**
 	 * Update a role group.
 	 *
 	 * @param rolegroup
@@ -577,6 +634,125 @@ public class ShiroDSRealm
 	 */
 	@Override
 	public ShiroRoleGroup updateRoleGroup(ShiroRoleGroup rolegroup) throws NullPointerException, IllegalArgumentException, AccessException {
+		return null;
+	}
+
+	/**
+	 * Create a subject identifier
+	 *
+	 * @param subjectID   the email or uuid identifier of the subject
+	 * @param subjectType the type of the subject
+	 * @param credential  subject credentials
+	 * @return the created subject identifier
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public SubjectIdentifier addSubjectIdentifier(String subjectID, BaseSubjectID.SubjectType subjectType, CredentialInfo credential) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Create a subject identifier
+	 *
+	 * @param subjectID   the email or uuid identifier of the subject
+	 * @param subjectType the type of the subject
+	 * @return the created subject identifier
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public SubjectIdentifier addSubjectIdentifier(String subjectID, BaseSubjectID.SubjectType subjectType) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Create a subject identifier
+	 *
+	 * @param subjectIdentifier the subject identifier
+	 * @return the created subject identifier
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public SubjectIdentifier addSubjectIdentifier(SubjectIdentifier subjectIdentifier) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Delete a user identifier use with extreme care
+	 *
+	 * @param subjectID to be deleted
+	 * @return the deleted subject identifier
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public SubjectIdentifier deleteSubjectIdentifier(String subjectID) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Lookup subject credential info
+	 *
+	 * @param subjectID      the subject identifier
+	 * @param credentialType the
+	 * @return the subject credential
+	 */
+	@Override
+	public <C> C lookupCredential(String subjectID, CredentialInfo.CredentialType credentialType) {
+		return null;
+	}
+
+	/**
+	 * Add a credential object for the specified subject
+	 *
+	 * @param subjectID than owns the credentials
+	 * @param ci        the credential info object ie: password, public key, token ...
+	 * @return the validated credential info object
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public CredentialInfo addCredentialInfo(String subjectID, CredentialInfo ci) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Add a credential object for the specified subject
+	 *
+	 * @param subjectID than owns the credentials
+	 * @param password  the credential info object ie: password, public key, token ...
+	 * @return the validated credential info object
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public CredentialInfo addCredentialInfo(String subjectID, String password) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Add a credential object for the specified subject
+	 *
+	 * @param subjectID than owns the credentials
+	 * @param password  the credential info object ie: password, public key, token ...
+	 * @return the validated credential info object
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public CredentialInfo addCredentialInfo(String subjectID, byte[] password) throws AccessSecurityException {
+		return null;
+	}
+
+	/**
+	 * Delete a credential info
+	 *
+	 * @param ci to be deleted
+	 * @return the deleted credential info
+	 * @throws AccessSecurityException if not permitted
+	 */
+	@Override
+	public CredentialInfo deleteCredentialInfo(CredentialInfo ci) throws AccessSecurityException {
+		return null;
+	}
+
+	@Override
+	public CredentialInfo updateCredentialInfo(CredentialInfo oldCI, CredentialInfo newCI) throws AccessSecurityException {
 		return null;
 	}
 
@@ -622,34 +798,34 @@ public class ShiroDSRealm
 		return null;
 	}
 
-	@Override
+
 	public PasswordDAO getSubjectPassword(String domainID, String userID)
 	{
 		UserIDCredentialsDAO uicd = lookupUserIDCredentials(userID);
 		return uicd != null ? uicd.getPassword() : null;
 	}
 
-	@Override
+
 	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
-	@Override
+
 	public PasswordDAO setSubjectPassword(String subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
-	@Override
+
 	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
-	@Override
+
 	public PasswordDAO setSubjectPassword(String subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
-	@Override
+
 	public Set<String> getSubjectRoles(String domainID, String userID) {
 		// TODO Auto-generated method stub
 		return  new HashSet<String>();

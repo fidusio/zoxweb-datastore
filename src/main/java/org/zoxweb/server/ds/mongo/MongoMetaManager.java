@@ -37,12 +37,12 @@ import java.util.logging.Logger;
 
 public class MongoMetaManager 
 {
-	private static final transient Logger log = Logger.getLogger(MongoMetaManager.class.getName());
+	private static final Logger log = Logger.getLogger(MongoMetaManager.class.getName());
 
 	/**
 	 * Set hash map to NVConfigEntity mapped values.
 	 */
-	private HashMap<String, Object> map = new HashMap<String, Object>();
+	private final HashMap<String, Object> map = new HashMap<String, Object>();
 	private DBCollection nvConfigEntities = null;
 
 	public enum MetaCollections
@@ -179,9 +179,7 @@ public class MongoMetaManager
 			return null;
 		}
 		
-		MongoDBObjectMeta ret = new MongoDBObjectMeta(nvce);
-		
-		return ret;
+	 	return new MongoDBObjectMeta(nvce);
 	}
 
 	public static BasicDBObject dbMapNVConfigEntity(NVConfigEntity nvce)
@@ -200,7 +198,7 @@ public class MongoMetaManager
 	{
 		Class <?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
 		NVConfigEntity ret = new NVConfigEntityLocal();
-		ret.setName( dbo.getString(MetaToken.NAME.getName()));
+		ret.setName(dbo.getString(MetaToken.NAME.getName()));
 		ret.setDescription(dbo.getString(MetaToken.DESCRIPTION.getName()));
 		ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));
 		ret.setMetaType(clazz);
@@ -221,13 +219,13 @@ public class MongoMetaManager
 			//List<DBObject> list = collection.getIndexInfo();
 			//log.info("List of DBObject Indexes: " + list);
 			//List<String> toIndex = new ArrayList<String>();
-			addNVConfigEntity( collection.getDB(), nvce);			
+			addNVConfigEntity(collection.getDB(), nvce);
 			for (NVConfig nvc : nvce.getAttributes())
 			{
 				
 				if (!nvc.getName().equals(MetaToken.REFERENCE_ID.getName()) && nvc.isUnique() && !nvc.isArray())
 				{
-					createUniqueIndex( collection, nvc.getName());
+					createUniqueIndex(collection, nvc.getName());
 //					toIndex.add( nvc.getName());
 //					
 //					boolean indexToAdd = true;

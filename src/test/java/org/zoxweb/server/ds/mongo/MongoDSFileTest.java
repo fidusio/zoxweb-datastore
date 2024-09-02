@@ -2,9 +2,12 @@ package org.zoxweb.server.ds.mongo;
 
 import io.xlogistx.shiro.APISecurityManagerProvider;
 import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.mgt.ShiroSecurityController;
 import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.junit.jupiter.api.AfterAll;
@@ -47,7 +50,7 @@ public class MongoDSFileTest {
     private static final String DOMAIN_ID = "test.com";
     private static final String APP_ID = "testapp";
 
-    private static APISecurityManager<Subject> apiSecurityManager;
+    private static APISecurityManager<Subject, AuthorizationInfo, PrincipalCollection> apiSecurityManager;
     private static APIDocumentStore<?> documentStore;
 
     @BeforeAll
@@ -64,7 +67,7 @@ public class MongoDSFileTest {
 
         APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(IOUtil.inputStreamToString(IOUtil.locateFile(MongoDSShiroTest.class.getClassLoader(), MONGO_CONF)), APIConfigInfoDAO.class);
         dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-        dsConfig.setAPISecurityManager(apiSecurityManager);
+        dsConfig.setSecurityController(new ShiroSecurityController());
 
         Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:" + SHIRO_INI);
         SecurityManager securityManager = factory.getInstance();

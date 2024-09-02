@@ -2,10 +2,12 @@ package org.zoxweb.server.ds;
 
 import io.xlogistx.shiro.APISecurityManagerProvider;
 import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.mgt.ShiroSecurityController;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -28,6 +30,7 @@ import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfo;
+import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.security.model.PPEncoder;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.security.model.SecurityModel.PermissionToken;
@@ -66,7 +69,8 @@ public class SetupTool
 	private ApplicationConfigDAO appConfig = null; 
 	private APIConfigInfoDAO dsConfig = null;
 	public APIAppManager appManager = null;
-	public APISecurityManager<Subject> apiSecurityManager = null;
+	public APISecurityManager<Subject, AuthorizationInfo, PrincipalCollection> apiSecurityManager = null;
+	public SecurityController securityController = null;
 	
 	private SetupTool()
 	{
@@ -79,7 +83,7 @@ public class SetupTool
 		apiSecurityManager.login(subjectID, password, null, null, false);
 		
 		AppIDDAO aid = appManager.createAppIDDAO(domainID, appID);
-		if(log.isEnabled()) log.getLogger().info("App created:" + aid.getAppGUID());
+		if(log.isEnabled()) log.getLogger().info("App created:" + aid.toCanonicalID());
 		apiSecurityManager.logout();
 	}
 	
@@ -152,7 +156,7 @@ public class SetupTool
 		
 		
 		ShiroRole userRole = SecurityModel.Role.USER.toRole(domainID, appID);
-		ShiroPermission permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectID());
+		ShiroPermission permDAO = apiSecurityManager.lookupPermission(SecurityModel.Permission.SELF.toPermission(domainID, appID).getSubjectGUID());
 		
 		SecurityModel.Role.addPermission(userRole, permDAO);
 		permDAO = SecurityModel.Permission.SELF_USER.toPermission(domainID, appID);
@@ -208,7 +212,8 @@ public class SetupTool
          // create the data store
          ret.dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
          ret.apiSecurityManager = new APISecurityManagerProvider();
-         ret.dsConfig.setAPISecurityManager(ret.apiSecurityManager);
+		 ret.securityController = new ShiroSecurityController();
+         ret.dsConfig.setSecurityController(ret.securityController);
 
 //		Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:" + SHIRO_INI);
 //

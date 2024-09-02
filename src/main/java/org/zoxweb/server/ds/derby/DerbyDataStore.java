@@ -24,14 +24,14 @@ public class DerbyDataStore implements APIDataStore<Connection> {
 
   private volatile APIConfigInfo apiConfig = null;
   private volatile boolean driverLoaded = false;
-  private volatile Set<Connection> connections = new HashSet<Connection>();
+  private final Set<Connection> connections = new HashSet<Connection>();
 
   public static final String CACHE_DATA_TB  = "CACHE_DATA_TB";
-  private Lock lock = new ReentrantLock();
+  private final Lock lock = new ReentrantLock();
 
   public static LogWrapper log = new LogWrapper(DerbyDataStore.class);
-  private volatile Map<String, NVConfigEntity> metaTables = new HashMap<String, NVConfigEntity>();
-  private volatile Map<String, DerbyDBData> ddbdCache= new HashMap<String, DerbyDBData>();
+  private final Map<String, NVConfigEntity> metaTables = new HashMap<String, NVConfigEntity>();
+  private final Map<String, DerbyDBData> ddbdCache= new HashMap<String, DerbyDBData>();
 
 
 
@@ -63,7 +63,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       con = connect();
 //      stmt = con.createStatement();
 //      if (!doesTableExists(CACHE_DATA_TB))
-//      stmt.execute("create table " + CACHE_DATA_TB + " (GLOBAL_ID VARCHAR(64), CANONICAL_ID VARCHAR(1024), DATA_TXT LONG VARCHAR, PRIMARY KEY(GLOBAL_ID))");
+//      stmt.execute("create table " + CACHE_DATA_TB + " (GUID VARCHAR(64), CANONICAL_ID VARCHAR(1024), DATA_TXT LONG VARCHAR, PRIMARY KEY(GUID))");
     }
     catch(Exception e)
     {
@@ -420,7 +420,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       NVConfigEntity nvce = (NVConfigEntity) retType.getNVConfig();
       if(doesTableExists(nvce)) {
         con = connect();
-        StringBuilder select = new StringBuilder("SELECT GLOBAL_ID FROM " + retType.getNVConfig().getName());
+        StringBuilder select = new StringBuilder("SELECT GUID FROM " + retType.getNVConfig().getName());
         if (queryCriteria != null && queryCriteria.length > 0) {
           select.append(" WHERE ");
           select.append(DerbyDBMeta.formatQuery(queryCriteria));
@@ -556,7 +556,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       con = connect();
       stmt = con.createStatement();
       String select = "SELECT * FROM " + retType.getNVConfig().getName() +
-              " WHERE GLOBAL_ID IN(" + SharedUtil.toCanonicalID(',', (Object[])ids)+ ")" ;
+              " WHERE GUID IN(" + SharedUtil.toCanonicalID(',', (Object[])ids)+ ")" ;
       rs = stmt.executeQuery(select);
       while(rs.next())
       {
@@ -866,7 +866,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
         return innerInsert(con, nve);
       }
 
-      // update table table_name set nvb.name = nvb.value ... where global_id = 'nvb.GLOBAL_ID'
+      // update table table_name set nvb.name = nvb.value ... where GUID = 'nvb.GUID'
 
       StringBuilder values = new StringBuilder();
       for(NVBase<?> nvb : nve.getAttributes().values())
@@ -973,7 +973,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     ResultSet rs = null;
     try {
       stmt = con.createStatement();
-      rs = stmt.executeQuery("select GLOBAL_ID from " + tableName + " where GLOBAL_ID='" + globalID + "'");
+      rs = stmt.executeQuery("select GUID from " + tableName + " where GUID='" + globalID + "'");
       if (rs.next()) {
         return true;
       }

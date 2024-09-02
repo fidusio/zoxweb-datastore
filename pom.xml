@@ -114,7 +114,15 @@
 	        <version>${mongo.version}</version>
 	        <scope>provided</scope>
     	</dependency>
-    	
+
+
+        <!-- <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>RELEASE</version>
+            <scope>provided</scope>
+        </dependency>
+    	-->
     	
     	 <dependency>
 	        <groupId>io.xlogistx</groupId>

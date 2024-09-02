@@ -2,11 +2,14 @@ package org.zoxweb.server.ds.mongo;
 
 import io.xlogistx.shiro.APISecurityManagerProvider;
 import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.mgt.ShiroSecurityController;
 import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.Realm;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.Factory;
 import org.zoxweb.server.api.APIAppManagerProvider;
@@ -66,8 +69,8 @@ public class MongoDSTest
 			// load the mongo config file
 			// create the data store
 			dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
-			APISecurityManager<Subject> apiSecurityManager = new APISecurityManagerProvider();
-			dsConfig.setAPISecurityManager(apiSecurityManager);
+			APISecurityManager<Subject, AuthorizationInfo, PrincipalCollection> apiSecurityManager = new APISecurityManagerProvider();
+			dsConfig.setSecurityController(new ShiroSecurityController());
 			
 			
 			

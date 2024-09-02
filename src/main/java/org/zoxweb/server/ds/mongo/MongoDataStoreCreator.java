@@ -15,22 +15,11 @@
  */
 package org.zoxweb.server.ds.mongo;
 
-import java.util.List;
-
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.util.GetNameValue;
 import org.zoxweb.shared.util.NVECRUDMonitor;
+import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.SharedUtil;
-
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIExceptionHandler;
-
-import org.zoxweb.shared.api.APIServiceProviderCreator;
-import org.zoxweb.shared.api.APIServiceType;
-import org.zoxweb.shared.api.APITokenManager;
 
 public class MongoDataStoreCreator 
 	implements APIServiceProviderCreator
@@ -78,11 +67,17 @@ public class MongoDataStoreCreator
 	public APIConfigInfo createEmptyConfigInfo() 
 	{
 		APIConfigInfo configInfo = new APIConfigInfoDAO();
-		
+
+		for(MongoParam mp : MongoParam.values())
+		{	if (mp == MongoParam.PORT)
+				configInfo.getProperties().build(new NVInt(mp.getName(), Integer.parseInt(mp.getValue())));
+			else
+				configInfo.getProperties().build(mp.getName(), mp.getValue());
+		}
+
+
 		@SuppressWarnings("unchecked")
-		List<NVPair> list = (List<NVPair>) SharedUtil.toNVPairs(MongoParam.values());
-		configInfo.setConfigParameters(list);
-		
+
 		APIServiceType[] types = {APIServiceType.DATA_STORAGE, APIServiceType.DOCUMENT_STORAGE};
 		configInfo.setServiceTypes(types);
 		configInfo.setAPITypeName(API_NAME);
@@ -102,11 +97,11 @@ public class MongoDataStoreCreator
 		mongoDS.setAPIConfigInfo(apiConfig);
 		mongoDS.setAPIExceptionHandler(MongoExceptionHandler.SINGLETON);
 		
-		NVPair dcParam = mongoDS.getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE.getName());
+		NVPair dcParam = (NVPair) mongoDS.getAPIConfigInfo().getProperties().get(MongoParam.DATA_CACHE.getName());
 		
 		if (dcParam != null && dcParam.getValue() != null && Boolean.parseBoolean(dcParam.getValue()))
 		{
-			NVPair dcClassNameParam = mongoDS.getAPIConfigInfo().getConfigParameters().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
+			NVPair dcClassNameParam = (NVPair) mongoDS.getAPIConfigInfo().getProperties().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
 			try
 			{
 				mongoDS.setDataCacheMonitor((NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).newInstance());

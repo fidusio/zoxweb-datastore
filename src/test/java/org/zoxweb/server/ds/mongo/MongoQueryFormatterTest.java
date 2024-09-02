@@ -5,7 +5,7 @@ import com.mongodb.DBObject;
 
 import org.junit.jupiter.api.Test;
 import org.zoxweb.shared.data.UserInfoDAO;
-import org.zoxweb.shared.data.UserPreferenceDAO;
+import org.zoxweb.shared.security.SubjectPreference;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.Const.RelationalOperator;
@@ -59,8 +59,8 @@ public class MongoQueryFormatterTest {
         assertNotNull(query.get("last_name"));
         assertNotNull(query.get("_id"));
 
-        query = MongoQueryFormatter.formatQuery(UserPreferenceDAO.NVC_USER_PREFERENCE_DAO,
-                new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", UserPreferenceDAO.Param.APP_GUID.getNVConfig(), MetaToken.REFERENCE_ID),
+        query = MongoQueryFormatter.formatQuery(SubjectPreference.NVC_SUBJECT_PREFERENCE,
+                new QueryMatchObjectId(RelationalOperator.EQUAL, "54e2aa3093a3154f6402f82c", SubjectPreference.Param.APP_GUID.getNVConfig(), MetaToken.REFERENCE_ID),
                 Const.LogicalOperator.AND,
                 new QueryMatch<>(RelationalOperator.EQUAL, "542c55c7ea59bfebabe370b1", "user_id")
         );
@@ -69,7 +69,7 @@ public class MongoQueryFormatterTest {
         assertNotNull(query.keySet());
         assertEquals(2, query.keySet().size());
         assertNotNull(query.get("app_id.reference_id"));
-        assertNotNull(query.get("_user_id"));
+        assertNotNull(query.get("subject_guid"));
     }
 	
 }
