@@ -1,19 +1,48 @@
 package org.zoxweb.server.ds.data;
 
 
+import org.apache.shiro.authz.AuthorizationInfo;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.zoxweb.server.ds.derby.DerbyDBMeta;
+import org.zoxweb.server.security.CryptoUtil;
+import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
+import org.zoxweb.shared.security.SubjectIdentifier;
+import org.zoxweb.shared.security.shiro.RealmController;
 import org.zoxweb.shared.util.*;
 
+import javax.crypto.SecretKey;
 import java.security.SecureRandom;
 import java.util.Date;
 import java.util.UUID;
 
+/**
+ * Note this is a test suite constants all the variables here should NEVER NEVER NEVER be used in any other environment
+ * except testing environment
+ */
+public class DSConst {
 
-public class DSTestClass {
+    public static SecureRandom sr =  new SecureRandom();
+    // AES 256 bit secret NEVER NEVER NEVER to be used in production
+    public static final SecretKey MS_KEY = CryptoUtil.toSecretKey(SharedBase64.decode("Lq/bGZ2qRJZMEIQqi3OeKth8+IpoZRd5/bevzaRVRVE="), "AES");
+    public static final String MONGO_CONF = "mongo_conf.json";
+    public static final String KEYSTORE_INFO = "key_store_info.json";
+    public static final String SHIRO_INI = "shiro.ini";
+    public static final String TEST_USER = "test@xlogistx.io";
+    public static final String TEST_USER_TWO = "test-two@xlogistx.io";
+    public static final String TEST_PASSWORD= "T!st2s3r";
+    public static final String ILLEGAL_USER = "illegal@xlogistx.io";
+    public static final String ILLEGAL_PASSWORD= "T!st2s3r";
+    public static final String DEFAULT_API_KEY = "test_default_api_key";
 
-    static SecureRandom sr =  new SecureRandom();
+    public static final String SUPER_ADMIN = "superadmin@xlogistx.io";
+    public static final String SUPER_PASSWORD = "T!st2s3r";
+    public static final String DOMAIN_ID = "test.com";
+    public static final String APP_ID = "testapp";
+
+
+
 
     @SuppressWarnings("serial")
     public static class AllTypes
@@ -353,12 +382,19 @@ public class DSTestClass {
         }
 
 
-
-
-
-
         return nve;
     }
 
+
+    public static void createUser(RealmController<AuthorizationInfo, PrincipalCollection> rc, String subjectID, String password)
+    {
+        if(rc.lookupSubjectIdentifier(subjectID) == null) {
+            SubjectIdentifier subjectIdentifier = new SubjectIdentifier();
+            subjectIdentifier.setSubjectID(subjectID);
+            subjectIdentifier.setSubjectType(BaseSubjectID.SubjectType.USER);
+            rc.addSubjectIdentifier(subjectIdentifier,
+                    HashUtil.toBCryptPassword(password));
+        }
+    }
 
 }

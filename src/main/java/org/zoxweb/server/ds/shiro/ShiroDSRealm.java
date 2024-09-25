@@ -14,7 +14,7 @@ import org.zoxweb.server.ds.mongo.QueryMatchObjectId;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.security.UserIDCredentialsDAO;
 import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.crypto.PasswordDAO;
+import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.FormInfoDAO;
 import org.zoxweb.shared.data.UserIDDAO;
@@ -131,8 +131,8 @@ public class ShiroDSRealm
 //	        	}
 	        	info.addShiroAssociationRule(rules);
 	        	info.addShiroAssociationRule(getCachedSARDs(), 
-	        								 new NVPair(SecurityModel.TOK_USER_ID, ((DomainPrincipalCollection) principals).getUserID()),
-	        								 new NVPair(SecurityModel.TOK_RESOURCE_ID, "*"));
+	        								 new NVPair(SecurityModel.TOK_SUBJECT_ID, ((DomainPrincipalCollection) principals).getUserID()),
+	        								 new NVPair(SecurityModel.TOK_RESOURCE_GUID, "*"));
 	        	
 	        	
 	        }
@@ -196,7 +196,7 @@ public class ShiroDSRealm
 //	        if(log.isEnabled()) log.getLogger().info( upToken.getUsername() +":"+upToken.getUserID());
 //	        // Null username is invalid
 //	        
-//	        PasswordDAO password = getUserPassword(null, upToken.getUsername());
+//	        CIPassword password = getUserPassword(null, upToken.getUsername());
 //	        if (password == null)
 //	        {
 //	        	throw new UnknownAccountException("No account found for user [" + upToken.getUserID() + "]");
@@ -624,6 +624,19 @@ public class ShiroDSRealm
 	}
 
 	/**
+	 * Lookup subject resource security based on the subject id
+	 *
+	 * @param subjectID the subject identifier can't be null
+	 * @param domainID  the domain id can be null
+	 * @param appID     the app id can be null
+	 * @return permissions and role associated with subject
+	 */
+	@Override
+	public ResourceSecurity subjectResourceSecurity(String subjectID, String domainID, String appID) {
+		return null;
+	}
+
+	/**
 	 * Update a role group.
 	 *
 	 * @param rolegroup
@@ -654,27 +667,16 @@ public class ShiroDSRealm
 	/**
 	 * Create a subject identifier
 	 *
-	 * @param subjectID   the email or uuid identifier of the subject
-	 * @param subjectType the type of the subject
+	 * @param subjectIdentifier the subject identifier
+	 * @param credential        the subject credential
 	 * @return the created subject identifier
 	 * @throws AccessSecurityException if not permitted
 	 */
 	@Override
-	public SubjectIdentifier addSubjectIdentifier(String subjectID, BaseSubjectID.SubjectType subjectType) throws AccessSecurityException {
+	public SubjectIdentifier addSubjectIdentifier(SubjectIdentifier subjectIdentifier, CredentialInfo credential) throws AccessSecurityException {
 		return null;
 	}
 
-	/**
-	 * Create a subject identifier
-	 *
-	 * @param subjectIdentifier the subject identifier
-	 * @return the created subject identifier
-	 * @throws AccessSecurityException if not permitted
-	 */
-	@Override
-	public SubjectIdentifier addSubjectIdentifier(SubjectIdentifier subjectIdentifier) throws AccessSecurityException {
-		return null;
-	}
 
 	/**
 	 * Delete a user identifier use with extreme care
@@ -799,29 +801,29 @@ public class ShiroDSRealm
 	}
 
 
-	public PasswordDAO getSubjectPassword(String domainID, String userID)
+	public CIPassword getSubjectPassword(String domainID, String userID)
 	{
 		UserIDCredentialsDAO uicd = lookupUserIDCredentials(userID);
 		return uicd != null ? uicd.getPassword() : null;
 	}
 
 
-	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public CIPassword setSubjectPassword(SubjectIdentifier subject, CIPassword passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
 
-	public PasswordDAO setSubjectPassword(String subject, PasswordDAO passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public CIPassword setSubjectPassword(String subject, CIPassword passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
 
-	public PasswordDAO setSubjectPassword(SubjectIdentifier subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public CIPassword setSubjectPassword(SubjectIdentifier subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
 
-	public PasswordDAO setSubjectPassword(String subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
+	public CIPassword setSubjectPassword(String subject, String passwd) throws NullPointerException, IllegalArgumentException, AccessException {
 		return null;
 	}
 
@@ -886,7 +888,7 @@ public class ShiroDSRealm
 //			userIDCredentials.setUserID(userID.getReferenceID());
 //			userIDCredentials.setLastStatusUpdateTimestamp(System.currentTimeMillis());
 //			userIDCredentials.setUserStatus(userIDstatus);
-//			PasswordDAO passwordDAO = CryptoUtil.hashedPassword(MDType.SHA_512, 0, 8196, password);
+//			CIPassword passwordDAO = CryptoUtil.hashedPassword(MDType.SHA_512, 0, 8196, password);
 //			passwordDAO.setUserID(userID.getReferenceID());
 //			userIDCredentials.setPassword(passwordDAO);
 //			

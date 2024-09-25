@@ -1,50 +1,50 @@
 package org.zoxweb.server.ds.mongo;
 
 import com.mongodb.DB;
-import io.xlogistx.shiro.mgt.ShiroRealmManager;
+import io.xlogistx.shiro.ShiroUtil;
+import io.xlogistx.shiro.authc.DomainUsernamePasswordToken;
+import io.xlogistx.shiro.mgt.ShiroRealmController;
 import io.xlogistx.shiro.mgt.ShiroSecurityController;
+import io.xlogistx.shiro.mgt.ShiroXlogistXRealm;
+import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.env.BasicIniEnvironment;
+import org.apache.shiro.env.Environment;
+import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.subject.Subject;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.zoxweb.server.ds.data.DSConst;
 import org.zoxweb.server.io.IOUtil;
-import org.zoxweb.server.security.CryptoUtil;
-import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.crypto.PasswordDAO;
+import org.zoxweb.shared.data.SecureDocumentDAO;
+import org.zoxweb.shared.db.QueryMatchString;
+import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.SubjectIdentifier;
-import org.zoxweb.shared.util.BaseSubjectID;
+import org.zoxweb.shared.security.model.SecurityModel;
+import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.RateCounter;
 import org.zoxweb.shared.util.ResourceManager;
-import org.zoxweb.shared.util.SharedBase64;
 
-import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import java.util.Date;
+import java.util.UUID;
 import java.util.logging.Logger;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class MongoDSShiroControllerTest {
 
     private static final Logger log = Logger.getLogger(MongoDSShiroTest.class.getName());
 
-    private static final SecretKey MS_KEY = CryptoUtil.toSecretKey(SharedBase64.decode("Lq/bGZ2qRJZMEIQqi3OeKth8+IpoZRd5/bevzaRVRVE="), "AES");
-    private static final String MONGO_CONF = "mongo_conf.json";
-    private static final String KEYSTORE_INFO = "key_store_info.json";
-    private static final String SHIRO_INI = "shiro.ini";
-    private static final String TEST_USER = "test@xlogistx.io";
-    private static final String TEST_PASSWORD= "T!st2s3r";
-    private static final String ILLEGAL_USER = "illegal@xlogistx.io";
-    private static final String ILLEGAL_PASSWORD= "T!st2s3r";
-    private static final String DEFAULT_API_KEY = "test_default_api_key";
 
-    private static final String SUPER_ADMIN = "superadmin@xlogistx.io";
-    private static final String SUPER_PASSWORD = "T!st2s3r";
-    private static final String DOMAIN_ID = "test.com";
-    private static final String APP_ID = "testapp";
     private static MongoDataStore mongoDS = null;
-    private static ShiroRealmManager shiroRM = null;
+    private static ShiroRealmController shiroRM = null;
 
 
 
@@ -61,7 +61,7 @@ public class MongoDSShiroControllerTest {
 //        apiSecurityManager = new APISecurityManagerProvider();
 
 
-        String mongoJSONConfig = IOUtil.inputStreamToString(IOUtil.locateFile(MongoDSShiroControllerTest.class.getClassLoader(), MONGO_CONF));
+        String mongoJSONConfig = IOUtil.inputStreamToString(IOUtil.locateFile(MongoDSShiroControllerTest.class.getClassLoader(), DSConst.MONGO_CONF));
         log.info(mongoJSONConfig);
         APIConfigInfoDAO dsConfig = GSONUtil.fromJSON(mongoJSONConfig, APIConfigInfoDAO.class);
 //        dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
@@ -73,14 +73,25 @@ public class MongoDSShiroControllerTest {
 
         MongoDataStoreCreator mdsc = new MongoDataStoreCreator();
         dsConfig.setSecurityController(new ShiroSecurityController());
+
+
+        KeyMakerProvider.SINGLETON.setMasterKey(DSConst.MS_KEY);
+        dsConfig.setKeyMaker(KeyMakerProvider.SINGLETON);
         mongoDS = mdsc.createAPI(null, dsConfig);
 
-        shiroRM = new ShiroRealmManager();
+        shiroRM = new ShiroRealmController();
         shiroRM.setDataStore(mongoDS);
-
-        KeyMakerProvider.SINGLETON.setMasterKey(MS_KEY);
         shiroRM.setKeyMaker(KeyMakerProvider.SINGLETON);
         ResourceManager.SINGLETON.register(ResourceManager.Resource.DATA_STORE, mongoDS);
+
+        Environment env = new BasicIniEnvironment("classpath:shiro-xlog.ini");
+        SecurityManager securityManager = env.getSecurityManager();
+        System.out.println(securityManager.getClass().getName());
+        SecurityUtils.setSecurityManager(securityManager);
+        ShiroXlogistXRealm xlogRealm = ShiroUtil.getRealm(ShiroXlogistXRealm.class);
+        System.out.println("" + xlogRealm);
+        xlogRealm.setRealmController(shiroRM);
+        xlogRealm.setCachePersistenceEnabled(false);
 //        dataStore = ResourceManager.lookupResource(ResourceManager.Resource.DATA_STORE);
 //        documentStore = ResourceManager.lookupResource(ResourceManager.Resource.DATA_STORE);
 //
@@ -104,17 +115,22 @@ public class MongoDSShiroControllerTest {
     @Test
     public void createUser()
     {
-        if(shiroRM.lookupSubjectIdentifier(SUPER_ADMIN) == null) {
-            SubjectIdentifier subjectID = new SubjectIdentifier();
-            subjectID.setSubjectID(SUPER_ADMIN);
-            subjectID.setSubjectType(BaseSubjectID.SubjectType.USER);
-            shiroRM.addSubjectIdentifier(subjectID);
-        }
-
-        if(shiroRM.lookupSubjectIdentifier("mario@bros.com") == null) {
-            PasswordDAO password = HashUtil.toBCryptPassword("password");
-            shiroRM.addSubjectIdentifier("mario@bros.com", BaseSubjectID.SubjectType.USER, password);
-        }
+        DSConst.createUser(shiroRM, DSConst.SUPER_ADMIN, DSConst.TEST_PASSWORD);
+        DSConst.createUser(shiroRM, DSConst.TEST_USER, DSConst.TEST_PASSWORD);
+        DSConst.createUser(shiroRM, DSConst.TEST_USER_TWO, DSConst.TEST_PASSWORD);
+//        if(shiroRM.lookupSubjectIdentifier(DSConst.SUPER_ADMIN) == null) {
+//            SubjectIdentifier subjectID = new SubjectIdentifier();
+//            subjectID.setSubjectID(DSConst.SUPER_ADMIN);
+//            subjectID.setSubjectType(BaseSubjectID.SubjectType.USER);
+//            shiroRM.addSubjectIdentifier(subjectID,
+//                    HashUtil.toBCryptPassword(DSConst.TEST_PASSWORD));
+//        }
+//
+//        if(shiroRM.lookupSubjectIdentifier(DSConst.TEST_USER) == null) {
+//            shiroRM.addSubjectIdentifier(DSConst.TEST_USER,
+//                    BaseSubjectID.SubjectType.USER,
+//                    HashUtil.toBCryptPassword(DSConst.TEST_PASSWORD));
+//        }
     }
 
     @Test
@@ -124,7 +140,7 @@ public class MongoDSShiroControllerTest {
         for (int i = 0; i < 10; i++)
         {
             rc.start();
-            SubjectIdentifier subjectIdentifier = shiroRM.lookupSubjectIdentifier(SUPER_ADMIN);
+            SubjectIdentifier subjectIdentifier = shiroRM.lookupSubjectIdentifier(DSConst.SUPER_ADMIN);
             rc.stop();
             assert subjectIdentifier != null;
 
@@ -134,12 +150,119 @@ public class MongoDSShiroControllerTest {
         for (int i = 0; i < 100; i++)
         {
             rc.start();
-            SubjectIdentifier subjectIdentifier = shiroRM.lookupSubjectIdentifier(SUPER_ADMIN);
+            SubjectIdentifier subjectIdentifier = shiroRM.lookupSubjectIdentifier(DSConst.SUPER_ADMIN);
             rc.stop();
             assert subjectIdentifier != null;
 
         }
 
         System.out.println(rc);
+    }
+
+    @Test
+    public void testLogin()
+    {
+        if(shiroRM.lookupSubjectIdentifier(DSConst.TEST_USER) != null)
+        {
+            System.out.println("we will try to login");
+            DomainUsernamePasswordToken token =  new DomainUsernamePasswordToken(DSConst.TEST_USER, DSConst.TEST_PASSWORD, false, null, null);
+
+            Subject subject = SecurityUtils.getSubject();
+            subject.login(token);
+            subject.isPermitted("read:batata");
+            String resourceAccessViaSubjectGUID = SecurityModel.SecToken.updateToken(SecurityModel.PERM_RESOURCE_ACCESS_VIA_SUBJECT_GUID,
+                    SecurityModel.SecToken.SUBJECT_GUID.toGNV(subject.getPrincipals().oneByType(UUID.class).toString()),
+                    SecurityModel.SecToken.CRUD.toGNV(SecurityModel.READ));
+            subject.logout();
+            ShiroXlogistXRealm.log.setEnabled(false);
+            RateCounter rc = new RateCounter("login");
+
+
+
+            System.out.println(resourceAccessViaSubjectGUID);
+            for(int i = 0; i < 10; i++)
+            {
+                SecurityUtils.getSubject().login(token);
+                rc.start();
+                SecurityUtils.getSubject().checkPermission(resourceAccessViaSubjectGUID);
+                SecurityUtils.getSubject().logout();
+                rc.stop();
+            }
+
+
+            System.out.println(rc);
+        }
+    }
+
+
+    @Test
+    public void createPermissions()
+    {
+
+    }
+
+    @Test
+    public void testEncryptedDocument()
+    {
+        SecureDocumentDAO sd = new SecureDocumentDAO();
+        sd.setName("Test");
+        sd.setContent("Hello word " + new Date());
+
+        DomainUsernamePasswordToken token =  new DomainUsernamePasswordToken(DSConst.TEST_USER, DSConst.TEST_PASSWORD, false, null, null);
+
+        Subject subject = SecurityUtils.getSubject();
+        subject.login(token);
+        try {
+            sd = mongoDS.insert(sd);
+
+            SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, sd.getGUID(), Const.RelationalOperator.EQUAL));
+            System.out.println(sd1.getContent());
+        }
+
+        finally {
+            subject.logout();
+        }
+    }
+    @Test
+    public void testEncryptedDocumentFail()
+    {
+        SecureDocumentDAO sd = new SecureDocumentDAO();
+        sd.setName("Test");
+        sd.setContent("Hello word " + new Date());
+
+        DomainUsernamePasswordToken token =  new DomainUsernamePasswordToken(DSConst.TEST_USER, DSConst.TEST_PASSWORD, false, null, null);
+
+        Subject subject = SecurityUtils.getSubject();
+        subject.login(token);
+        try {
+            sd = mongoDS.insert(sd);
+        }
+
+        finally {
+            subject.logout();
+        }
+
+        token =  new DomainUsernamePasswordToken(DSConst.TEST_USER_TWO, DSConst.TEST_PASSWORD, false, null, null);
+        subject = SecurityUtils.getSubject();
+        subject.login(token);
+        String guid = sd.getGUID();
+        System.out.println(Thread.currentThread());
+        assertThrows(AccessException.class, ()->{
+            System.out.println(Thread.currentThread());
+            SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, guid, Const.RelationalOperator.EQUAL));
+        });
+        try {
+            SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, sd.getGUID(), Const.RelationalOperator.EQUAL));
+            System.out.println(sd1.getContent());
+        }
+        finally {
+            subject.logout();
+        }
+
+        System.out.println(Thread.currentThread());
+
+        if(!subject.isAuthenticated())
+            subject.logout();
+
     }
 }

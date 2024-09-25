@@ -26,9 +26,9 @@ import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.shared.api.*;
+import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.EncryptedDAO;
 import org.zoxweb.shared.crypto.EncryptedKeyDAO;
-import org.zoxweb.shared.crypto.PasswordDAO;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
@@ -342,6 +342,7 @@ public class MongoDataStore
 				value instanceof Double  ||
 				value instanceof byte[]  ||
 				gnv instanceof NVStringList ||
+				gnv instanceof NVStringSet ||
 				gnv instanceof NVIntList ||
 				gnv instanceof NVLongList ||
 				gnv instanceof NVFloatList ||
@@ -459,7 +460,7 @@ public class MongoDataStore
 	{
 		if (nve != null)
 		{
-			if (nve instanceof PasswordDAO)
+			if (nve instanceof CIPassword)
 			{
 				return toDBObject(nve, true, sync, updateReferenceOnly);
 			}
@@ -843,7 +844,20 @@ public class MongoDataStore
 			((NVStringList) nvb).setValue(values);
 			return;
 		}
-		
+		if (clazz == NVStringSet.class)
+		{
+			Set<String> values = new HashSet<String>();
+			BasicDBList dbValues = (BasicDBList) dbObject.get(nvc.getName());
+
+			for (Object val : dbValues)
+			{
+				values.add((String) val);
+			}
+			((NVStringSet) nvb).setValue(values);
+			return;
+		}
+
+
 		if(clazz == NVGenericMap.class)
 		{
 			NVGenericMap nvgm = (NVGenericMap) nvb;
@@ -1373,7 +1387,15 @@ public class MongoDataStore
 		{
 			if (ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT_MASK))
 			{
-				configInfo.getKeyMaker().createNVEntityKey(this, nve, configInfo.getKeyMaker().getKey(this, configInfo.getKeyMaker().getMasterKey(), nve.getSubjectGUID()));
+				configInfo.
+						getKeyMaker().
+						createNVEntityKey(this,
+								nve,
+								configInfo.getKeyMaker().
+										getKey(this,
+												configInfo.getKeyMaker()
+														.getMasterKey(),
+												nve.getSubjectGUID()));
 			}
 			
 			NVBase<?> nvb = nve.lookup(nvc.getName());
@@ -1409,6 +1431,10 @@ public class MongoDataStore
 			else if (nvb instanceof NVStringList)
 			{
 				doc.append(nvc.getName(), ((NVStringList) nvb).getValue());
+			}
+			else if (nvb instanceof NVStringSet)
+			{
+				doc.append(nvc.getName(), ((NVStringSet) nvb).getValue());
 			}
 			else if (nvb instanceof NVGenericMap)
 			{
@@ -2089,6 +2115,10 @@ public class MongoDataStore
 				{
 					updatedDoc.put(nvc.getName(), ((NVStringList) nvb).getValue());
 				}
+				else if (nvb instanceof NVStringSet)
+				{
+					updatedDoc.put(nvc.getName(), ((NVStringSet) nvb).getValue());
+				}
 				else if (nvb instanceof NVGenericMap)
 				{
 					updatedDoc.put(nvc.getName(), mapNVGenericMap((NVGenericMap) nvb));
@@ -2228,7 +2258,7 @@ public class MongoDataStore
 		if (nve.getReferenceID() != null)
 		{
 			BasicDBObject doc = new BasicDBObject();
-			doc.put(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
+			doc.put(ReservedID.GUID.getValue(), nve.getGUID());
 			DBCollection collection = connect().getCollection(nve.getNVConfig().getName());
 
 			
