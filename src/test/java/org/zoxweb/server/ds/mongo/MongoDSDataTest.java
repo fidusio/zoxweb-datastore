@@ -22,8 +22,8 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.crypto.CryptoConst.JWTAlgo;
-import org.zoxweb.shared.crypto.EncryptedDAO;
-import org.zoxweb.shared.crypto.EncryptedKeyDAO;
+import org.zoxweb.shared.crypto.EncryptedData;
+import org.zoxweb.shared.crypto.EncryptedKey;
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatchString;
@@ -218,7 +218,7 @@ public class MongoDSDataTest {
     @Test
     public void testEncryptedKeyDOA() throws InvalidKeyException, NullPointerException, IllegalArgumentException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidAlgorithmParameterException, IllegalBlockSizeException, BadPaddingException, IOException
     {
-      EncryptedDAO ed = CryptoUtil.encryptDAO(new EncryptedKeyDAO(), SharedStringUtil.getBytes("PASSWORD"), null, 1);
+      EncryptedData ed = CryptoUtil.encryptData(new EncryptedKey(), SharedStringUtil.getBytes("PASSWORD"), null, 1);
       //ed.getSubjectProperties().add(new NVPair("mario", "taza"));
       ed.getAlgoProperties().add(new NVPair("taza", "mario"));
       ed.getAlgoProperties().add(new NVInt("int", -2));
@@ -231,7 +231,7 @@ public class MongoDSDataTest {
       ed = dataStore.insert(ed);
       System.out.println(GSONUtil.toJSON(ed, false));
       System.out.println(ed.getNVConfig().getName() + "," + ed.getReferenceID());
-      List<EncryptedKeyDAO> l = dataStore.searchByID((NVConfigEntity)ed.getNVConfig(), ed.getReferenceID());
+      List<EncryptedKey> l = dataStore.searchByID((NVConfigEntity)ed.getNVConfig(), ed.getReferenceID());
       assert(l != null && l.size() == 1 );
       System.out.println(GSONUtil.toJSON(l.get(0), false));
       

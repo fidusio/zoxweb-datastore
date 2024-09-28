@@ -27,8 +27,8 @@ import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.crypto.EncryptedDAO;
-import org.zoxweb.shared.crypto.EncryptedKeyDAO;
+import org.zoxweb.shared.crypto.EncryptedData;
+import org.zoxweb.shared.crypto.EncryptedKey;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
@@ -287,7 +287,7 @@ public class MongoDataStore
 		}
 		
 		db.append(MetaToken.NAME.getName(), nvp.getName());
-		db.append(MetaToken.VALUE.getName(), value instanceof EncryptedDAO ? toDBObject((EncryptedDAO)value, true, sync, false) : value);
+		db.append(MetaToken.VALUE.getName(), value instanceof EncryptedData ? toDBObject((EncryptedData)value, true, sync, false) : value);
 		
 		if (nvp.getValueFilter() != null)
 		{ 
@@ -464,7 +464,7 @@ public class MongoDataStore
 			{
 				return toDBObject(nve, true, sync, updateReferenceOnly);
 			}
-			else if (!(nve instanceof EncryptedKeyDAO) && nve instanceof EncryptedDAO)
+			else if (!(nve instanceof EncryptedKey) && nve instanceof EncryptedData)
 			{
 				return toDBObject(nve, true, sync, updateReferenceOnly);
 			}
@@ -775,7 +775,7 @@ public class MongoDataStore
 		if (nvc instanceof NVConfigEntity)
 		{
 			//String nveRefID = dbObject.getString(nvc.getName());
-			if (container instanceof EncryptedKeyDAO)
+			if (container instanceof EncryptedKey)
 			{
 				return;
 			}
@@ -818,7 +818,7 @@ public class MongoDataStore
 			Object tempValue = dbObject.get(nvc.getName());
 			if (tempValue instanceof DBObject)
 			{
-				tempValue = fromDB(subjectGUID, db, (BasicDBObject) tempValue, EncryptedDAO.class);
+				tempValue = fromDB(subjectGUID, db, (BasicDBObject) tempValue, EncryptedData.class);
 			}
 		
 			((NVPair)nvb).setValue((String)configInfo.getSecurityController().decryptValue(this, container, nvb, tempValue, null));
@@ -945,7 +945,7 @@ public class MongoDataStore
 				//if(log.isEnabled()) log.getLogger().info("userID:" + userID);
 				try 
 				{
-					value = configInfo.getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedDAO.class), null);
+					value = configInfo.getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (BasicDBObject)value, EncryptedData.class), null);
 				}
 				catch (InstantiationException | IllegalAccessException e)
 				{
@@ -1540,9 +1540,9 @@ public class MongoDataStore
 				//if (nvc.getMetaTypeBase() == String.class)
 				{
 					Object tempValue = configInfo.getSecurityController().encryptValue(this, nve, nvc, nvb, null);
-					if (tempValue instanceof EncryptedDAO)
+					if (tempValue instanceof EncryptedData)
 					{
-						doc.append(nvc.getName(),toDBObject((EncryptedDAO)tempValue, true, false, false));
+						doc.append(nvc.getName(),toDBObject((EncryptedData)tempValue, true, false, false));
 					}
 					else
 					{
@@ -2194,9 +2194,9 @@ public class MongoDataStore
 				else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName()))
 				{
 					Object tempValue = configInfo.getSecurityController().encryptValue(this, nve, nvc, nvb, null);
-					if (tempValue instanceof EncryptedDAO)
+					if (tempValue instanceof EncryptedData)
 					{
-						updatedDoc.put(nvc.getName(), toDBObject((EncryptedDAO)tempValue, true, sync, updateReferenceOnly));
+						updatedDoc.put(nvc.getName(), toDBObject((EncryptedData)tempValue, true, sync, updateReferenceOnly));
 					}
 					else
 					{
@@ -2284,7 +2284,7 @@ public class MongoDataStore
 			{
 
 				// the associated encryption key dao
-				DBCollection ekdCollection = connect().getCollection(EncryptedKeyDAO.NVCE_ENCRYPTED_KEY_DAO.getName());
+				DBCollection ekdCollection = connect().getCollection(EncryptedKey.NVCE_ENCRYPTED_KEY.getName());
 				//if(log.isEnabled()) log.getLogger().info("EncryptedKeyDAO:" + ekdCollection);
 				if(ekdCollection != null)
 					ekdCollection.remove(doc);

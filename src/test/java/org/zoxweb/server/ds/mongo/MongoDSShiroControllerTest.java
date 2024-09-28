@@ -251,13 +251,15 @@ public class MongoDSShiroControllerTest {
             System.out.println(Thread.currentThread());
             SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, guid, Const.RelationalOperator.EQUAL));
         });
-        try {
-            SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, sd.getGUID(), Const.RelationalOperator.EQUAL));
-            System.out.println(sd1.getContent());
-        }
-        finally {
-            subject.logout();
-        }
+//        try
+//        {
+//            SecureDocumentDAO sd1 = mongoDS.findOne(SecureDocumentDAO.NVC_SECURE_DOCUMENT_DAO, null, new QueryMatchString(MetaToken.GUID, sd.getGUID(), Const.RelationalOperator.EQUAL));
+//            System.out.println(sd1.getContent());
+//        }
+//        finally
+//        {
+//            subject.logout();
+//        }
 
         System.out.println(Thread.currentThread());
 
