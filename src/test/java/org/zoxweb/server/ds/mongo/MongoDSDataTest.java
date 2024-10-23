@@ -225,7 +225,7 @@ public class MongoDSDataTest {
       ed.getAlgoProperties().add(new NVLong("long", Long.MAX_VALUE));
       ed.getAlgoProperties().add(new NVFloat("float", (float) 3.54));
       ed.getAlgoProperties().add(new NVDouble("double",  Double.MIN_VALUE));
-      ed.getAlgoProperties().add(new NVBoolean("bolean",  false));
+      ed.getAlgoProperties().add(new NVBoolean("boolean",  false));
       ed.getAlgoProperties().add(new NVBlob("blob",  "password".getBytes()));
       System.out.println(GSONUtil.toJSON(ed, false));
       ed = dataStore.insert(ed);
