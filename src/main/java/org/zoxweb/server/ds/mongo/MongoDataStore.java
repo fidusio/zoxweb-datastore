@@ -984,7 +984,7 @@ public class MongoDataStore
 			{
 				String filterTypeName = (String) valueFilterValue;
 				
-				if (!SharedStringUtil.isEmpty(filterTypeName))
+				if (!SUS.isEmpty(filterTypeName))
 				{
 				    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(filterTypeName, FilterType.values()));
 				}
@@ -1562,7 +1562,7 @@ public class MongoDataStore
 			MongoMetaManager.SINGLETON.addCollectionInfo(collection, nvce);
 		}		
 		
-		if (!SharedStringUtil.isEmpty(nve.getReferenceID()))
+		if (!SUS.isEmpty(nve.getReferenceID()))
 		{
 			doc.append(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
 		}
@@ -1747,7 +1747,7 @@ public class MongoDataStore
 		}
 			
 		
-		if (!SharedStringUtil.isEmpty(nve.getReferenceID()))
+		if (!SUS.isEmpty(nve.getReferenceID()))
 		{
 			doc.append(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
 		}
@@ -2692,7 +2692,7 @@ public class MongoDataStore
 		doc.append(MetaToken.VALUE.getName(), mapArrayValuesNVPair(null, dynamicEnumMap, false));
 		doc.append(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
 		
-		if (!SharedStringUtil.isEmpty(dynamicEnumMap.getReferenceID()))
+		if (!SUS.isEmpty(dynamicEnumMap.getReferenceID()))
 		{
 			// Since we are referencing the object, we will use the reference_id NOT _id.
 			doc.append(MetaToken.REFERENCE_ID.getName(), new ObjectId(dynamicEnumMap.getReferenceID()));

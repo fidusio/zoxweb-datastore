@@ -647,7 +647,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       createTable((NVConfigEntity) nve.getNVConfig());
       con = connect();
       MetaUtil.initTimeStamp(nve);
-      if(SharedStringUtil.isEmpty(nve.getGUID()))
+      if(SUS.isEmpty(nve.getGUID()))
       {
         nve.setGUID(UUID.randomUUID().toString());
       }
@@ -861,7 +861,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
     try {
       createTable((NVConfigEntity) nve.getNVConfig());
       con = connect();
-      if(SharedStringUtil.isEmpty(nve.getGUID()) || !isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID()))
+      if(SUS.isEmpty(nve.getGUID()) || !isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID()))
       {
         return innerInsert(con, nve);
       }

@@ -327,7 +327,7 @@ public class DerbyDataStoreTest {
         HTTPMessageConfigInterface hmci = HTTPMessageConfig.createAndInit("https://api.xlogistx.io", "login", HTTPMethod.PATCH);
         hmci.setAccept(HTTPMediaType.APPLICATION_JSON);
         hmci.setContentType(HTTPMediaType.APPLICATION_JSON);
-        hmci.setURLEncodingEnabled(false);
+
         hmci.getHeaders().add("revision", "2023-07-15");
         HTTPAuthorization authorization = new HTTPAuthorization("XlogistX-KEY", "ABB-CC-DDSFS-664554");
         //dataStore.insert(authorization);

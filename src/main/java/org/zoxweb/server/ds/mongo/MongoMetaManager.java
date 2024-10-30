@@ -21,14 +21,7 @@ import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.ds.mongo.MongoDataStore.ReservedID;
-import org.zoxweb.shared.util.DynamicEnumMap;
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVConfigEntityLocal;
-import org.zoxweb.shared.util.SharedStringUtil;
-import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -301,7 +294,7 @@ public class MongoMetaManager
 		for (String indexToAdd : uniqueIndexNames)
 		{
 			log.info("Index to be added:" + indexToAdd + " to collection:" + collection.getName());
-			if (!SharedStringUtil.isEmpty(indexToAdd))
+			if (SUS.isNotEmpty(indexToAdd))
 			{
 				for (DBObject dbIndex : indexes)
 				{
