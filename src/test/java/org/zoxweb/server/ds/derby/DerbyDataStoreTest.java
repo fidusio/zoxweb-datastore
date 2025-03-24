@@ -105,7 +105,7 @@ public class DerbyDataStoreTest {
         assertNotNull(allTypes);
         assertNotNull(allTypes.getGUID());
         System.out.println("json:" + GSONUtil.toJSON(allTypes, true, false, false));
-        List<DSConst.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getReferenceID());
+        List<DSConst.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getGUID());
         allTypes = result.get(0);
         System.out.println(allTypes.getBytes().length);
         String json = GSONUtil.toJSON(allTypes, true, false, true);
@@ -134,7 +134,9 @@ public class DerbyDataStoreTest {
         assertNotNull(complexTypes);
         assertNotNull(complexTypes.getGUID());
         String jsonOrig = GSONUtil.toJSON(complexTypes, true, false, false);
-        List<DSConst.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) complexTypes.getNVConfig(), complexTypes.getReferenceID());
+
+        System.out.println("$$$$$$$$$$$$$$$$$$$$$$$ " + complexTypes.getGUID());
+        List<DSConst.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) complexTypes.getNVConfig(), complexTypes.getGUID());
         complexTypes = result.get(0);
 
         String json = GSONUtil.toJSON(complexTypes, true, false, false);
@@ -312,12 +314,12 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
-        CIPassword p = HashUtil.toPassword(CryptoConst.HASHType.BCRYPT, 0, 10, "password");
+        CIPassword p = HashUtil.toPassword(CryptoConst.HASHType.BCRYPT, 0, 10, "P1ssw@rd");
         dataStore.insert(p);
 
         CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
         Assertions.assertNotEquals(found, p);
-        HashUtil.validatePassword(found, "password");
+        HashUtil.validatePassword(found, "P1ssw@rd");
         Assertions.assertEquals(GSONUtil.toJSONDefault(p), GSONUtil.toJSONDefault(found));
     }
 
@@ -403,6 +405,7 @@ public class DerbyDataStoreTest {
         //deviceInfo = dataStore.insert(deviceInfo);
 
         List<DeviceInfo> results = dataStore.search(DeviceInfo.NVC_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
+
 
         System.out.println(GSONUtil.toJSONDefault(results.get(0), true));
     }

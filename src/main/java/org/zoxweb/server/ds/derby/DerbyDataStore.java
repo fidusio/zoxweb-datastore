@@ -131,7 +131,7 @@ public class DerbyDataStore implements APIDataStore<Connection> {
                   sb.append(',');
                 }
                 sb.append(nvc.getName() + " " + derbyDT.getValue());
-                if (nvc.isUnique())
+                if (nvc.isUnique() && !nvc.getName().equalsIgnoreCase("guid"))
                 {
                   sb.append(" UNIQUE");
                 }
@@ -557,6 +557,8 @@ public class DerbyDataStore implements APIDataStore<Connection> {
       stmt = con.createStatement();
       String select = "SELECT * FROM " + retType.getNVConfig().getName() +
               " WHERE GUID IN(" + SharedUtil.toCanonicalID(',', (Object[])ids)+ ")" ;
+//      log.getLogger().info("select: " + select);
+//      log.getLogger().info("IDS: " + Arrays.toString(ids));
       rs = stmt.executeQuery(select);
       while(rs.next())
       {
