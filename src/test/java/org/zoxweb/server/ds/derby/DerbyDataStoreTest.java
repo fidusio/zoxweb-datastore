@@ -25,8 +25,8 @@ import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.crypto.CIPassword;
+import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.Range;
@@ -41,9 +41,6 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 
 public class DerbyDataStoreTest {
@@ -102,8 +99,8 @@ public class DerbyDataStoreTest {
             System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
         }
 
-        assertNotNull(allTypes);
-        assertNotNull(allTypes.getGUID());
+        assert(allTypes != null);
+        assert(allTypes.getGUID() != null);
         System.out.println("json:" + GSONUtil.toJSON(allTypes, true, false, false));
         List<DSConst.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getGUID());
         allTypes = result.get(0);
@@ -131,8 +128,8 @@ public class DerbyDataStoreTest {
             System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
         }
 
-        assertNotNull(complexTypes);
-        assertNotNull(complexTypes.getGUID());
+        assert (null !=complexTypes);
+        assert (null !=complexTypes.getGUID());
         String jsonOrig = GSONUtil.toJSON(complexTypes, true, false, false);
 
         System.out.println("$$$$$$$$$$$$$$$$$$$$$$$ " + complexTypes.getGUID());
@@ -140,7 +137,7 @@ public class DerbyDataStoreTest {
         complexTypes = result.get(0);
 
         String json = GSONUtil.toJSON(complexTypes, true, false, false);
-        assertEquals(jsonOrig,json);
+        assert jsonOrig.equals(json);
 
     }
 
@@ -152,12 +149,12 @@ public class DerbyDataStoreTest {
         addressDAO.setCountry("USA");
         addressDAO.setZIPOrPostalCode("90001");
         addressDAO = dataStore.insert(addressDAO);
-        assertNotNull(addressDAO);
+        assert (null !=addressDAO);
 
         List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID());
 
 
-        //assertNotNull(result)
+        //assert (null !=result)
 
         System.out.println("Result: " + result);
 
@@ -224,8 +221,8 @@ public class DerbyDataStoreTest {
             System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
         }
 
-        assertNotNull(nveTypes);
-        assertNotNull(nveTypes.getGUID());
+        assert (null !=nveTypes);
+        assert (null !=nveTypes.getGUID());
         nveTypes.setName("batata");
         nveTypes.getAllTypes().setName("harra");
         nveTypes =  dataStore.update(nveTypes);
@@ -234,7 +231,7 @@ public class DerbyDataStoreTest {
         List<DSConst.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGUID());
         nveTypes = result.get(0);
         String json = GSONUtil.toJSON(nveTypes, true, false, false);
-        assertEquals(jsonOrig, json);
+        assert jsonOrig.equals(json);
 
 
         System.out.println(nveTypes);
@@ -283,7 +280,7 @@ public class DerbyDataStoreTest {
         device.getProperties().add("toto", "titi");
         device.getProperties().add(new NVInt("int_val", 100));
         device = dataStore.insert(device);
-        assertNotNull(device.getGUID());
+        assert (null !=device.getGUID());
     }
 
     @SuppressWarnings("unchecked")
@@ -293,7 +290,7 @@ public class DerbyDataStoreTest {
         Range<Float> floatRange = new Range<Float>(1.0f, 6.666f);
 
         floatRange = dataStore.insert(floatRange);
-        assertNotNull(floatRange.getGUID());
+        assert (null !=floatRange.getGUID());
 
 
         floatRange = (Range<Float>) dataStore.searchByID(Range.class.getName(), floatRange.getGUID()).get(0);
@@ -302,7 +299,7 @@ public class DerbyDataStoreTest {
         Range<Integer> intRange = new Range<Integer>(1, 200);
 
         intRange = dataStore.insert(intRange);
-        assertNotNull(intRange.getGUID());
+        assert (null !=intRange.getGUID());
 
 
         intRange = (Range<Integer>) dataStore.searchByID(Range.class.getName(), intRange.getGUID()).get(0);
@@ -320,7 +317,7 @@ public class DerbyDataStoreTest {
         CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
         Assertions.assertNotEquals(found, p);
         HashUtil.validatePassword(found, "P1ssw@rd");
-        Assertions.assertEquals(GSONUtil.toJSONDefault(p), GSONUtil.toJSONDefault(found));
+        assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
     }
 
     @Test
