@@ -41,7 +41,7 @@ public class ShiroDSRealm
 	
 	private String userDefaultRoles = null;
 	
-	private APIDataStore<?> dataStore;
+	private APIDataStore<?, ?> dataStore;
 
 	public ShiroDSRealm()
 	{
@@ -84,12 +84,12 @@ public class ShiroDSRealm
 
 	
 	
-	public APIDataStore<?> getAPIDataStore()
+	public APIDataStore<?, ?> getAPIDataStore()
 	{
 		return dataStore != null ? dataStore : ResourceManager.lookupResource(Resource.DATA_STORE);
 	}
 
-	public void setDataStore(APIDataStore<?> dataStore)
+	public void setDataStore(APIDataStore<?, ?> dataStore)
 	{
 		this.dataStore = dataStore;
 	}

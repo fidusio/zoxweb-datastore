@@ -41,8 +41,8 @@ import java.util.Set;
 
 @SuppressWarnings("serial")
 public class DataStoreProxy
-    extends APIServiceProviderBase<Void>
-    implements APIDataStore<Void>, APIDocumentStore<Void> {
+    extends APIServiceProviderBase<Void, Void>
+    implements APIDataStore<Void, Void>, APIDocumentStore<Void, Void> {
 
     private String name;
     private String description;

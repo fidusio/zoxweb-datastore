@@ -91,7 +91,7 @@ public class DerbyDataStoreCreator
 	
 	
 	@Override
-	public DerbyDataStore createAPI(APIDataStore<?> ds, APIConfigInfo apiConfig) 
+	public DerbyDataStore createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
 			throws APIException
 	{
 	  DerbyDataStore derbyDS = new DerbyDataStore();

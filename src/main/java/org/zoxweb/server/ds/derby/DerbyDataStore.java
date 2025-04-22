@@ -20,7 +20,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 @SuppressWarnings("serial")
-public class DerbyDataStore implements APIDataStore<Connection> {
+public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
   private volatile APIConfigInfo apiConfig = null;
   private volatile boolean driverLoaded = false;

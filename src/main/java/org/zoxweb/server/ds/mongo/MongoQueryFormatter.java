@@ -38,7 +38,7 @@ public class MongoQueryFormatter
 
 	private static QueryBuilder formatQueryMatch(QueryBuilder qb, NVConfigEntity nvce, QueryMarker  qm)
 	{
-		if (qm != null && qm instanceof QueryMatch)
+		if (qm instanceof QueryMatch)
 		{
 			QueryMatch<?> queryMatch = (QueryMatch<?>) qm; 
 			NVConfig nvc = nvce.lookup(queryMatch.getName());

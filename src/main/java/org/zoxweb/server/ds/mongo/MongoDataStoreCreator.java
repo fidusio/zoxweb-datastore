@@ -89,7 +89,7 @@ public class MongoDataStoreCreator
 	
 	
 	@Override
-	public MongoDataStore createAPI(APIDataStore<?> ds, APIConfigInfo apiConfig) 
+	public MongoDataStore createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
 			throws APIException
 	{
 		MongoDataStore mongoDS = new MongoDataStore();

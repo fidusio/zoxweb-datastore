@@ -58,7 +58,7 @@ public class ProxyDataStoreCreator implements APIServiceProviderCreator {
 	}
 
 	@Override
-	public DataStoreProxy createAPI(APIDataStore<?> dataStore, APIConfigInfo apiConfig) throws APIException {
+	public DataStoreProxy createAPI(APIDataStore<?, ?> dataStore, APIConfigInfo apiConfig) throws APIException {
 		// TODO Auto-generated method stub
 		return null;
 	}

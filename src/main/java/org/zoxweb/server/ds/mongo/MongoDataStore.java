@@ -63,8 +63,8 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 @SuppressWarnings("serial")
 public class MongoDataStore
-    extends APIServiceProviderBase<DB>
-	implements APIDataStore<DB>, APIDocumentStore<DB>
+    extends APIServiceProviderBase<DB, DB>
+	implements APIDataStore<DB, DB>, APIDocumentStore<DB,DB>
 {
     public static final LogWrapper log = new LogWrapper(MongoDataStore.class);
     
