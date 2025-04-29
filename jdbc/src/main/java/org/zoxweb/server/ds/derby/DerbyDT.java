@@ -59,7 +59,7 @@ public enum DerbyDT
 
   public static int javaClassToSQLType(Class<?> clazz)
   {
-    SharedUtil.checkIfNulls("Null class is not allowed", clazz);
+    SUS.checkIfNulls("Null class is not allowed", clazz);
     for(DerbyDT ddt: DerbyDT.values()){
       if(ddt.getJavaClass() == clazz)
       {

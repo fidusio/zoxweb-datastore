@@ -1096,7 +1096,7 @@ public class MongoDataStore
 	 */
 	public DBCursor getAllDocuments(DB db, NVEntity nve)
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		DBCursor cur = null;
 		DBCollection collection = db.getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
@@ -1357,7 +1357,7 @@ public class MongoDataStore
 	public <V extends NVEntity> V insert(V nve)
 			throws NullPointerException, IllegalArgumentException, APIException
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		DBCollection collection = connect().getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 		
@@ -1595,7 +1595,7 @@ public class MongoDataStore
 	public DBObject toDBObject(NVEntity nve, boolean embed, boolean sync, boolean updateReferenceOnly)
 			throws NullPointerException, IllegalArgumentException, APIException
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		
 		
@@ -1791,7 +1791,7 @@ public class MongoDataStore
 //		
 //		
 //		return patch(nve, sync);
-//		SharedUtil.checkIfNulls("Null value", nve);
+//		SUS.checkIfNulls("Null value", nve);
 //		
 //		try
 //		{
@@ -1991,7 +1991,7 @@ public class MongoDataStore
 	public <V extends NVEntity> V patch(V nve, boolean updateTS, boolean sync, boolean updateReferenceOnly, boolean includeParam, String... nvConfigNames)
 			throws NullPointerException, IllegalArgumentException, APIException
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		try
 		{
@@ -2253,7 +2253,7 @@ public class MongoDataStore
 	public <V extends NVEntity> boolean delete(V nve, boolean withReference)
 			throws NullPointerException, IllegalArgumentException, APIException
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		if (nve.getReferenceID() != null)
 		{
@@ -2358,7 +2358,7 @@ public class MongoDataStore
 	public <V extends NVEntity> boolean deleteAll(V nve)
 			throws NullPointerException, IllegalArgumentException, APIException
 	{
-		SharedUtil.checkIfNulls("Null value", nve);
+		SUS.checkIfNulls("Null value", nve);
 		
 		DBCollection collection = connect().getCollection(nve.getNVConfig().getName());
 		
@@ -2426,7 +2426,7 @@ public class MongoDataStore
 	public APIFileInfoMap createFile(String folder, APIFileInfoMap file, InputStream is, boolean closeStream)
 			throws IllegalArgumentException, IOException, NullPointerException 
 	{
-		SharedUtil.checkIfNulls("Null value", file, is);
+		SUS.checkIfNulls("Null value", file, is);
 		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		DB temp = null;
 		OutputStream os = null;
@@ -2485,7 +2485,7 @@ public class MongoDataStore
 	public APIFileInfoMap readFile(APIFileInfoMap file, OutputStream os, boolean closeStream)
 			throws IllegalArgumentException, IOException, NullPointerException 
 	{
-		SharedUtil.checkIfNulls("Null value", file, os);
+		SUS.checkIfNulls("Null value", file, os);
 		
 		DB temp = null;
 		try
@@ -2541,7 +2541,7 @@ public class MongoDataStore
 		return createFile(null,  file, is, closeStream);
 		
 		
-//		SharedUtil.checkIfNulls("Null value", file, is);
+//		SUS.checkIfNulls("Null value", file, is);
 //		
 //		GridFS fs = new GridFS(mongoDB);
 //		
@@ -2576,7 +2576,7 @@ public class MongoDataStore
 	public void deleteFile(APIFileInfoMap file) 
 			throws IllegalArgumentException, IOException, NullPointerException 
 	{
-		SharedUtil.checkIfNulls("Null value", file);
+		SUS.checkIfNulls("Null value", file);
 		if(log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
 		GridFS fs = new GridFS(connect());
 		
@@ -3158,7 +3158,7 @@ public class MongoDataStore
 			IllegalArgumentException, AccessException, APIException
 	{
 		NVConfigEntity nvce = null;
-		SharedUtil.checkIfNulls("null class name", className);
+		SUS.checkIfNulls("null class name", className);
 		try 
 		{
 			nvce = MetaUtil.fromClass(className);
@@ -3212,7 +3212,7 @@ public class MongoDataStore
 	public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria) 
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException 
 	{
-		SharedUtil.checkIfNulls("NVConfigEntity is null.", nvce);
+		SUS.checkIfNulls("NVConfigEntity is null.", nvce);
 		List<T> list = new ArrayList<T>();
 		
 		DBObject query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
@@ -3342,7 +3342,7 @@ public class MongoDataStore
 			throws NullPointerException, IllegalArgumentException, AccessException, APIException
 	{
 		sequenceName = LowerCaseFilter.SINGLETON.validate(sequenceName);
-		SharedUtil.checkIfNulls("Null sequence name", sequenceName);
+		SUS.checkIfNulls("Null sequence name", sequenceName);
 		if (startValue < 0)
 			throw new IllegalArgumentException("Sequence start value can't be negative:" + startValue);
 		

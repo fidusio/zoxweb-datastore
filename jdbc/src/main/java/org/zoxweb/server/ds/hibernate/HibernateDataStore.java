@@ -22,21 +22,11 @@ import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.util.IDGeneratorUtil;
-import org.zoxweb.shared.api.APIBatchResult;
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIExceptionHandler;
-import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.security.AccessException;
-import org.zoxweb.shared.util.DynamicEnumMap;
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.IDGenerator;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.*;
 
 import java.util.List;
 import java.util.Set;
@@ -44,7 +34,7 @@ import java.util.UUID;
 
 @SuppressWarnings("serial")
 public class HibernateDataStore
-    implements APIDataStore<SessionFactory>
+    implements APIDataStore<SessionFactory, SessionFactory>
 {
 
     private APIConfigInfo configInfo;
@@ -136,7 +126,7 @@ public class HibernateDataStore
 
                     String resource = configInfo.getProperties().getValue(RESOURCE);
 
-                    SharedUtil.checkIfNulls("Resource (e.g. hibernate.cfg.xml) is null.", resource);
+                    SUS.checkIfNulls("Resource (e.g. hibernate.cfg.xml) is null.", resource);
 
                     Configuration configuration = new Configuration();
 
@@ -298,7 +288,7 @@ public class HibernateDataStore
     public <V extends NVEntity> V insert(V nve)
         throws NullPointerException, IllegalArgumentException, AccessException, APIException
     {
-        SharedUtil.checkIfNulls("NVEntity is null.", nve);
+        SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
         Transaction transaction = null;
@@ -342,7 +332,7 @@ public class HibernateDataStore
     public boolean delete(NVEntity nve, boolean withReference)
         throws NullPointerException, IllegalArgumentException, AccessException, APIException
     {
-        SharedUtil.checkIfNulls("NVEntity is null.", nve);
+        SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null; 
         Transaction transaction = null;
@@ -381,7 +371,7 @@ public class HibernateDataStore
     public <V extends NVEntity> V update(V nve)
         throws NullPointerException, IllegalArgumentException, APIException
     {
-        SharedUtil.checkIfNulls("NVEntity is null.", nve);
+        SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
         Transaction transaction = null;
@@ -427,8 +417,8 @@ public class HibernateDataStore
 	@Override
     public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId)
     {
-        SharedUtil.checkIfNulls("Meta type name is null.", metaTypeName);
-        SharedUtil.checkIfNulls("Reference ID is null.", objectId);
+        SUS.checkIfNulls("Meta type name is null.", metaTypeName);
+        SUS.checkIfNulls("Reference ID is null.", objectId);
 
         if (!(objectId instanceof String))
         {

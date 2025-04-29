@@ -10,12 +10,22 @@
     </parent>
 
 
+
+    <modules>
+        <module>jdbc</module>
+        <module>mongo-legacy</module>
+        <module>mongo-sync</module>
+    </modules>
+
+
     <properties>
+        <jdk.target.version>8</jdk.target.version>
     </properties>
 
+    <groupId>org.zoxweb</groupId>
     <artifactId>zoxweb-datastore</artifactId>
     <version>1.0.0</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
     <name>zoxweb-datastore</name>
     <url>http://maven.apache.org</url>
 
@@ -161,10 +171,10 @@
 	    </dependency>
       
 
-		   <dependency>
-                <groupId>com.google.code.gson</groupId>
-                <artifactId>gson</artifactId>
-            </dependency>
+       <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
         
        <dependency>
 		    <groupId>org.slf4j</groupId>
