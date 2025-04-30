@@ -14,7 +14,8 @@
     <modules>
         <module>jdbc</module>
         <module>mongo-legacy</module>
-        <module>mongo-sync</module>
+        <module>hibernate</module>
+        <!--<module>mongo-sync</module> -->
     </modules>
 
 
@@ -93,55 +94,7 @@
             <scope>provided</scope>
         </dependency>
 
-         <dependency>
-            <groupId>org.hibernate.orm</groupId>
-            <artifactId>hibernate-core</artifactId>
-            <version>${hibernate.version}</version>
-            <scope>provided</scope>
-        </dependency>
-         
-        <dependency>
-            <groupId>org.apache.derby</groupId>
-            <artifactId>derby</artifactId>
-            <version>${apache.derby.version}</version>
-            <scope>provided</scope>
-        </dependency>
 
-
-
-        <dependency>
-            <groupId>org.apache.derby</groupId>
-            <artifactId>derbyclient</artifactId>
-            <version>${apache.derby.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-
-
-        <dependency>
-	        <groupId>org.mongodb</groupId>
-	        <artifactId>mongodb-driver-legacy</artifactId>
-	        <version>${mongo.version}</version>
-	        <scope>provided</scope>
-    	</dependency>
-
-
-
-        <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-sync</artifactId>
-            <version>${mongo.version}</version>
-        </dependency>
-
-
-
-        <!-- <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-sync</artifactId>
-            <version>RELEASE</version>
-            <scope>provided</scope>
-        </dependency>
-    	-->
     	
     	 <dependency>
 	        <groupId>io.xlogistx</groupId>
@@ -154,11 +107,7 @@
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-core</artifactId>
         </dependency>
-        <!-- <dependency>
-            <groupId>org.apache.shiro</groupId>
-            <artifactId>shiro-web</artifactId>
-        </dependency>
-        -->
+
         <dependency>
 		  <groupId>javax.cache</groupId>
 		  <artifactId>cache-api</artifactId>

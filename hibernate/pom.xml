@@ -9,22 +9,22 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>mongo-legacy</artifactId>
+    <artifactId>zoxweb-hibernate</artifactId>
     <packaging>jar</packaging>
 
     <properties>
         <maven.compiler.source>${jdk.target.version}</maven.compiler.source>
-        <maven.compiler.target>${jdk.target.version}</maven.compiler.target>
+        <maven.compiler.target>{jdk.target.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-legacy</artifactId>
-            <version>${mongo.version}</version>
-            <scope>provided</scope>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
         </dependency>
     </dependencies>
+
 
 </project>
