@@ -13,18 +13,16 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 
 import com.mongodb.BasicDBObject;
-import com.mongodb.DBCollection;
 import com.mongodb.client.ListIndexesIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import org.bson.Document;
 import org.bson.types.ObjectId;
-import org.zoxweb.server.ds.mongo.MongoDataStore.ReservedID;
 import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
@@ -32,9 +30,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Logger;
 
-public class MongoMetaManager 
+public class SyncMongoMetaManager
 {
-	private static final Logger log = Logger.getLogger(MongoMetaManager.class.getName());
+	private static final Logger log = Logger.getLogger(SyncMongoMetaManager.class.getName());
 
 	/**
 	 * Set hash map to NVConfigEntity mapped values.
@@ -77,13 +75,13 @@ public class MongoMetaManager
 	/**
 	 * This variable declares that only one instance of this class can be created.
 	 */
-	public static final MongoMetaManager SINGLETON = new MongoMetaManager();
+	public static final SyncMongoMetaManager SINGLETON = new SyncMongoMetaManager();
 	
 	/**
 	 * The default constructor is declared private to prevent
 	 * outside instantiation of this class.
 	 */
-	private MongoMetaManager()
+	private SyncMongoMetaManager()
 	{
 
 	}
@@ -160,7 +158,7 @@ public class MongoMetaManager
 			nvConfigEntities.insertOne(nvceDBO);
 		}
 		
-		nvce.setReferenceID(nvceDBO.getObjectId(ReservedID.REFERENCE_ID.getValue()).toHexString());
+		nvce.setReferenceID(nvceDBO.getObjectId(SyncMongoDS.ReservedID.REFERENCE_ID.getValue()).toHexString());
 		return nvce;
 	}
 	
@@ -176,7 +174,7 @@ public class MongoMetaManager
 		removeCollectionInfo(collection.getFullName());
 	}
 
-	public synchronized MongoDBObjectMeta lookupCollectionName(MongoDataStore mds, ObjectId collectionID)
+	public synchronized SyncMongoDBObjectMeta lookupCollectionName(SyncMongoDS mds, ObjectId collectionID)
 	{
 		BasicDBObject nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONFIG_ENTITIES.getName(), collectionID);
 		
@@ -189,7 +187,7 @@ public class MongoMetaManager
 			return null;
 		}
 		
-	 	return new MongoDBObjectMeta(nvce);
+	 	return new SyncMongoDBObjectMeta(nvce);
 	}
 
 	public static Document dbMapNVConfigEntity(NVConfigEntity nvce)

@@ -15,7 +15,7 @@
         <module>jdbc</module>
         <module>mongo-legacy</module>
         <module>hibernate</module>
-        <!--<module>mongo-sync</module> -->
+        <module>mongo-sync</module>
     </modules>
 
 

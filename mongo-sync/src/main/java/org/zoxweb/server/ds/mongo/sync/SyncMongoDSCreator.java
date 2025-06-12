@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.util.GetNameValue;
@@ -21,11 +21,11 @@ import org.zoxweb.shared.util.NVECRUDMonitor;
 import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.NVPair;
 
-public class MongoDataStoreCreator 
+public class SyncMongoDSCreator
 	implements APIServiceProviderCreator
 {
 	
-	public final static String API_NAME = "MongoDB";
+	public final static String API_NAME = "MongoDBSync";
 
     /**
      * Contains parameters needed to create the Mongo database.
@@ -82,21 +82,21 @@ public class MongoDataStoreCreator
 		APIServiceType[] types = {APIServiceType.DATA_STORAGE, APIServiceType.DOCUMENT_STORAGE};
 		configInfo.setServiceTypes(types);
 		configInfo.setAPITypeName(API_NAME);
-		configInfo.setDescription("MongoDB Configuration Info.");
-		configInfo.setVersion("3.4.7");
+		configInfo.setDescription( "MongoDBSync" + " java driver");
+		configInfo.setVersion("10.0.0");
 			
 		return configInfo;
 	}
 	
 	
 	@Override
-	public MongoDataStore createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
+	public SyncMongoDS createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
 			throws APIException
 	{
-		MongoDataStore mongoDS = new MongoDataStore();
+		SyncMongoDS mongoDS = new SyncMongoDS();
 		
 		mongoDS.setAPIConfigInfo(apiConfig);
-		mongoDS.setAPIExceptionHandler(MongoExceptionHandler.SINGLETON);
+		mongoDS.setAPIExceptionHandler(SyncMongoExceptionHandler.SINGLETON);
 		
 		NVPair dcParam = (NVPair) mongoDS.getAPIConfigInfo().getProperties().get(MongoParam.DATA_CACHE.getName());
 		
@@ -126,7 +126,7 @@ public class MongoDataStoreCreator
 	@Override
 	public APIExceptionHandler getExceptionHandler() 
 	{
-		return MongoExceptionHandler.SINGLETON;
+		return SyncMongoExceptionHandler.SINGLETON;
 	}
 
 	@Override

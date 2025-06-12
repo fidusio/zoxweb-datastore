@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 import com.mongodb.MongoException;
 import org.zoxweb.shared.api.APIException;
@@ -25,7 +25,7 @@ import org.zoxweb.shared.util.GetValue;
 /**
  * This class handles exceptions in MongoDB.
  */
-public class MongoExceptionHandler
+public class SyncMongoExceptionHandler
 	implements APIExceptionHandler
 {
 
@@ -80,13 +80,13 @@ public class MongoExceptionHandler
 	/**
 	 * This variable declares that only one instance of this class can be created.
 	 */
-	public static final MongoExceptionHandler SINGLETON = new MongoExceptionHandler();
+	public static final SyncMongoExceptionHandler SINGLETON = new SyncMongoExceptionHandler();
 	
 	/**
 	 * The default constructor is declared private to prevent
 	 * outside instantiation of this class.
 	 */
-	private MongoExceptionHandler()
+	private SyncMongoExceptionHandler()
 	{
 		
 	}

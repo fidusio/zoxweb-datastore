@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 import org.bson.types.ObjectId;
 import org.zoxweb.shared.db.QueryMatch;

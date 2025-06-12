@@ -13,11 +13,11 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 import org.bson.Document;
 import org.bson.types.ObjectId;
-import org.zoxweb.server.ds.mongo2.MongoDataStore.ReservedID;
+import org.zoxweb.server.ds.mongo.sync.SyncMongoDS.ReservedID;
 import org.zoxweb.server.filters.TimestampFilter;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;

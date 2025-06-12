@@ -13,17 +13,17 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package org.zoxweb.server.ds.mongo2;
+package org.zoxweb.server.ds.mongo.sync;
 
 import org.bson.Document;
 import org.zoxweb.shared.util.NVConfigEntity;
 
-public class MongoDBObjectMeta 
+public class SyncMongoDBObjectMeta
 {
 	private Document content;
 	private NVConfigEntity nvce;
 	
-	public MongoDBObjectMeta(NVConfigEntity nvce)
+	public SyncMongoDBObjectMeta(NVConfigEntity nvce)
 	{
 		this.nvce = nvce;
 	}
