@@ -20,6 +20,10 @@ package org.zoxweb.server.ds.mongo.sync;
 import com.mongodb.MongoException;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.*;
+import com.mongodb.client.gridfs.GridFSBucket;
+import com.mongodb.client.gridfs.GridFSBuckets;
+import com.mongodb.client.gridfs.model.GridFSFile;
+import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
@@ -87,6 +91,8 @@ public class SyncMongoDS
         }
     };
 
+    public static final String FS_DB = "FS_DB";
+
     private MongoClient mongoClient;
     //private DBAddress dbAddress;
     private MongoDatabase mongoDB;
@@ -104,66 +110,7 @@ public class SyncMongoDS
     //private APISecurityManager<Subject> apiSecurityManager;
 
     //private LockQueue updateLock = new LockQueue(5);
-    private final static HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
-    /**
-     * Contains reference ID, account ID, and user ID.
-     */
-    public enum ReservedID
-            implements GetNameValue<String> {
-        REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
-        //		SUBJECT_GUID(MetaToken.Subject_GUID),
-        SUBJECT_GUID(MetaToken.SUBJECT_GUID),
-        GUID(MetaToken.GUID);
-
-        private final String name;
-        private final String value;
-
-
-        ReservedID(GetName gnv) {
-            this(gnv.getName(), gnv.getName());
-        }
-
-
-        ReservedID(String name, String value) {
-            this.name = name;
-            this.value = value;
-            reservedIDMap.put(name, this);
-        }
-
-        @Override
-        public String getName() {
-            return name;
-        }
-
-        @Override
-        public String getValue() {
-            return value;
-        }
-
-        public static ReservedID lookupByName(GetName gn) {
-            return reservedIDMap.get(gn.getName());
-        }
-
-        public static ReservedID lookupByName(String name) {
-            return reservedIDMap.get(name);
-        }
-
-        public static String map(NVConfig nvc, String name) {
-            ReservedID resID = lookupByName(name);
-            if (resID != null) {
-                return resID.getValue();
-            }
-
-            if (name != null && nvc != null && nvc.isTypeReferenceID() && name.equals(nvc.getName())) {
-                return "_" + nvc.getName();
-            }
-
-            return name;
-        }
-
-
-    }
 
     /**
      * The default constructor.
@@ -509,7 +456,7 @@ public class SyncMongoDS
 //		}
 
 
-        ReservedID resID = ReservedID.lookupByName(nvc);
+        MongoUtil.ReservedID resID = MongoUtil.ReservedID.lookupByName(nvc);
         if (resID != null && clazz == String.class) {
             if (container.lookupValue(nvc) != null)
                 return;
@@ -749,7 +696,7 @@ public class SyncMongoDS
 
         if (clazz == NVGenericMap.class) {
             NVGenericMap nvgm = (NVGenericMap) nvb;
-            List<Document> dbNVGM = (List<Document>) dbObject.get(nvc.getName());
+            Document dbNVGM = (Document) dbObject.get(nvc.getName());
             fromNVGenericMap(subjectGUID, nvgm, dbNVGM);
             return;
 
@@ -817,10 +764,10 @@ public class SyncMongoDS
         Object value = dbObject.get(MetaToken.VALUE.getName());
         if (container != null) {
 
-            if (value instanceof DBObject) {
+            if (value instanceof Document) {
                 //if(log.isEnabled()) log.getLogger().info("userID:" + userID);
                 try {
-                    value = configInfo.getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), value, EncryptedData.class), null);
+                    value = configInfo.getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (Document) value, EncryptedData.class), null);
                 } catch (InstantiationException | IllegalAccessException e) {
                     e.printStackTrace();
                 }
@@ -1013,17 +960,17 @@ public class SyncMongoDS
         Document query = new Document();
         //query.put("_id", new ObjectId(refID));
         if (objectId instanceof UUID)
-            query.put(ReservedID.GUID.getValue(), objectId);
+            query.put(MongoUtil.ReservedID.GUID.getValue(), objectId);
         else if (objectId instanceof ObjectId)
-            query.put(ReservedID.REFERENCE_ID.getValue(), objectId);
+            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), objectId);
         else if (objectId instanceof String) {
 
             try {
                 // check if it is uuid
-                query.put(ReservedID.GUID.getValue(), UUID.fromString((String) objectId));
+                query.put(MongoUtil.ReservedID.GUID.getValue(), UUID.fromString((String) objectId));
             } catch (Exception e) {
                 // uuid failed try object id
-                query.put(ReservedID.REFERENCE_ID.getValue(), new ObjectId((String) objectId));
+                query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new ObjectId((String) objectId));
             }
         }
 
@@ -1073,27 +1020,27 @@ public class SyncMongoDS
      * @param listOfObjectId
      * @return
      */
-    public List<BasicDBObject> lookupByReferenceIDs(String collectionName, List<ObjectId> listOfObjectId) {
+    public List<Document> lookupByReferenceIDs(String collectionName, List<ObjectId> listOfObjectId) {
         if (listOfObjectId != null && !listOfObjectId.isEmpty()) {
-            DBCollection collection = connect().getCollection(collectionName);
+            MongoCollection collection = connect().getCollection(collectionName);
 
-            BasicDBObject inQuery = new BasicDBObject();
-            List<BasicDBObject> listOfDBObjects = new ArrayList<BasicDBObject>();
+            Document inQuery = new Document();
+            List<Document> listOfDBObjects = new ArrayList<Document>();
             List<ObjectId> listOfObjectID = new ArrayList<>();
 
             for (ObjectId objectId : listOfObjectId) {
                 listOfObjectID.add(objectId);
             }
 
-            inQuery.put("_id", new BasicDBObject("$in", listOfObjectID));
+            inQuery.put("_id", new Document("$in", listOfObjectID));
 
-            DBCursor cur = null;
+            MongoCursor<Document> cur = null;
 
             try {
-                cur = collection.find(inQuery);
+                cur = collection.find(inQuery).iterator();
 
                 while (cur.hasNext()) {
-                    listOfDBObjects.add((BasicDBObject) cur.next());
+                    listOfDBObjects.add((Document) cur.next());
                 }
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
@@ -1248,7 +1195,7 @@ public class SyncMongoDS
             } else if (nvb instanceof NVPairGetNameMap) {
                 //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
                 //doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
-                ArrayList<DBObject> vals = mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
+                List<Document> vals = mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
                 doc.append(nvc.getName(), vals);
                 //if(log.isEnabled()) log.getLogger().info("vals:" + vals);
             } else if (nvb instanceof NVEnum) {
@@ -1295,12 +1242,12 @@ public class SyncMongoDS
 
             else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
-            } else if (nvc.isTypeReferenceID() && !ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
                 if (value != null) {
-                    doc.append(ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
                 } else {
-                    doc.append(ReservedID.map(nvc, nvc.getName()), null);
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
             }
 
@@ -1360,7 +1307,7 @@ public class SyncMongoDS
         }
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
         }
 
 
@@ -1449,13 +1396,13 @@ public class SyncMongoDS
 
             else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
-            } else if (nvc.isTypeReferenceID() && !ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
 
                 if (value != null) {
-                    doc.append(ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
                 } else {
-                    doc.append(ReservedID.map(nvc, nvc.getName()), null);
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
             }
 
@@ -1498,7 +1445,7 @@ public class SyncMongoDS
 
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
         }
 
 
@@ -1747,14 +1694,14 @@ public class SyncMongoDS
                 nve.setGUID(UUID.randomUUID().toString());
             }
 
-            DBCollection collection = connect().getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
+            MongoCollection collection = connect().getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 
-            BasicDBObject originalDoc = lookupByReferenceID(nve.getNVConfig().getName(), new ObjectId(nve.getReferenceID()));
+            Document originalDoc = lookupByReferenceID(nve.getNVConfig().getName(), new ObjectId(nve.getReferenceID()));
             if (originalDoc == null) {
                 throw new APIException("Can not update a missing object " + nve.getReferenceID());
             }
             //BasicDBObject originalDoc = new BasicDBObject().append(ReservedID.REFERENCE_ID.getValue(), new ObjectId(nve.getReferenceID()));
-            BasicDBObject updatedDoc = new BasicDBObject();
+            Document updatedDoc = new Document();
 
             NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
             if (updateTS && nve instanceof TimeStampInterface) {
@@ -1862,13 +1809,13 @@ public class SyncMongoDS
                     updatedDoc.put(nvc.getName(), nvb.getValue());
                 } else if (nvc.isArray()) {
                     updatedDoc.put(nvc.getName(), nvb.getValue());
-                } else if (nvc.isTypeReferenceID() && !ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+                } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                     String value = (String) nvb.getValue();
 
                     if (value != null) {
-                        updatedDoc.append(ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
+                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), new ObjectId(value));
                     } else {
-                        updatedDoc.append(ReservedID.map(nvc, nvc.getName()), null);
+                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                     }
                 } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
                     Object tempValue = configInfo.getSecurityController().encryptValue(this, nve, nvc, nvb, null);
@@ -1881,12 +1828,12 @@ public class SyncMongoDS
                 }
             }
 
-            BasicDBObject updatedObj = new BasicDBObject();
+            Document updatedObj = new Document();
             updatedObj.put("$set", updatedDoc);
 
             try {
                 if (collection != null) {
-                    collection.update(originalDoc, updatedObj);
+                    collection.updateOne(originalDoc, updatedObj);
                 }
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
@@ -1922,14 +1869,14 @@ public class SyncMongoDS
         SharedUtil.checkIfNulls("Null value", nve);
 
         if (nve.getReferenceID() != null) {
-            BasicDBObject doc = new BasicDBObject();
-            doc.put(ReservedID.GUID.getValue(), nve.getGUID());
-            DBCollection collection = connect().getCollection(nve.getNVConfig().getName());
+            Document doc = new Document();
+            doc.put(MongoUtil.ReservedID.GUID.getValue(), nve.getGUID());
+            MongoCollection collection = connect().getCollection(nve.getNVConfig().getName());
 
 
             try {
                 if (collection != null) {
-                    collection.remove(doc);
+                    collection.deleteOne(doc);
                     if (dataCacheMonitor != null) {
                         dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, nve));
                     }
@@ -1942,10 +1889,10 @@ public class SyncMongoDS
             if (withReference) {
 
                 // the associated encryption key dao
-                DBCollection ekdCollection = connect().getCollection(EncryptedKey.NVCE_ENCRYPTED_KEY.getName());
+                MongoCollection ekdCollection = connect().getCollection(EncryptedKey.NVCE_ENCRYPTED_KEY.getName());
                 //if(log.isEnabled()) log.getLogger().info("EncryptedKeyDAO:" + ekdCollection);
                 if (ekdCollection != null)
-                    ekdCollection.remove(doc);
+                    ekdCollection.deleteOne(doc);
                 // end
 
                 NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
@@ -1987,9 +1934,9 @@ public class SyncMongoDS
 
     public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, APIException, AccessException {
-        DBObject query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
-        DBCollection collection = connect().getCollection(nvce.toCanonicalID());
-        collection.remove(query);
+        Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
+        MongoCollection<Document> collection = connect().getCollection(nvce.toCanonicalID());
+        collection.deleteMany(query);
         return false;
     }
 
@@ -2006,14 +1953,14 @@ public class SyncMongoDS
             throws NullPointerException, IllegalArgumentException, APIException {
         SharedUtil.checkIfNulls("Null value", nve);
 
-        DBCollection collection = connect().getCollection(nve.getNVConfig().getName());
+        MongoCollection collection = connect().getCollection(nve.getNVConfig().getName());
 
         if (nve.getReferenceID() != null) {
             nve.getReferenceID();
 
             try {
                 if (collection != null)
-                    collection.remove(new BasicDBObject());
+                    collection.deleteMany(new Document());
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             }
@@ -2052,10 +1999,10 @@ public class SyncMongoDS
      */
     @Override
     public long countMatch(NVConfigEntity nvce, QueryMarker... queryCriteria) {
-        DBObject query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
-        DBCollection collection = connect().getCollection(nvce.toCanonicalID());
+        Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
+        MongoCollection<Document> collection = connect().getCollection(nvce.toCanonicalID());
 
-        return collection.count(query);
+        return collection.countDocuments(query);
     }
 
     /**
@@ -2070,40 +2017,41 @@ public class SyncMongoDS
             throws IllegalArgumentException, IOException, NullPointerException {
         SharedUtil.checkIfNulls("Null value", file, is);
         if (log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
-        DB temp = null;
-        OutputStream os = null;
+        MongoClient mongoClient = null;
+
         try {
-            temp = newConnection();
-            GridFS fs = new GridFS(temp);
-            GridFSInputFile gfsFile = fs.createFile(is);
-            gfsFile.setFilename(file.getOriginalFileInfo().getName());
+            mongoClient = newConnection();
+            MongoDatabase gridFSDB = mongoClient.getDatabase(FS_DB);
+            GridFSBucket gridFSBucket = GridFSBuckets.create(gridFSDB);
+            gridFSBucket.uploadFromStream(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()), file.getOriginalFileInfo().getName(), is, new GridFSUploadOptions());
+            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.idAsGUID(file.getOriginalFileInfo())).first();
+            if (gridFSFile != null) {
+                file.getOriginalFileInfo().setLength(gridFSFile.getLength());
+            }
 
-            if (file.getOriginalFileInfo().getReferenceID() == null)
-                insert(file.getOriginalFileInfo());
 
-            gfsFile.setId(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
-
-            os = gfsFile.getOutputStream();
-            long length = IOUtil.relayStreams(is, os, false);
-            file.getOriginalFileInfo().setLength(length);
+//            GridFS fs = new GridFS(temp);
+//            GridFSInputFile gfsFile = fs.createFile(is);
+//            gfsFile.setFilename(file.getOriginalFileInfo().getName());
+//
+//            if (file.getOriginalFileInfo().getReferenceID() == null)
+//                insert(file.getOriginalFileInfo());
+//
+//            gfsFile.setId(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
+//
+//            os = gfsFile.getOutputStream();
+//            long length = IOUtil.relayStreams(is, os, false);
+//            file.getOriginalFileInfo().setLength(length);
             update(file.getOriginalFileInfo());
 
 
             //gfsFile.save();
 
         } finally {
-            IOUtil.close(os);
-
 
             if (closeStream)
                 IOUtil.close(is);
-            if (temp != null) {
-                try {
-                    temp.getMongoClient().close();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
+            IOUtil.close(mongoClient);
         }
 
         return file;
@@ -2122,35 +2070,30 @@ public class SyncMongoDS
             throws IllegalArgumentException, IOException, NullPointerException {
         SharedUtil.checkIfNulls("Null value", file, os);
 
-        DB temp = null;
-        try {
-            temp = newConnection();
-            //db.setWriteConcern(WriteConcern.SAFE);
-            //;
-            //db.setReadPreference(ReadPreference.primary());
-            GridFS fs = new GridFS(temp);
+        MongoClient mongoClient = null;
 
-            GridFSDBFile gridFSFile = fs.find(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
+        try {
+            mongoClient = newConnection();
+            MongoDatabase gridFSDB = mongoClient.getDatabase(FS_DB);
+            GridFSBucket gridFSBucket = GridFSBuckets.create(gridFSDB);
+            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.idAsGUID(file.getOriginalFileInfo())).first();
 
 
             if (gridFSFile != null) {
-                IOUtil.relayStreams(gridFSFile.getInputStream(), os, closeStream);
+                gridFSBucket.downloadToStream(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()), os);
                 //out.writeTo(os);
             }
         } finally {
             if (closeStream)
                 IOUtil.close(os);
-            if (temp != null) {
-                try {
-                    temp.getMongoClient().close();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
+            IOUtil.close(mongoClient);
         }
         if (log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
         return file;
     }
+
+
+
 
     /**
      * Updates and overwrites an existing file in the database.
@@ -2205,9 +2148,22 @@ public class SyncMongoDS
             throws IllegalArgumentException, IOException, NullPointerException {
         SharedUtil.checkIfNulls("Null value", file);
         if (log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
-        GridFS fs = new GridFS(connect());
 
-        fs.remove(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
+
+        MongoClient mongoClient = null;
+
+        try {
+            mongoClient = newConnection();
+            MongoDatabase gridFSDB = mongoClient.getDatabase(FS_DB);
+            GridFSBucket gridFSBucket = GridFSBuckets.create(gridFSDB);
+            gridFSBucket.delete(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()));
+
+        } finally {
+            IOUtil.close(mongoClient);
+        }
+//        GridFS fs = new GridFS(connect());
+//
+//        fs.remove(new ObjectId(file.getOriginalFileInfo().getReferenceID()));
 
     }
 
@@ -2302,10 +2258,10 @@ public class SyncMongoDS
             throws NullPointerException, IllegalArgumentException, APIException {
         DynamicEnumMapManager.validateDynamicEnumMap(dynamicEnumMap);
 
-        DBCollection collection = connect().getCollection(dynamicEnumMap.getClass().getName());
+        MongoCollection collection = connect().getCollection(dynamicEnumMap.getClass().getName());
         SyncMongoMetaManager.SINGLETON.addUniqueIndexesForDynamicEnumMap(collection);
 
-        BasicDBObject doc = new BasicDBObject();
+        Document doc = new Document();
         doc.append(MetaToken.NAME.getName(), dynamicEnumMap.getName());
         doc.append(MetaToken.VALUE.getName(), mapArrayValuesNVPair(null, dynamicEnumMap, false));
         doc.append(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
@@ -2317,13 +2273,13 @@ public class SyncMongoDS
 
         try {
             if (collection != null)
-                collection.insert(doc);
+                collection.insertOne(doc);
         } catch (MongoException e) {
 
             getAPIExceptionHandler().throwException(e);
         }
 
-        dynamicEnumMap.setReferenceID(doc.getObjectId(ReservedID.REFERENCE_ID.getValue()).toHexString());
+        dynamicEnumMap.setReferenceID(doc.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue()).toHexString());
 
         return dynamicEnumMap;
     }
@@ -2332,25 +2288,25 @@ public class SyncMongoDS
             throws NullPointerException, IllegalArgumentException, APIException {
         DynamicEnumMapManager.validateDynamicEnumMap(dynamicEnumMap);
 
-        DBCollection collection = connect().getCollection(dynamicEnumMap.getClass().getName());
+        MongoCollection collection = connect().getCollection(dynamicEnumMap.getClass().getName());
 
         //BasicDBObject originalDoc = lookupByReferenceID(collection.getName(), new ObjectId(dynamicEnumMap.getReferenceID()));
-        BasicDBObject originalDoc = lookupByName(collection.getName(), dynamicEnumMap.getName());
+        Document originalDoc = lookupByName(collection.getNamespace().getCollectionName(), dynamicEnumMap.getName());
 
         if (originalDoc == null) {
             return insertDynamicEnumMap(dynamicEnumMap);
         } else {
-            BasicDBObject updatedDoc = new BasicDBObject();
+            Document updatedDoc = new Document();
 
             updatedDoc.put(MetaToken.VALUE.getName(), mapArrayValuesNVPair(null, dynamicEnumMap, false));
             updatedDoc.put(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
 
-            BasicDBObject updatedObj = new BasicDBObject();
+            Document updatedObj = new Document();
             updatedObj.put("$set", updatedDoc);
 
             try {
                 if (collection != null)
-                    collection.update(originalDoc, updatedObj);
+                    collection.updateOne(originalDoc, updatedObj);
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             }
@@ -2367,20 +2323,20 @@ public class SyncMongoDS
      * @param name
      * @return
      */
-    private BasicDBObject lookupByName(String collectionName, String name) {
-        DBCollection collection = connect().getCollection(collectionName);
-        BasicDBObject query = new BasicDBObject();
+    private Document lookupByName(String collectionName, String name) {
+        MongoCollection<Document> collection = connect().getCollection(collectionName);
+        Document query = new Document();
         query.put(MetaToken.NAME.getName(), name);
 
-        DBObject dbObj = null;
+        Document dbObj = null;
 
         try {
-            dbObj = collection.findOne(query);
+            dbObj = collection.find(query).first();
         } catch (MongoException e) {
             getAPIExceptionHandler().throwException(e);
         }
 
-        return (BasicDBObject) dbObj;
+        return dbObj;
     }
 
 
@@ -2390,15 +2346,15 @@ public class SyncMongoDS
      * @param obj
      * @return
      */
-    private DynamicEnumMap fromDBtoDynamicEnumMap(BasicDBObject obj) {
-        BasicDBList list = (BasicDBList) obj.get(MetaToken.VALUE.getName());
-        ObjectId objectID = obj.getObjectId(ReservedID.REFERENCE_ID.getValue());
+    private DynamicEnumMap fromDBtoDynamicEnumMap(Document obj) {
+        List<Document> list = (List<Document>) obj.get(MetaToken.VALUE.getName());
+        ObjectId objectID = obj.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue());
 
         List<NVPair> nvpl = new ArrayList<NVPair>();
 
         if (list != null) {
             for (int i = 0; i < list.size(); i++) {
-                nvpl.add(toNVPair(null, null, (BasicDBObject) list.get(i)));
+                nvpl.add(toNVPair(null, null, list.get(i)));
             }
         }
 
@@ -2442,7 +2398,7 @@ public class SyncMongoDS
      */
     public DynamicEnumMap searchDynamicEnumMapByReferenceID(String refID, Class<? extends DynamicEnumMap> clazz)
             throws NullPointerException, IllegalArgumentException, APIException {
-        DBCollection collection = null;
+        MongoCollection collection = null;
 
         if (clazz != null) {
             collection = connect().getCollection(clazz.getName());
@@ -2451,18 +2407,18 @@ public class SyncMongoDS
         }
 
 
-        return searchDynamicEnumMapByReferenceID(new ObjectId(refID), collection.getName());
+        return searchDynamicEnumMapByReferenceID(new ObjectId(refID), collection.getNamespace().getCollectionName());
     }
 
 
     private DynamicEnumMap searchDynamicEnumMapByReferenceID(ObjectId objectID, String collectionName)
             throws NullPointerException, IllegalArgumentException, APIException {
-        DBCollection collection = connect().getCollection(collectionName);
+        MongoCollection collection = connect().getCollection(collectionName);
 
-        BasicDBObject doc = null;
+        Document doc = null;
 
         if (collection != null)
-            doc = lookupByReferenceID(collection.getName(), objectID);
+            doc = lookupByReferenceID(collection.getNamespace().getCollectionName(), objectID);
 
 
         return fromDBtoDynamicEnumMap(doc);
@@ -2494,9 +2450,9 @@ public class SyncMongoDS
             name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
-        BasicDBObject doc = null;
+        Document doc = null;
 
-        DBCollection collection = null;
+        MongoCollection collection = null;
 
         if (clazz != null) {
             collection = connect().getCollection(clazz.getName());
@@ -2506,7 +2462,7 @@ public class SyncMongoDS
 
 
         if (collection != null)
-            doc = lookupByName(collection.getName(), name);
+            doc = lookupByName(collection.getNamespace().getCollectionName(), name);
 
         return fromDBtoDynamicEnumMap(doc);
     }
@@ -2535,7 +2491,7 @@ public class SyncMongoDS
             name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
-        DBCollection collection = null;
+        MongoCollection collection = null;
 
         if (clazz != null) {
             collection = connect().getCollection(clazz.getName());
@@ -2543,11 +2499,11 @@ public class SyncMongoDS
             collection = connect().getCollection(DynamicEnumMap.class.getName());
         }
 
-        BasicDBObject doc = lookupByName(collection.getName(), name);
+        Document doc = lookupByName(collection.getNamespace().getCollectionName(), name);
 
         if (doc != null) {
             if (collection != null)
-                collection.remove(doc);
+                collection.deleteOne(doc);
         }
 
         DynamicEnumMapManager.SINGLETON.deleteDynamicEnumMap(name);
@@ -2577,7 +2533,7 @@ public class SyncMongoDS
             throws NullPointerException, IllegalArgumentException, APIException {
         List<DynamicEnumMap> list = new ArrayList<DynamicEnumMap>();
 
-        DBCollection collection = null;
+        MongoCollection collection = null;
 
         if (clazz != null) {
             collection = connect().getCollection(clazz.getName());
@@ -2585,13 +2541,13 @@ public class SyncMongoDS
             collection = connect().getCollection(DynamicEnumMap.class.getName());
         }
 
-        DBCursor cur = null;
+        MongoCursor cur = null;
 
         try {
-            cur = collection.find();
+            cur = collection.find().cursor();
 
             while (cur.hasNext()) {
-                list.add(fromDBtoDynamicEnumMap((BasicDBObject) cur.next()));
+                list.add(fromDBtoDynamicEnumMap((Document) cur.next()));
             }
         } finally {
             IOUtil.close(cur);
@@ -2645,9 +2601,9 @@ public class SyncMongoDS
             listOfObjectIds.add(new ObjectId(id));
         }
 
-        List<BasicDBObject> listOfDBObject = lookupByReferenceIDs(nvce.getName(), listOfObjectIds);
+        List<Document> listOfDBObject = lookupByReferenceIDs(nvce.getName(), listOfObjectIds);
 
-        for (BasicDBObject dbObject : listOfDBObject) {
+        for (Document dbObject : listOfDBObject) {
             try {
                 list.add((V) fromDB(userID, connect(), dbObject, (Class<? extends NVEntity>) nvce.getMetaType()));
             } catch (InstantiationException | IllegalAccessException e) {
@@ -2670,17 +2626,17 @@ public class SyncMongoDS
         List<V> list = new ArrayList<V>();
 
 
-        DBObject query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
-        DBCollection collection = connect().getCollection(nvce.toCanonicalID());
-        DBCursor cur = null;
+        Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
+        MongoCollection collection = connect().getCollection(nvce.toCanonicalID());
+        MongoCursor cur = null;
 
         try {
             if (collection != null) {
-                cur = collection.find(query, formatSearchFields(fieldNames));
+                cur = collection.find(query).projection(formatSearchFields(fieldNames)).cursor();
 
                 while (cur.hasNext()) {
                     try {
-                        V nve = fromDB(userID, connect(), (BasicDBObject) cur.next(), (Class<? extends NVEntity>) nvce.getMetaType());
+                        V nve = fromDB(userID, connect(), (Document) cur.next(), (Class<? extends NVEntity>) nvce.getMetaType());
                         list.add(nve);
                     } catch (InstantiationException | IllegalAccessException e) {
                         e.printStackTrace();
@@ -2757,20 +2713,20 @@ public class SyncMongoDS
         SharedUtil.checkIfNulls("NVConfigEntity is null.", nvce);
         List<T> list = new ArrayList<T>();
 
-        DBObject query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
-        DBCollection collection = connect().getCollection(nvce.toCanonicalID());
-        DBCursor cur = null;
+        Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
+        MongoCollection<Document> collection = connect().getCollection(nvce.toCanonicalID());
+        MongoCursor<Document> cur = null;
 
         try {
             if (collection != null) {
                 List<String> fieldNames = new ArrayList<String>();
-                fieldNames.add(ReservedID.REFERENCE_ID.getValue());
+                fieldNames.add(MongoUtil.ReservedID.REFERENCE_ID.getValue());
                 fieldNames.add(MetaToken.GUID.getName());
                 fieldNames.add(MetaToken.SUBJECT_GUID.getName());
-                cur = collection.find(query, formatSearchFields(fieldNames));
+                cur = collection.find(query).projection(formatSearchFields(fieldNames)).cursor();
 
                 while (cur.hasNext()) {
-                    DBObject dbObject = cur.next();
+                    Document dbObject = cur.next();
                     String guid = (String) dbObject.get(MetaToken.GUID.getName());
                     String subjectGUID = (String) dbObject.get(MetaToken.SUBJECT_GUID.getName());
                     // check if the user has access to the object
@@ -2837,11 +2793,11 @@ public class SyncMongoDS
 
         List<ObjectId> objectIDsList = (List<ObjectId>) reportResults.getMatchIDs().subList(startIndex, endIndex);
 
-        List<BasicDBObject> dbObjectsList = lookupByReferenceIDs(reportResults.getNVConfigEntity().toCanonicalID(), objectIDsList);
+        List<Document> dbObjectsList = lookupByReferenceIDs(reportResults.getNVConfigEntity().toCanonicalID(), objectIDsList);
         List<NVEntity> nveList = new ArrayList<NVEntity>();
 
         if (dbObjectsList != null) {
-            for (BasicDBObject obj : dbObjectsList) {
+            for (Document obj : dbObjectsList) {
                 try {
                     nveList.add((V) fromDB(null, connect(), obj, (Class<? extends NVEntity>) reportResults.getNVConfigEntity().getMetaType()));
                 } catch (InstantiationException | IllegalAccessException e) {

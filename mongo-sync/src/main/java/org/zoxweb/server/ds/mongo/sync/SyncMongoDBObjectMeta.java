@@ -18,29 +18,24 @@ package org.zoxweb.server.ds.mongo.sync;
 import org.bson.Document;
 import org.zoxweb.shared.util.NVConfigEntity;
 
-public class SyncMongoDBObjectMeta
-{
-	private Document content;
-	private NVConfigEntity nvce;
-	
-	public SyncMongoDBObjectMeta(NVConfigEntity nvce)
-	{
-		this.nvce = nvce;
-	}
-	
-	public Document getContent()
-	{
-		return content;
-	}
+public class SyncMongoDBObjectMeta {
+    private Document content;
+    private NVConfigEntity nvce;
 
-	public void setContent(Document content)
-	{
-		this.content = content;
-	}
+    public SyncMongoDBObjectMeta(NVConfigEntity nvce) {
+        this.nvce = nvce;
+    }
 
-	public NVConfigEntity getNVConfigEntity()
-	{
-		return nvce;
-	}
+    public Document getContent() {
+        return content;
+    }
+
+    public void setContent(Document content) {
+        this.content = content;
+    }
+
+    public NVConfigEntity getNVConfigEntity() {
+        return nvce;
+    }
 
 }

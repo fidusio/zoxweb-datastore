@@ -22,7 +22,6 @@ import org.zoxweb.shared.api.APICredentialsDAO;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.util.NVEntity;
 
-@SuppressWarnings("serial")
 public class UpdateFilterClass
     implements ValueFilter<Class<?>, Boolean>
 {
