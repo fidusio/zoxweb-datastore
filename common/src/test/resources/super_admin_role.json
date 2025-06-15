@@ -1,0 +1,36 @@
+{
+  
+  "name": "super_admin_role",
+  "description": "Super admin role",
+  "app_id": "testapp",
+  "domain_id": "test.com",
+  "permissions": [
+    {
+      "name": "nve_read_all",
+      "description": "Read all nves",
+      "pattern": "nventity:read:*"
+    },
+    { 
+      "name": "nve_delete_all",
+      "description": "Delete all nves",
+      "pattern": "nventity:delete:*"
+    },
+    {
+      
+      "name": "nve_update_all",
+      "description": "Update all nves",
+      "pattern": "nventity:update:*"
+    },
+    {
+      
+      "name": "nve_create_all",
+      "description": "Create all nves",
+      "pattern": "nventity:create:*"
+    },
+    {
+      "name": "nve_move_all",
+      "description": "Move all nves",
+      "pattern": "nventity:move:*"
+    }
+  ]
+}

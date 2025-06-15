@@ -16,10 +16,7 @@
 package org.zoxweb.server.ds.mongo.sync;
 
 import org.zoxweb.shared.api.*;
-import org.zoxweb.shared.util.GetNameValue;
-import org.zoxweb.shared.util.NVECRUDMonitor;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.NVPair;
+import org.zoxweb.shared.util.*;
 
 public class SyncMongoDSCreator
         implements APIServiceProviderCreator {
@@ -31,12 +28,14 @@ public class SyncMongoDSCreator
      */
     public enum MongoParam
             implements GetNameValue<String> {
-        DB_NAME("db_name", "fidus_store"),
+        DB_NAME("db_name", "no_sneak"),
         HOST("host", "localhost"),
         PORT("port", "27017"),
-        DB_URI("db_uri", "mongodb://localhost:27017"),
+        // "mongodb://localhost:27017";
+        DB_URI("db_uri", null),
         DATA_CACHE("data_cache", "false"),
         DATA_CACHE_CLASS_NAME("data_cache_class_name", null),
+        GRIDFS_POSTFIX("gridfs_name", "_gridfs");
 
         ;
 
@@ -55,6 +54,25 @@ public class SyncMongoDSCreator
 
         public String getValue() {
             return value;
+        }
+
+        public static String dataStoreName(APIConfigInfo aci)
+        {
+            return aci.getProperties().getValue(DB_NAME);
+        }
+
+        public static String dataStoreURI(APIConfigInfo aci)
+        {
+            String uri = aci.getProperties().getValue(DB_URI);
+            if (SUS.isEmpty(uri))
+                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" +  aci.getProperties().getValue(PORT);
+
+            return uri;
+        }
+
+        public static String gridFSDataStoreName(APIConfigInfo aci)
+        {
+            return dataStoreName(aci) + aci.getProperties().getValue(GRIDFS_POSTFIX);
         }
 
     }
@@ -84,7 +102,7 @@ public class SyncMongoDSCreator
 
 
     @Override
-    public SyncMongoDS createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
+    public SyncMongoDS createAPI(APIDataStore<?, ?> dataStore, APIConfigInfo apiConfig)
             throws APIException {
         SyncMongoDS mongoDS = new SyncMongoDS();
 
