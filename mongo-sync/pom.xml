@@ -10,24 +10,29 @@
     </parent>
 
     <artifactId>mongo-sync</artifactId>
+    <packaging>jar</packaging>
 
-    <properties>
-        <maven.compiler.source>${jdk.target.version}</maven.compiler.source>
-        <maven.compiler.target>${jdk.target.version}</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
+<!--    <properties>-->
+<!--        <maven.compiler.source>${jdk.target.version}</maven.compiler.source>-->
+<!--        <maven.compiler.target>${jdk.target.version}</maven.compiler.target>-->
+<!--        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>-->
+<!--    </properties>-->
 
     <dependencies>
         <dependency>
             <groupId>org.mongodb</groupId>
             <artifactId>mongodb-driver-sync</artifactId>
-            <version>${mongo.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${junit.version}</version>
+            <artifactId>junit-jupiter-params</artifactId>
+        </dependency>
+
+
+        <dependency>
+            <groupId>org.zoxweb</groupId>
+            <artifactId>zoxweb-core</artifactId>
         </dependency>
 
     </dependencies>

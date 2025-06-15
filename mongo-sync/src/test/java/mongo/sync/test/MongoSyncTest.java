@@ -21,4 +21,15 @@ public class MongoSyncTest {
         System.out.println("MongoDB created: " + mongoDB.getName());
         System.out.println(mongoDataStore.getStoreTables());
     }
+
+    @Test
+    public void testRangeInt()
+    {
+        Range<Integer> intRange = new Range<Integer>(1,1000);
+        intRange.setName("INT_RANGE");
+        mongoDataStore.insert(intRange);
+        System.out.println(intRange.getReferenceID());
+        intRange = (Range<Integer>) dataStore.searchByID(Range.class.getName(), intRange.getReferenceID()).get(0);
+        System.out.println(intRange + " " + intRange.getStart().getClass() + " " + intRange.getEnd().getClass());
+    }
 }
