@@ -16,7 +16,6 @@
 package org.zoxweb.server.ds.derby;
 
 
-
 import org.zoxweb.shared.util.GetNameValue;
 
 
@@ -30,93 +29,83 @@ import org.zoxweb.shared.api.APIServiceProviderCreator;
 import org.zoxweb.shared.api.APIServiceType;
 import org.zoxweb.shared.api.APITokenManager;
 
-public class DerbyDataStoreCreator 
-	implements APIServiceProviderCreator
-{
-	
-	public final static String API_NAME = "DerbyDB";
+public class DerbyDataStoreCreator
+        implements APIServiceProviderCreator {
+
+    public final static String API_NAME = "DerbyDB";
 
     /**
      * Contains parameters needed to create the Mongo database.
      */
-	public enum DerbyParam 
-		implements GetNameValue<String>
-	{
-		DRIVER("driver", null),
-		URL("url", null),
-		USER("user", null),
-		PASSWORD("password",null),
-		
-		
-		;
-		
-		private final String name;
-		private final String value;
-		
-		DerbyParam(String name, String value)
-		{
-			this.name = name;
-			this.value = value;
-		}
-		
-		@Override
-		public String getName() 
-		{
-			return name;
-		}
-		
-		public String getValue()
-		{
-			return value;
-		}
-		
-	}
+    public enum DerbyParam
+            implements GetNameValue<String> {
+        DRIVER("driver", null),
+        URL("url", null),
+        USER("user", null),
+        PASSWORD("password", null),
 
-	@Override
-	public APIConfigInfo createEmptyConfigInfo() 
-	{
-		APIConfigInfo configInfo = new APIConfigInfoDAO();
-		
-		for (DerbyParam dp : DerbyParam.values())
-  		configInfo.getProperties().add(dp.getName(), dp.getValue());
-		
-		APIServiceType[] types = {APIServiceType.DATA_STORAGE};
-		configInfo.setServiceTypes(types);
-		configInfo.setAPITypeName(API_NAME);
-		configInfo.setDescription("Derby DB Configuration Info.");
-		configInfo.setVersion("1.0.0");
-			
-		return configInfo;
-	}
-	
-	
-	@Override
-	public DerbyDataStore createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
-			throws APIException
-	{
-	  DerbyDataStore derbyDS = new DerbyDataStore();
-		
-	  derbyDS.setAPIConfigInfo(apiConfig);
-	  return derbyDS;
-	}
 
-	
-	@Override
-	public APIExceptionHandler getExceptionHandler() 
-	{
-		return null;
-	}
+        ;
 
-	@Override
-	public String getName()
-    {
-		return API_NAME;
-	}
+        private final String name;
+        private final String value;
 
-	@Override
-	public APITokenManager getAPITokenManager()
-    {
-		return null;
-	}
+        DerbyParam(String name, String value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+    }
+
+    @Override
+    public APIConfigInfo createEmptyConfigInfo() {
+        APIConfigInfo configInfo = new APIConfigInfoDAO();
+
+        for (DerbyParam dp : DerbyParam.values())
+            configInfo.getProperties().add(dp.getName(), dp.getValue());
+
+        APIServiceType[] types = {APIServiceType.DATA_STORAGE};
+        configInfo.setServiceTypes(types);
+        configInfo.setAPITypeName(API_NAME);
+        configInfo.setDescription("Derby DB Configuration Info.");
+        configInfo.setVersion("1.0.0");
+
+        return configInfo;
+    }
+
+
+    @Override
+    public DerbyDataStore createAPI(APIDataStore<?, ?> ds, APIConfigInfo apiConfig)
+            throws APIException {
+        DerbyDataStore derbyDS = new DerbyDataStore();
+
+        derbyDS.setAPIConfigInfo(apiConfig);
+        return derbyDS;
+    }
+
+
+    @Override
+    public APIExceptionHandler getExceptionHandler() {
+        return null;
+    }
+
+    @Override
+    public String getName() {
+        return API_NAME;
+    }
+
+    @Override
+    public APITokenManager getAPITokenManager() {
+        return null;
+    }
 
 }

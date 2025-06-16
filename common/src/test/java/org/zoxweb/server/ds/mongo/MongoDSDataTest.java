@@ -61,8 +61,8 @@ public class MongoDSDataTest {
     private static final String APP_ID = "testapp";
 
     protected static APISecurityManager<Subject, AuthorizationInfo, PrincipalCollection> apiSecurityManager;
-    protected static APIDocumentStore<?> documentStore;
-    protected static APIDataStore<?> dataStore;
+    protected static APIDocumentStore<?,?> documentStore;
+    protected static APIDataStore<?, ?> dataStore;
     protected static APIAppManager appManager = new APIAppManagerProvider();
 
     @BeforeAll

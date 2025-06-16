@@ -27,12 +27,38 @@ public class MongoUtil {
         return new ObjectId(nve.getReferenceID());
     }
 
+    public static <V> V guessID(String idToGuess)
+    {
+        SUS.checkIfNulls("null idToGuess", idToGuess);
+        try
+        {
+            return (V) new ObjectId(idToGuess);
+        }
+        catch (Exception e)
+        {
+            return (V) UUID.fromString(idToGuess);
+        }
+    }
+
+    public static <V> GetNameValue<V> idToGNV(String idToGuess)
+    {
+        SUS.checkIfNulls("null idToGuess", idToGuess);
+        try
+        {
+            return (GetNameValue<V>) GetNameValue.create(ReservedID.REFERENCE_ID.getValue(), new ObjectId(idToGuess));
+        }
+        catch (Exception e)
+        {
+            return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
+        }
+    }
+
     public static Document idAsGUID(NVEntity nve) {
         return new Document("_id", nveGUID(nve));
     }
 
     public static Document idAsRefID(NVEntity nve) {
-        return new Document("_id", nveRefID(nve));
+        return new Document(ReservedID.REFERENCE_ID.getValue(), nveRefID(nve));
     }
 
     /**

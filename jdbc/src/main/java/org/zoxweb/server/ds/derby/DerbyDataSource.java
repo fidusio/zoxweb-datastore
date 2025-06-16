@@ -10,9 +10,9 @@ import java.util.logging.Logger;
 public class DerbyDataSource implements DataSource {
 
     private final DerbyDataStore derbyDataStore;
-    public DerbyDataSource(DerbyDataStore derbyDataStore)
-    {
-        this.derbyDataStore  = derbyDataStore;
+
+    public DerbyDataSource(DerbyDataStore derbyDataStore) {
+        this.derbyDataStore = derbyDataStore;
     }
 
     @Override

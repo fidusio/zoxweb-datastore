@@ -65,7 +65,7 @@ public class SyncMongoDSCreator
         {
             String uri = aci.getProperties().getValue(DB_URI);
             if (SUS.isEmpty(uri))
-                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" +  aci.getProperties().getValue(PORT);
+                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" +  aci.getProperties().getValue(PORT) + "/?uuidRepresentation=standard";
 
             return uri;
         }

@@ -51,7 +51,7 @@ public class MongoDSFileTest {
     private static final String APP_ID = "testapp";
 
     private static APISecurityManager<Subject, AuthorizationInfo, PrincipalCollection> apiSecurityManager;
-    private static APIDocumentStore<?> documentStore;
+    private static APIDocumentStore<?, ?> documentStore;
 
     @BeforeAll
     public static void start()

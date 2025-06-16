@@ -8,8 +8,7 @@ import org.zoxweb.shared.util.NVInt;
 
 public class TestUtil {
 
-    public static SyncMongoDS crateDataStore(String dataStoreName, String mongoDBHost, int mongoDBPort)
-    {
+    public static SyncMongoDS crateDataStore(String dataStoreName, String mongoDBHost, int mongoDBPort) {
         SyncMongoDSCreator smdsc = new SyncMongoDSCreator();
         APIConfigInfo apici = smdsc.createEmptyConfigInfo();
         apici.getProperties().build(MongoParam.DB_NAME, dataStoreName)
