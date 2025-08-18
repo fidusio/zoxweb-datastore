@@ -13,6 +13,8 @@ public class MongoUtil {
     private MongoUtil() {
     }
 
+//    protected final static Map<Class<?>, BiConsumer<?,?>> nvbToDocument = new LinkedHashMap<>();
+
     private final static HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
     public static BsonBinary bsonNVEGUID(NVEntity nve) {
@@ -115,7 +117,47 @@ public class MongoUtil {
 
             return name;
         }
-
-
     }
+
+//    public static void fillNVBDocs()
+//    {
+//        nvbToDocument.put(NVPairList.class, new BiConsumer<NVPairList, Document>() {
+//            /**
+//             * Performs this operation on the given arguments.
+//             *
+//             * @param nvPairList the first input argument
+//             * @param document   the second input argument
+//             */
+//            @Override
+//            public void accept(NVPairList nvPairList, Document document) {
+//                if (nvPairList.isFixed())
+//                    document.append(SharedUtil.toCanonicalID('_', nvPairList.getName(), MetaToken.IS_FIXED.getName()), nvPairList.isFixed());
+//                document.append(nvPairList.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
+//            }
+//        });
+//
+//        if (nvb instanceof NVPairList) {
+//            if (((NVPairList) nvb).isFixed())
+//                doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+//            doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
+//        } else if (nvb instanceof NVGetNameValueList) {
+//            if (((NVGetNameValueList) nvb).isFixed())
+//                doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+//            doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
+//        } else if (nvb instanceof NVPairGetNameMap) {
+//            //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
+//            //doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
+//            List<Document> vals = mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
+//            doc.append(nvc.getName(), vals);
+//            //if(log.isEnabled()) log.getLogger().info("vals:" + vals);
+//        } else if (nvb instanceof NVEnum) {
+//            doc.append(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
+//        } else if (nvb instanceof NVEnumList) {
+//            doc.append(nvc.getName(), mapEnumList((NVEnumList) nvb));
+//        } else if (nvb instanceof NVStringList) {
+//            doc.append(nvc.getName(), ((NVStringList) nvb).getValue());
+//        } else if (nvb instanceof NVStringSet) {
+//            doc.append(nvc.getName(), ((NVStringSet) nvb).getValue());
+//        }
+//    }
 }

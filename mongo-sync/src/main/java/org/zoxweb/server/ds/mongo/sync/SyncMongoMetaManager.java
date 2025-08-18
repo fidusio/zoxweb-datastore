@@ -203,36 +203,13 @@ public class SyncMongoMetaManager {
      */
     private synchronized void addUniqueIndexes(MongoCollection<Document> collection, NVConfigEntity nvce) {
         if (!isIndexed(collection)) {
-            //List<DBObject> list = collection.getIndexInfo();
-            //log.info("List of DBObject Indexes: " + list);
-            //List<String> toIndex = new ArrayList<String>();
-//			addNVConfigEntity(collection.getDB(), nvce);
+
             addNVConfigEntity(getMongoDatabase(), nvce);
             for (NVConfig nvc : nvce.getAttributes()) {
 
                 if (!nvc.getName().equals(MetaToken.REFERENCE_ID.getName()) && nvc.isUnique() && !nvc.isArray()) {
                     createUniqueIndex(collection, nvc.getName());
-//					toIndex.add( nvc.getName());
-//					
-//					boolean indexToAdd = true;
-//					
-//					for (DBObject dbIndex : list)
-//					{
-//						log.info(dbIndex.toString());
-//						
-//						if (dbIndex.get("key") != null && ((DBObject)dbIndex.get("key")).get(nvc.getName()) != null)
-//						{
-//							indexToAdd = false;
-//							break;
-//						}
-//						
-//					}
-//					log.info("Index to Add: " + indexToAdd + " for " + nvc.getName());
-//					if (indexToAdd)
-//					{
-//						//collection.ensureIndex(new BasicDBObject(nvc.getName(), 1), "unique", true);
-//						collection.createIndex(new BasicDBObject(nvc.getName(), 1), new BasicDBObject("unique", true));
-//					}
+
                 }
             }
 
@@ -240,44 +217,7 @@ public class SyncMongoMetaManager {
     }
 
 
-//	private synchronized void addUniqueIndexes(DBCollection collection, NVConfigEntity nvce)
-//	{
-//		if (!isIndexed(collection))
-//		{
-//			List<DBObject> list = collection.getIndexInfo();
-//			log.info("List of DBObject Indexes: " + list);
-//			
-//			for (NVConfig nvc : nvce.getAttributes())
-//			{
-//				
-//				if (!nvc.getName().equals(MetaToken.REFERENCE_ID.getName()) && nvc.isUnique())
-//				{
-//					boolean indexToAdd = true;
-//					
-//					for (DBObject dbIndex : list)
-//					{
-//						log.info(dbIndex.toString());
-//						
-//						if (dbIndex.get("key") != null && ((DBObject)dbIndex.get("key")).get(nvc.getName()) != null)
-//						{
-//							indexToAdd = false;
-//							break;
-//						}
-//						
-//					}
-//					log.info("Index to Add: " + indexToAdd + " for " + nvc.getName());
-//					if (indexToAdd)
-//					{
-//						//collection.ensureIndex(new BasicDBObject(nvc.getName(), 1), "unique", true);
-//						collection.createIndex(new BasicDBObject(nvc.getName(), 1), new BasicDBObject("unique", true));
-//					}
-//				}	
-//			}
-//			
-//		}
-//	}
-
-    private List<String> createUniqueIndex(MongoCollection collection, String... uniqueIndexNames) {
+    private List<String> createUniqueIndex(MongoCollection<Document> collection, String... uniqueIndexNames) {
         ArrayList<String> ret = new ArrayList<String>();
 
         ListIndexesIterable<Document> indexes = collection.listIndexes();
@@ -304,7 +244,7 @@ public class SyncMongoMetaManager {
         return ret;
     }
 
-    protected synchronized void addUniqueIndexesForDynamicEnumMap(MongoCollection collection) {
+    protected synchronized void addUniqueIndexesForDynamicEnumMap(MongoCollection<Document> collection) {
         if (!isIndexed(collection)) {
             createUniqueIndex(collection, MetaToken.NAME.getName());
 

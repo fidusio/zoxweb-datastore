@@ -33,10 +33,10 @@ public enum DerbyDT
     ;
 
 
-    private String dbType;
-    private int sqlType;
-    private Class<?> javaClass;
-    private Class<?> nvbClass;
+    private final String dbType;
+    private final int sqlType;
+    private final Class<?> javaClass;
+    private final Class<?> nvbClass;
 
     DerbyDT(String dbValue, int type, Class<?> javaClass, Class<?> nvbClass) {
         this.dbType = dbValue;

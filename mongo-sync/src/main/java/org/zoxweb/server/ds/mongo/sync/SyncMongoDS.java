@@ -27,6 +27,7 @@ import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.model.Filters;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
@@ -719,7 +720,9 @@ public class SyncMongoDS
         }
 
         if (clazz == byte[].class) {
-            ((NVBlob) nvb).setValue((byte[]) dbObject.get(nvc.getName()));
+            Binary mBinary = (Binary) dbObject.get(nvc.getName());
+            if(mBinary != null)
+                ((NVBlob) nvb).setValue(mBinary.getData());
             return;
         }
 
@@ -958,6 +961,17 @@ public class SyncMongoDS
         return lookupByReferenceID(metaTypeName, objectId, null);
     }
 
+    /**
+     *
+     * @param metaTypeName
+     * @param objectId
+     * @param projection
+     * @return Document not entity
+     * @param <NT>
+     * @param <RT>
+     * @param <NIT>
+     */
+
     @SuppressWarnings("unchecked")
     @Override
     public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT objectId, NIT projection) {
@@ -1174,11 +1188,11 @@ public class SyncMongoDS
         if (securityController != null)
             securityController.associateNVEntityToSubjectGUID(nve, null);
 
-        if (nve.getReferenceID() == null) {
+        if (SUS.isEmpty(nve.getReferenceID())) {
             nve.setReferenceID(ObjectId.get().toHexString());
         }
 
-        if (nve.getGUID() == null) {
+        if (SUS.isEmpty(nve.getGUID())) {
             nve.setGUID(UUID.randomUUID().toString());
         }
 
@@ -1326,7 +1340,6 @@ public class SyncMongoDS
 
 
         try {
-            if (collection != null)
                 collection.insertOne(doc);
         } catch (MongoException e) {
             e.printStackTrace();
@@ -2619,7 +2632,7 @@ public class SyncMongoDS
 
         for (Document dbObject : listOfDBObject) {
             try {
-                list.add((V) fromDB(userID, connect(), dbObject, (Class<? extends NVEntity>) nvce.getMetaType()));
+                list.add(fromDB(userID, connect(), dbObject, (Class<? extends NVEntity>) nvce.getMetaType()));
             } catch (InstantiationException | IllegalAccessException e) {
                 e.printStackTrace();
             }

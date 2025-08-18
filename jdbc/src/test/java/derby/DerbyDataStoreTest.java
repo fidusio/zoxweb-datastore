@@ -16,17 +16,19 @@
 package derby;
 
 
+import data.DSConst;
+import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import data.DSConst;
 import org.zoxweb.server.ds.derby.DerbyDataStore;
-import org.zoxweb.server.security.HashUtil;
+import org.zoxweb.server.security.SecUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.crypto.CIPassword;
+import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
@@ -59,6 +61,7 @@ public class DerbyDataStoreTest {
     private static final String PASSWORD ="APP";
 
 
+
     @BeforeAll
     public static void setUp() {
 //    	try
@@ -72,6 +75,7 @@ public class DerbyDataStoreTest {
     		dataStore = new DerbyDataStore(configInfo);
     		System.out.println(dataStore.connect());
     		System.out.print("URLs:" + MEMORY_URL + " mem," + EMBEDDED_DISK_URL + " disk, " + CLIENT_URL);
+            OPSecUtil.singleton();
     	}
 //    	catch(Throwable e)
 //    	{
@@ -312,12 +316,13 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
-        CIPassword p = HashUtil.toPassword(CryptoConst.HASHType.BCRYPT, 0, 10, "P1ssw@rd");
+        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
+        CIPassword p = credentialHasher.hash("P1ssw@rd");
         dataStore.insert(p);
 
         CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
         Assertions.assertNotEquals(found, p);
-        HashUtil.validatePassword(found, "P1ssw@rd");
+        assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
     }
 
@@ -328,7 +333,7 @@ public class DerbyDataStoreTest {
         hmci.setAccept(HTTPMediaType.APPLICATION_JSON);
         hmci.setContentType(HTTPMediaType.APPLICATION_JSON);
 
-        hmci.getHeaders().add("revision", "2023-07-15");
+        //hmci.getHeaders().add("revision", "2023-07-15");
         HTTPAuthorization authorization = new HTTPAuthorization("XlogistX-KEY", "ABB-CC-DDSFS-664554");
         //dataStore.insert(authorization);
 
@@ -341,6 +346,8 @@ public class DerbyDataStoreTest {
         hmci.setContent(GSONUtil.toJSONDefault(nvgm));
 
 
+        System.out.println(GSONUtil.toJSONDefault(hmci, true ));
+
         HTTPMessageConfig httpMessageConfig = dataStore.insert((HTTPMessageConfig)hmci);
         System.out.println(httpMessageConfig.getGUID());
 
@@ -350,9 +357,10 @@ public class DerbyDataStoreTest {
         System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
 
         String json = GSONUtil.toJSONDefault(hmci);
-        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);
+        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig );
 
-        System.out.println((hmci == httpMessageConfig) + " " + json.equals(jsonFromDB));
+        assert(hmci != httpMessageConfig);
+        assert json.equals(jsonFromDB);
         System.out.println(json);
         System.out.println(jsonFromDB);
 
@@ -404,8 +412,8 @@ public class DerbyDataStoreTest {
 
         List<DeviceInfo> results = dataStore.search(DeviceInfo.NVC_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
 
-
-        System.out.println(GSONUtil.toJSONDefault(results.get(0), true));
+        if(results != null && results.size() > 0)
+            System.out.println(GSONUtil.toJSONDefault(results.get(0), true));
     }
 
 }

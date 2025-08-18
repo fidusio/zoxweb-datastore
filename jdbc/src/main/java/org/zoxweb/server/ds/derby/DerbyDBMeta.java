@@ -132,8 +132,12 @@ public class DerbyDBMeta {
 
     public static void toDerbyValue(PreparedStatement ps, int index, NVBase<?> nvb) throws IOException, SQLException {
         Object value = nvb.getValue();
+
+
         if (nvb.getValue() == null) {
             ps.setObject(index, null);
+        } else if (nvb instanceof NamedValue) {
+            ps.setString(index, ""+nvb.getValue());
         } else if (nvb instanceof NVBlob) {
             ps.setBinaryStream(index, new ByteArrayInputStream(((NVBlob) nvb).getValue()));
         } else if (nvb.getValue() instanceof String) {
@@ -268,6 +272,8 @@ public class DerbyDBMeta {
             ddt = DerbyDT.REMOTE_REFERENCE;
         } else if (nvc.isArray()) {
             return DerbyDT.INNER_ARRAY;
+        } else if (nvc.getMetaType() == NamedValue.class) {
+            return DerbyDT.K4_VARCHAR;
         }
 
 

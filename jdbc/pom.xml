@@ -28,14 +28,15 @@
         <dependency>
             <groupId>org.zoxweb</groupId>
             <artifactId>zoxweb-core</artifactId>
-
         </dependency>
+
 
         <dependency>
             <groupId>org.apache.derby</groupId>
             <artifactId>derbyclient</artifactId>
             <version>${apache.derby.version}</version>
         </dependency>
+
 
 
         <dependency>
