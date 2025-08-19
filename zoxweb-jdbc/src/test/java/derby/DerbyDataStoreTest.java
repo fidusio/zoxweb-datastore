@@ -19,70 +19,69 @@ package derby;
 import data.DSConst;
 import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.ds.derby.DerbyDataStore;
-import org.zoxweb.server.security.SecUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.crypto.CredentialHasher;
-import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
-import org.zoxweb.shared.http.*;
 import org.zoxweb.shared.iot.DeviceInfo;
 import org.zoxweb.shared.iot.PortInfo;
 import org.zoxweb.shared.iot.ProtocolInfo;
-import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.NVConfigEntity;
+import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
 import java.util.List;
 import java.util.UUID;
 
 
 public class DerbyDataStoreTest {
 
-	// local datatore
+    // local datatore
     private static DerbyDataStore dataStore;
     private static final String EMBEDDED_DRIVER = "org.apache.derby.jdbc.EmbeddedDriver";
     private static final String CLIENT_DRIVER = "org.apache.derby.jdbc.ClientDriver";
-   
+
     private static final String MEMORY_URL = "jdbc:derby:memory:test";
     private static final String EMBEDDED_DISK_URL = "jdbc:derby:/tmp/derby/test";
     private static final String CLIENT_URL = "jdbc:derby://localhost:1527/test-db";
 
-    private static final String USER ="APP";
-    private static final String PASSWORD ="APP";
-
+    private static final String USER = "APP";
+    private static final String PASSWORD = "APP";
+    private static CommonDataStoreTest<Connection, Connection> commonDataStoreTest;
 
 
     @BeforeAll
     public static void setUp() {
 //    	try
-    	{
-    	    //NVEntity.GLOBAL_ID_AS_REF_ID = true;
-    		APIConfigInfo configInfo = new APIConfigInfoDAO();
-    		configInfo.getProperties().add("driver", CLIENT_DRIVER);
-    		configInfo.getProperties().add("url", CLIENT_URL);
-    		configInfo.getProperties().add("user", USER);
-    		configInfo.getProperties().add("password", PASSWORD);
-    		dataStore = new DerbyDataStore(configInfo);
-    		System.out.println(dataStore.connect());
-    		System.out.print("URLs:" + MEMORY_URL + " mem," + EMBEDDED_DISK_URL + " disk, " + CLIENT_URL);
+        {
+            //NVEntity.GLOBAL_ID_AS_REF_ID = true;
+            APIConfigInfo configInfo = new APIConfigInfoDAO();
+            configInfo.getProperties().add("driver", CLIENT_DRIVER);
+            configInfo.getProperties().add("url", CLIENT_URL);
+            configInfo.getProperties().add("user", USER);
+            configInfo.getProperties().add("password", PASSWORD);
+            dataStore = new DerbyDataStore(configInfo);
+            System.out.println(dataStore.connect());
+            System.out.print("URLs:" + MEMORY_URL + " mem," + EMBEDDED_DISK_URL + " disk, " + CLIENT_URL);
             OPSecUtil.singleton();
-    	}
+            commonDataStoreTest = new CommonDataStoreTest<>(dataStore);
+        }
 //    	catch(Throwable e)
 //    	{
 //    		e.printStackTrace();
 //    		
 //    	}
-    	System.out.println("Setup done");
+        System.out.println("Setup done");
     }
 
     @AfterAll
@@ -96,16 +95,16 @@ public class DerbyDataStoreTest {
         DSConst.AllTypes allTypes = null;
 
 
-        for (int i = 0;i < 10; i++) {
+        for (int i = 0; i < 10; i++) {
             allTypes = DSConst.AllTypes.autoBuilder();
             long ts = System.nanoTime();
             allTypes = dataStore.insert(allTypes);
             ts = System.nanoTime() - ts;
-            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts) + " to insert");
         }
 
-        assert(allTypes != null);
-        assert(allTypes.getGUID() != null);
+        assert (allTypes != null);
+        assert (allTypes.getGUID() != null);
         System.out.println("json:" + GSONUtil.toJSON(allTypes, true, false, false));
         List<DSConst.AllTypes> result = dataStore.searchByID((NVConfigEntity) allTypes.getNVConfig(), allTypes.getGUID());
         allTypes = result.get(0);
@@ -115,26 +114,25 @@ public class DerbyDataStoreTest {
         DSConst.AllTypes.testValues(allTypes);
         allTypes = GSONUtil.fromJSON(json);
         DSConst.AllTypes.testValues(allTypes);
-   }
+    }
 
 
     @Test
     public void testInsertComplex() throws IOException {
         DSConst.ComplexTypes complexTypes = null;
 
-        for (int i = 0;i < 5; i++)
-        {
+        for (int i = 0; i < 5; i++) {
             DSConst.AllTypes allTypes = DSConst.AllTypes.autoBuilder();
             long ts = System.nanoTime();
             complexTypes = DSConst.ComplexTypes.buildComplex(null);
-            complexTypes.setAllTypes(i%2 == 0 ? allTypes: null);
+            complexTypes.setAllTypes(i % 2 == 0 ? allTypes : null);
             complexTypes = dataStore.insert(complexTypes);
             ts = System.nanoTime() - ts;
-            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts) + " to insert");
         }
 
-        assert (null !=complexTypes);
-        assert (null !=complexTypes.getGUID());
+        assert (null != complexTypes);
+        assert (null != complexTypes.getGUID());
         String jsonOrig = GSONUtil.toJSON(complexTypes, true, false, false);
 
         System.out.println("$$$$$$$$$$$$$$$$$$$$$$$ " + complexTypes.getGUID());
@@ -154,7 +152,7 @@ public class DerbyDataStoreTest {
         addressDAO.setCountry("USA");
         addressDAO.setZIPOrPostalCode("90001");
         addressDAO = dataStore.insert(addressDAO);
-        assert (null !=addressDAO);
+        assert (null != addressDAO);
 
         List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID());
 
@@ -183,8 +181,7 @@ public class DerbyDataStoreTest {
     }
 
     @Test
-    public void testSearchAll()
-    {
+    public void testSearchAll() {
         DeviceDAO device = DSConst.init(new DeviceDAO());
         device.setName(UUID.randomUUID().toString());
         device = dataStore.insert(device);
@@ -200,12 +197,12 @@ public class DerbyDataStoreTest {
         List<DSConst.AllTypes> resultAt = dataStore.search(DSConst.AllTypes.class.getName(), null,
                 new QueryMatch<String>(Const.RelationalOperator.EQUAL, Const.Status.SUSPENDED.name(), "enum_val"), Const.LogicalOperator.AND, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
         System.out.println("size:" + resultAt.size() + " " + resultAt);
-        assert(resultAt.isEmpty());
+        assert (resultAt.isEmpty());
 
         resultAt = dataStore.search(DSConst.AllTypes.class.getName(), null,
                 new QueryMatch<String>(Const.RelationalOperator.EQUAL, Const.Status.SUSPENDED.name(), "enum_val"), Const.LogicalOperator.OR, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
         System.out.println("size:" + resultAt.size() + " " + resultAt);
-        assert(!resultAt.isEmpty());
+        assert (!resultAt.isEmpty());
 
 
     }
@@ -222,15 +219,15 @@ public class DerbyDataStoreTest {
             nveTypes.setAllTypes(allTypes);
             nveTypes = dataStore.update(nveTypes);
             ts = System.nanoTime() - ts;
-            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+            System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts) + " to insert");
             System.out.println("json:" + GSONUtil.toJSON(nveTypes, true, false, false));
         }
 
-        assert (null !=nveTypes);
-        assert (null !=nveTypes.getGUID());
+        assert (null != nveTypes);
+        assert (null != nveTypes.getGUID());
         nveTypes.setName("batata");
         nveTypes.getAllTypes().setName("harra");
-        nveTypes =  dataStore.update(nveTypes);
+        nveTypes = dataStore.update(nveTypes);
         String jsonOrig = GSONUtil.toJSON(nveTypes, true, false, false);
         System.out.println("json:" + jsonOrig);
         List<DSConst.ComplexTypes> result = dataStore.searchByID((NVConfigEntity) nveTypes.getNVConfig(), nveTypes.getGUID());
@@ -271,31 +268,30 @@ public class DerbyDataStoreTest {
         complex.setAllTypes(allTypes);
         complex = dataStore.update(complex);
         ts = System.nanoTime() - ts;
-        System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts)  + " to insert");
+        System.out.println("It took: " + Const.TimeInMillis.nanosToString(ts) + " to insert");
         System.out.println("json:" + GSONUtil.toJSON(complex, true, false, false));
-        assert(dataStore.delete(complex, true));
-        assert(dataStore.searchByID((NVConfigEntity) complex.getNVConfig(), complex.getGUID()).isEmpty());
-
+        assert (dataStore.delete(complex, true));
+        assert (dataStore.searchByID((NVConfigEntity) complex.getNVConfig(), complex.getGUID()).isEmpty());
 
 
     }
+
     @Test
     public void testInsertDeviceDAO() throws IOException {
         DeviceDAO device = DSConst.init(new DeviceDAO());
         device.getProperties().add("toto", "titi");
         device.getProperties().add(new NVInt("int_val", 100));
         device = dataStore.insert(device);
-        assert (null !=device.getGUID());
+        assert (null != device.getGUID());
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    public void testRange()
-    {
+    public void testRange() {
         Range<Float> floatRange = new Range<Float>(1.0f, 6.666f);
 
         floatRange = dataStore.insert(floatRange);
-        assert (null !=floatRange.getGUID());
+        assert (null != floatRange.getGUID());
 
 
         floatRange = (Range<Float>) dataStore.searchByID(Range.class.getName(), floatRange.getGUID()).get(0);
@@ -304,7 +300,7 @@ public class DerbyDataStoreTest {
         Range<Integer> intRange = new Range<Integer>(1, 200);
 
         intRange = dataStore.insert(intRange);
-        assert (null !=intRange.getGUID());
+        assert (null != intRange.getGUID());
 
 
         intRange = (Range<Integer>) dataStore.searchByID(Range.class.getName(), intRange.getGUID()).get(0);
@@ -313,67 +309,21 @@ public class DerbyDataStoreTest {
     }
 
 
-
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
-        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
-        CIPassword p = credentialHasher.hash("P1ssw@rd");
-        dataStore.insert(p);
 
-        CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
-        Assertions.assertNotEquals(found, p);
-        assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
-        assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
+        commonDataStoreTest.testArgonPassword();
+        commonDataStoreTest.testBCryptPassword();
     }
 
     @Test
-    public void testHMCI()
-    {
-        HTTPMessageConfigInterface hmci = HTTPMessageConfig.createAndInit("https://api.xlogistx.io", "login", HTTPMethod.PATCH);
-        hmci.setAccept(HTTPMediaType.APPLICATION_JSON);
-        hmci.setContentType(HTTPMediaType.APPLICATION_JSON);
-
-        //hmci.getHeaders().add("revision", "2023-07-15");
-        HTTPAuthorization authorization = new HTTPAuthorization("XlogistX-KEY", "ABB-CC-DDSFS-664554");
-        //dataStore.insert(authorization);
-
-
-        hmci.setAuthorization(authorization);
-        NVGenericMap nvgm = new NVGenericMap();
-        nvgm.add("name", "mario");
-        nvgm.add("email", "mario@mario.com");
-        nvgm.add(new NVInt("age", 31));
-        hmci.setContent(GSONUtil.toJSONDefault(nvgm));
-
-
-        System.out.println(GSONUtil.toJSONDefault(hmci, true ));
-
-        HTTPMessageConfig httpMessageConfig = dataStore.insert((HTTPMessageConfig)hmci);
-        System.out.println(httpMessageConfig.getGUID());
-
-
-        httpMessageConfig = (HTTPMessageConfig) dataStore.searchByID(HTTPMessageConfig.class.getName(), httpMessageConfig.getGUID()).get(0);
-
-        System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
-
-        String json = GSONUtil.toJSONDefault(hmci);
-        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig );
-
-        assert(hmci != httpMessageConfig);
-        assert json.equals(jsonFromDB);
-        System.out.println(json);
-        System.out.println(jsonFromDB);
-
-        authorization = hmci.getAuthorization();
-        //dataStore.delete(httpMessageConfig, true);
-
-        System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
+    public void testHMCI() {
+        commonDataStoreTest.testHMCI();
     }
 
 
     @Test
-    public void deviceInfoTest()
-    {
+    public void deviceInfoTest() {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setName("ATTINY84-M");
         deviceInfo.setDescription("14 pin Atmel microcontroller");
@@ -401,18 +351,14 @@ public class DerbyDataStoreTest {
         deviceInfo.addPort(new PortInfo("PA0", "General pin").setPort(13).setFunctions("PCINT0", "0", "10", "AREF", "ADC0"));
 
 
-
-
         deviceInfo.addPort(new PortInfo("GND", "ground").setPort(14));
-
-
 
 
         //deviceInfo = dataStore.insert(deviceInfo);
 
         List<DeviceInfo> results = dataStore.search(DeviceInfo.NVC_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
 
-        if(results != null && results.size() > 0)
+        if (results != null && results.size() > 0)
             System.out.println(GSONUtil.toJSONDefault(results.get(0), true));
     }
 

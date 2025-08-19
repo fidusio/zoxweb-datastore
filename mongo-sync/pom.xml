@@ -38,6 +38,13 @@
             <version>${zoxweb-core.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.zoxweb</groupId>
+            <artifactId>common-datastore-test</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
 </project>

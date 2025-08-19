@@ -11,11 +11,12 @@
 
 
     <modules>
-        <module>jdbc</module>
+        <module>common-datastore-test</module>
         <module>mongo-legacy</module>
         <module>hibernate</module>
         <module>mongo-sync</module>
-<!--        <module>common</module>-->
+        <module>zoxweb-jdbc</module>
+        <!--        <module>common</module>-->
     </modules>
 
 
@@ -34,7 +35,6 @@
     <artifactId>zoxweb-datastore</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>zoxweb-datastore</name>
     <url>http://maven.apache.org</url>
 
     <build>
@@ -244,6 +244,11 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
+
+
+
+
+
 
 
     </dependencies>

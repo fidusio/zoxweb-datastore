@@ -1,13 +1,12 @@
 package mongo.sync.test;
 
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
 import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
-import org.zoxweb.server.security.SecUtil;
-import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.util.NVFloat;
@@ -15,6 +14,7 @@ import org.zoxweb.shared.util.NVInt;
 import org.zoxweb.shared.util.RateCounter;
 import org.zoxweb.shared.util.SUS;
 
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,12 +22,15 @@ public class MongoSyncTest {
 
     private static SyncMongoDS mongoDataStore;
     private final static RateCounter rc = new RateCounter("Test");
+    private static CommonDataStoreTest<MongoClient, MongoDatabase> commonDataStoreTest;
 
     @BeforeAll
     public static void setup() {
 
         mongoDataStore = TestUtil.crateDataStore("test_local", "localhost", 27017);
         OPSecUtil.singleton();
+        commonDataStoreTest = new CommonDataStoreTest<>(mongoDataStore);
+
     }
 
     @Test
@@ -134,32 +137,16 @@ public class MongoSyncTest {
         return ret;
     }
 
+
     @Test
-    public void testPassword()
-    {
+    public void testPassword() throws NoSuchAlgorithmException {
 
-        rc.reset();
-        rc.start();
-        String[] hasherNames = {"bcrypt", "argon2id"};
+        commonDataStoreTest.testArgonPassword();
+        commonDataStoreTest.testBCryptPassword();
+    }
 
-
-        for(String hashName : hasherNames) {
-            CredentialHasher<CIPassword> passwordHasher = SecUtil.SINGLETON.lookupCredentialHasher(hashName);
-            CIPassword ciPassword = passwordHasher.hash("MyPassword!23");
-            ciPassword = mongoDataStore.insert(ciPassword);
-            CIPassword password = (CIPassword) mongoDataStore.searchByID(CIPassword.class.getName(), ciPassword.getGUID()).get(0);
-
-            System.out.println(SUS.toCanonicalID(',',ciPassword.getName(), ciPassword.getReferenceID(), ciPassword.getGUID()));
-
-            System.out.println(SUS.toCanonicalID(',',password.getName(), password.getReferenceID(), password.getGUID()));
-            SecUtil.SINGLETON.validatePassword(password, "MyPassword!23");
-        }
-        rc.stop(hasherNames.length);
-
-
-
-        System.out.println("argonPassword insert: " +rc);
-
-
+    @Test
+    public void testHMCI() {
+        commonDataStoreTest.testHMCI();
     }
 }
