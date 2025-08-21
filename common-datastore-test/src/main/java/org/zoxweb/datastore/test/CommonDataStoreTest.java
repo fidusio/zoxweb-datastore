@@ -7,15 +7,13 @@ import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.http.*;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.SharedStringUtil;
+import org.zoxweb.shared.util.*;
 
 import java.security.NoSuchAlgorithmException;
 
 public class CommonDataStoreTest<P,S> {
     public final APIDataStore<P,S> dataStore;
+    public final RateCounter rc = new RateCounter("Test");
     public CommonDataStoreTest(APIDataStore<P, S> ds)
     {
         this.dataStore = ds;
@@ -51,7 +49,7 @@ public class CommonDataStoreTest<P,S> {
         System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
 
         String json = GSONUtil.toJSONDefault(hmci);
-        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig );
+        String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);
 
         assert(hmci != httpMessageConfig);
         assert json.equals(jsonFromDB);
@@ -62,6 +60,10 @@ public class CommonDataStoreTest<P,S> {
         //dataStore.delete(httpMessageConfig, true);
 
         System.out.println("Authorization meta: " + ((NVConfigEntity)authorization.getNVConfig()).getAttributes());
+        NamedValue<String> token = hmci.getAuthorization().lookup(HTTPAuthorization.NVC_TOKEN.getName());
+        token.getProperties().build("test", "test-value");
+        httpMessageConfig = dataStore.update((HTTPMessageConfig) hmci);
+
     }
 
     public void testBCryptPassword() throws NoSuchAlgorithmException {
@@ -69,7 +71,7 @@ public class CommonDataStoreTest<P,S> {
         CIPassword p = credentialHasher.hash("P1ssw@rd");
         dataStore.insert(p);
 
-        CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
+        CIPassword found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
         assert found != p;
         assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
@@ -80,7 +82,7 @@ public class CommonDataStoreTest<P,S> {
         CIPassword p = credentialHasher.hash("P1ssw@rd");
         dataStore.insert(p);
 
-        CIPassword found = dataStore.lookupByReferenceID(CIPassword.class.getName(), p.getGUID());
+        CIPassword found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
         assert found != p;
         assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));

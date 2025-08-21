@@ -27,7 +27,6 @@ import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.model.Filters;
 import org.bson.Document;
 import org.bson.conversions.Bson;
-import org.bson.types.Binary;
 import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
@@ -43,6 +42,7 @@ import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
 import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.LongSequence;
+
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.filters.ChainedFilter;
@@ -94,7 +94,6 @@ public class SyncMongoDS
         }
     };
 
-
     private volatile MongoClient mongoClient = null;
     //private DBAddress dbAddress;
     private volatile MongoDatabase mongoDB = null;
@@ -119,8 +118,8 @@ public class SyncMongoDS
      * The default constructor.
      */
     public SyncMongoDS() {
-
     }
+
 
     /**
      * Returns the MongoDB client.
@@ -196,8 +195,15 @@ public class SyncMongoDS
 
     }
 
-    private Document mapNVPair(NVEntity container, NVPair nvp, boolean sync) {
-        Document db = new Document();
+    private Document serNamedValue(NamedValue<?> namedValue) {
+        Document bsonDoc = new Document();
+        bsonDoc.append(MetaToken.VALUE.getName(), namedValue.getValue())
+                .append("properties", serNVGenericMap(namedValue.getProperties()));
+        return bsonDoc;
+    }
+
+    private Document serNVPair(NVEntity container, NVPair nvp, boolean sync) {
+        Document bsonDoc = new Document();
 
         Object value = nvp.getValue();
 
@@ -206,12 +212,12 @@ public class SyncMongoDS
             value = getAPIConfigInfo().getSecurityController().encryptValue(this, container, null, nvp, null);
         }
 
-        db.append(MetaToken.NAME.getName(), nvp.getName());
-        db.append(MetaToken.VALUE.getName(), value instanceof EncryptedData ? toDBObject((EncryptedData) value, true, sync, false) : value);
+        bsonDoc.append(MetaToken.NAME.getName(), nvp.getName());
+        bsonDoc.append(MetaToken.VALUE.getName(), value instanceof EncryptedData ? serNVEntity((EncryptedData) value, true, sync, false) : value);
 
         if (nvp.getValueFilter() != null) {
             if (nvp.getValueFilter() != FilterType.CLEAR && !(nvp.getValueFilter() instanceof DynamicEnumMap)) {
-                db.append(MetaToken.VALUE_FILTER.getName(), nvp.getValueFilter().toCanonicalID());
+                bsonDoc.append(MetaToken.VALUE_FILTER.getName(), nvp.getValueFilter().toCanonicalID());
             }
 
             if (nvp.getValueFilter() instanceof DynamicEnumMap) {
@@ -230,17 +236,17 @@ public class SyncMongoDS
                 dbObject.append(MetaToken.REFERENCE_ID.getName(), new ObjectId(dem.getReferenceID()));
                 dbObject.append(MetaToken.COLLECTION_NAME.getName(), dem.getClass().getName());
 
-                db.append(MetaToken.VALUE_FILTER.getName(), dbObject);
+                bsonDoc.append(MetaToken.VALUE_FILTER.getName(), dbObject);
 
             }
 
         }
 
-        return db;
+        return bsonDoc;
     }
 
 
-    private Document mapNVGenericMap(NVGenericMap nvgm) {
+    private Document serNVGenericMap(NVGenericMap nvgm) {
         Document ret = new Document();
         ret.put(MetaToken.CLASS_TYPE.getName(), NVGenericMap.class.getName());
 
@@ -259,8 +265,7 @@ public class SyncMongoDS
                     gnv instanceof NVIntList ||
                     gnv instanceof NVLongList ||
                     gnv instanceof NVFloatList ||
-                    gnv instanceof NVDoubleList
-            )
+                    gnv instanceof NVDoubleList)
 //				value instanceof BigDecimal ||
 //				value instanceof Enum)
             {
@@ -279,9 +284,9 @@ public class SyncMongoDS
                 NVEntity nve = (NVEntity) value;
                 if (nve.getReferenceID() == null)
                     insert(nve);
-                ret.put(gnv.getName(), mapNVEntityReference(connect(), nve));
+                ret.put(gnv.getName(), serNVEntityReference(connect(), nve));
             } else if (gnv instanceof NVGenericMap) {
-                ret.put(gnv.getName(), mapNVGenericMap((NVGenericMap) gnv));
+                ret.put(gnv.getName(), serNVGenericMap((NVGenericMap) gnv));
             }
         }
 
@@ -289,21 +294,21 @@ public class SyncMongoDS
         return ret;
     }
 
-    private ArrayList<Document> mapArrayValuesNVPair(NVEntity container, ArrayValues<NVPair> listOfNVPair, boolean sync) {
+    private ArrayList<Document> serArrayValuesNVPair(NVEntity container, ArrayValues<NVPair> listOfNVPair, boolean sync) {
         ArrayList<Document> listOfDBObject = new ArrayList<Document>();
 
         for (NVPair nvp : listOfNVPair.values()) {
-            listOfDBObject.add(mapNVPair(container, nvp, sync));
+            listOfDBObject.add(serNVPair(container, nvp, sync));
         }
 
         return listOfDBObject;
     }
 
-    private ArrayList<Document> mapArrayValuesNVGetNameValueString(NVEntity container, ArrayValues<GetNameValue<String>> listOfNVPair, boolean sync) {
+    private ArrayList<Document> serArrayValuesNVGetNameValueString(NVEntity container, ArrayValues<GetNameValue<String>> listOfNVPair, boolean sync) {
         ArrayList<Document> listOfDBObject = new ArrayList<Document>();
 
         for (GetNameValue<String> nvp : listOfNVPair.values()) {
-            listOfDBObject.add(mapNVPair(container, new NVPair(nvp.getName(), nvp.getValue()), sync));
+            listOfDBObject.add(serNVPair(container, new NVPair(nvp.getName(), nvp.getValue()), sync));
         }
 
         return listOfDBObject;
@@ -315,7 +320,7 @@ public class SyncMongoDS
      * @param enumList
      * @return enumNames
      */
-    private ArrayList<String> mapEnumList(NVEnumList enumList) {
+    private List<String> mapEnumListToStringList(NVEnumList enumList) {
         ArrayList<String> enumNames = new ArrayList<String>();
 
         for (Enum<?> e : enumList.getValue()) {
@@ -326,7 +331,7 @@ public class SyncMongoDS
     }
 
 
-    private List<Document> mapArrayValuesNVEntity(MongoDatabase db,
+    private List<Document> serArrayValuesNVEntity(MongoDatabase db,
                                                   NVEntity container,
                                                   ArrayValues<NVEntity> refList,
                                                   boolean embed,
@@ -340,14 +345,14 @@ public class SyncMongoDS
         //System.out.println(container.getName() +":Array content:" + refList);
         for (NVEntity nve : refList.values()) {
             if (nve != null)
-                list.add(mapComplexNVEntityReference(db, container, nve, embed, sync, updateReferenceOnly));
+                list.add(serComplexNVEntityReference(db, container, nve, embed, sync, updateReferenceOnly));
 
         }
 
         return list;
     }
 
-    private Document mapComplexNVEntityReference(MongoDatabase db,
+    private Document serComplexNVEntityReference(MongoDatabase db,
                                                  NVEntity container,
                                                  NVEntity nve,
                                                  boolean embed,
@@ -355,10 +360,11 @@ public class SyncMongoDS
                                                  boolean updateReferenceOnly) {
         if (nve != null) {
             if (nve instanceof CIPassword) {
-                return toDBObject(nve, true, sync, updateReferenceOnly);
+                return serNVEntity(nve, true, sync, updateReferenceOnly);
             } else if (!(nve instanceof EncryptedKey) && nve instanceof EncryptedData) {
-                return toDBObject(nve, true, sync, updateReferenceOnly);
-            }
+                return serNVEntity(nve, true, sync, updateReferenceOnly);
+            } else if (embed)
+                return serNVEntity(nve, embed, sync, updateReferenceOnly);
 
             if (!embed) {
                 if (nve.getReferenceID() == null) {
@@ -374,13 +380,13 @@ public class SyncMongoDS
                         if (log.isEnabled()) log.getLogger().info("Not updated:" + nve.getClass().getName());
                     }
                 }
-                return mapNVEntityReference(db, nve);
+                return serNVEntityReference(db, nve);
             }
         }
         return null;
     }
 
-    private Document mapNVEntityReference(MongoDatabase db, NVEntity nve) {
+    private Document serNVEntityReference(MongoDatabase db, NVEntity nve) {
         Document entryElement = new Document();
         NVConfigEntity nvce = SyncMongoMetaManager.SINGLETON.addNVConfigEntity(db, ((NVConfigEntity) nve.getNVConfig()));
         entryElement.put(MetaToken.CANONICAL_ID.getName(), new ObjectId(nvce.getReferenceID()));
@@ -422,15 +428,15 @@ public class SyncMongoDS
 
     /**
      * @param db
-     * @param dbObject
+     * @param doc
      * @param nvc
      * @param nvb
      * @throws InstantiationException
      * @throws IllegalAccessException
      */
     @SuppressWarnings("unchecked")
-    private void updateMappedValue(String subjectGUID, MongoDatabase db, Document dbObject, NVEntity container, NVConfig nvc, NVBase<?> nvb)
-            throws InstantiationException, IllegalAccessException {
+    private void updateMappedValue(String subjectGUID, MongoDatabase db, Document doc, NVEntity container, NVConfig nvc, NVBase<?> nvb)
+            throws InstantiationException, IllegalAccessException, APIException {
         // This issue must be investigated further, seems to be object reference is null.
 //		if (nvc == null)
 //		{
@@ -463,7 +469,7 @@ public class SyncMongoDS
             if (container.lookupValue(nvc) != null)
                 return;
 
-            Object value = dbObject.get(resID.getValue());
+            Object value = doc.get(resID.getValue());
             if (value instanceof UUID)
                 ((NVPair) nvb).setValue(value.toString());
             else if (value instanceof ObjectId)
@@ -475,134 +481,145 @@ public class SyncMongoDS
         }
 
 
-        if (dbObject.get(nvc.getName()) == null)
+        if (doc.get(nvc.getName()) == null)
             return;
 
 
+        MongoUtil.DataDeserializer updater = MongoUtil.SINGLETON.lookupDataDeserializer(clazz);
+        if (updater != null) {
+            updater.deserialize(this, subjectGUID, db, doc, container, nvc, nvb);
+            return;
+        }
+
+
         if (nvc.isArray()) {
-            Object value = dbObject.get(nvc.getName());
+            Object value = doc.get(nvc.getName());
             if (value instanceof List) {
                 if (((List) value).size() == 0) {
                     return;
                 }
             }
 
-            if (nvc.isEnum()) {
-                List<String> listOfEnumNames = (List<String>) dbObject.get(nvc.getName());
-                List<Enum<?>> listOfEnums = new ArrayList<Enum<?>>();
+//            if (nvc.isEnum()) {
+//                List<String> listOfEnumNames = (List<String>) doc.get(nvc.getName());
+//                List<Enum<?>> listOfEnums = new ArrayList<Enum<?>>();
+//
+//                for (String enumName : listOfEnumNames) {
+//                    listOfEnums.add(SharedUtil.enumValue(clazz, enumName));
+//                }
+//
+//                ((NVEnumList) nvb).setValue(listOfEnums);
+//
+//                return;
+//            }
+//
+//            if (clazz == long[].class || clazz == Long[].class || clazz == Date[].class) {
+//
+//                List<Long> values = new ArrayList<Long>();
+//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//                for (Object val : dbValues) {
+//                    values.add((Long) val);
+//                }
+//                ((NVLongList) nvb).setValue(values);
+//                return;
+//            }
+//
+//            if (clazz == boolean[].class || clazz == Boolean[].class) {
+//                //((NVBooleanList) nvb).setValue((List<Boolean>) dbObject.get(nvc.getName()));
+//                return;
+//            }
+//
+//            if (clazz == BigDecimal[].class) {
+//                List<BigDecimal> ret = new ArrayList<BigDecimal>();
+//                List<String> values = (List<String>) doc.get(nvc.getName());
+//
+//                for (String val : values) {
+//                    ret.add(new BigDecimal(val));
+//                }
+//
+//                ((NVBigDecimalList) nvb).setValue(ret);
+//
+//                return;
+//            }
+//
+//            if (clazz == double[].class || clazz == Double[].class) {
+//
+//                List<Double> values = new ArrayList<Double>();
+//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//                for (Object val : dbValues) {
+//                    values.add((Double) val);
+//                }
+//                ((NVDoubleList) nvb).setValue(values);
+//                return;
+//            }
+//
+//            if (clazz == float[].class || clazz == Float[].class) {
+//                List<Float> values = new ArrayList<Float>();
+//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//                for (Object val : dbValues) {
+//                    if (val instanceof Double) {
+//                        val = ((Double) val).floatValue();
+//                    }
+//
+//                    values.add((Float) val);
+//                }
+//                ((NVFloatList) nvb).setValue(values);
+//
+//                return;
+//            }
+//
+//            if (clazz == int[].class || clazz == Integer[].class) {
+//                List<Integer> values = new ArrayList<Integer>();
+//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//                for (Object val : dbValues) {
+//                    values.add((Integer) val);
+//                }
+//                ((NVIntList) nvb).setValue(values);
+//                return;
+//            }
+//
+//            // String[] moved not used yet
+//            if (clazz == String[].class) {
+//                //if(log.isEnabled()) log.getLogger().info("nvc:" + nvc.getName());
+//                boolean isFixed = doc.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
+//
+//                List<Document> list = (List<Document>) doc.get(nvc.getName());
+//
+//                //List<NVPair> nvpl = new ArrayList<NVPair>();
+//                if (nvb instanceof NVGetNameValueList) {
+//                    if (list != null) {
+//                        for (int i = 0; i < list.size(); i++) {
+//                            ((NVGetNameValueList) nvb).add(toNVPair(subjectGUID, container, list.get(i)));
+//                        }
+//                    }
+//                    ((NVGetNameValueList) nvb).setFixed(isFixed);
+//                } else {
+//                    ArrayValues<NVPair> arrayValues = (ArrayValues<NVPair>) nvb;
+//
+//                    if (list != null) {
+//                        for (int i = 0; i < list.size(); i++) {
+//                            arrayValues.add(toNVPair(subjectGUID, container, list.get(i)));
+//                        }
+//                    }
+//
+//                    if (nvb instanceof NVPairList)
+//                        ((NVPairList) nvb).setFixed(isFixed);
+//                }
+//                //((NVPairList) nvb).setValue(nvpl);
+//
+//                return;
+//            }
+//            // String[] moved not used yet
 
-                for (String enumName : listOfEnumNames) {
-                    listOfEnums.add(SharedUtil.enumValue(clazz, enumName));
-                }
 
-                ((NVEnumList) nvb).setValue(listOfEnums);
-
-                return;
-            }
-
-            if (clazz == long[].class || clazz == Long[].class || clazz == Date[].class) {
-
-                List<Long> values = new ArrayList<Long>();
-                List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-                for (Object val : dbValues) {
-                    values.add((Long) val);
-                }
-                ((NVLongList) nvb).setValue(values);
-                return;
-            }
-
-            if (clazz == boolean[].class || clazz == Boolean[].class) {
-                //((NVBooleanList) nvb).setValue((List<Boolean>) dbObject.get(nvc.getName()));
-                return;
-            }
-
-            if (clazz == BigDecimal[].class) {
-                List<BigDecimal> ret = new ArrayList<BigDecimal>();
-                List<String> values = (List<String>) dbObject.get(nvc.getName());
-
-                for (String val : values) {
-                    ret.add(new BigDecimal(val));
-                }
-
-                ((NVBigDecimalList) nvb).setValue(ret);
-
-                return;
-            }
-
-            if (clazz == double[].class || clazz == Double[].class) {
-
-                List<Double> values = new ArrayList<Double>();
-                List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-                for (Object val : dbValues) {
-                    values.add((Double) val);
-                }
-                ((NVDoubleList) nvb).setValue(values);
-                return;
-            }
-
-            if (clazz == float[].class || clazz == Float[].class) {
-                List<Float> values = new ArrayList<Float>();
-                List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-                for (Object val : dbValues) {
-                    if (val instanceof Double) {
-                        val = ((Double) val).floatValue();
-                    }
-
-                    values.add((Float) val);
-                }
-                ((NVFloatList) nvb).setValue(values);
-
-                return;
-            }
-
-            if (clazz == int[].class || clazz == Integer[].class) {
-                List<Integer> values = new ArrayList<Integer>();
-                List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-                for (Object val : dbValues) {
-                    values.add((Integer) val);
-                }
-                ((NVIntList) nvb).setValue(values);
-                return;
-            }
-
-            if (clazz == String[].class) {
-                //if(log.isEnabled()) log.getLogger().info("nvc:" + nvc.getName());
-                boolean isFixed = dbObject.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
-
-                List<Document> list = (List<Document>) dbObject.get(nvc.getName());
-
-                //List<NVPair> nvpl = new ArrayList<NVPair>();
-                if (nvb instanceof NVGetNameValueList) {
-                    if (list != null) {
-                        for (int i = 0; i < list.size(); i++) {
-                            ((NVGetNameValueList) nvb).add(toNVPair(subjectGUID, container, list.get(i)));
-                        }
-                    }
-                    ((NVGetNameValueList) nvb).setFixed(isFixed);
-                } else {
-                    ArrayValues<NVPair> arrayValues = (ArrayValues<NVPair>) nvb;
-
-                    if (list != null) {
-                        for (int i = 0; i < list.size(); i++) {
-                            arrayValues.add(toNVPair(subjectGUID, container, list.get(i)));
-                        }
-                    }
-
-                    if (nvb instanceof NVPairList)
-                        ((NVPairList) nvb).setFixed(isFixed);
-                }
-                //((NVPairList) nvb).setValue(nvpl);
-
-                return;
-            }
             // Adding a list or set of NVEntities an array in this case
             if (NVEntity.class.isAssignableFrom(nvc.getMetaTypeBase())) {
 
-                List<SyncMongoDBObjectMeta> listOfDBObject = lookupByReferenceIDs((List<Document>) dbObject.get(nvc.getName()));
+                List<SyncMongoDBObjectMeta> listOfDBObject = lookupByReferenceIDs((List<Document>) doc.get(nvc.getName()));
                 if (listOfDBObject != null) {
                     //List<NVEntity> ret = new ArrayList<NVEntity>();
                     for (SyncMongoDBObjectMeta tempDBObject : listOfDBObject) {
@@ -627,7 +644,7 @@ public class SyncMongoDS
             if (container instanceof EncryptedKey) {
                 return;
             }
-            Document obj = (Document) dbObject.get(nvc.getName());
+            Document obj = (Document) doc.get(nvc.getName());
 
             Object className = obj.get(MetaToken.CLASS_TYPE.getName());
             if (className != null) {
@@ -657,104 +674,105 @@ public class SyncMongoDS
             return;
         }
 
-        if (clazz == String.class) {
 
-            Object tempValue = dbObject.get(nvc.getName());
-            if (tempValue instanceof Document) {
-                tempValue = fromDB(subjectGUID, db, (Document) tempValue, EncryptedData.class);
-            }
-
-            if (getAPIConfigInfo().getSecurityController() != null)
-                ((NVPair) nvb).setValue((String) getAPIConfigInfo().getSecurityController().decryptValue(this, container, nvb, tempValue, null));
-            else
-                ((NVPair) nvb).setValue((String) tempValue);
-
-            return;
-        }
-
-        if (clazz.isEnum()) {
-            ((NVEnum) nvb).setValue(SharedUtil.enumValue(clazz, dbObject.getString(nvc.getName())));
-            return;
-        }
-
-        if (clazz == NVStringList.class) {
-            List<String> values = new ArrayList<String>();
-            List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-            for (Object val : dbValues) {
-                values.add((String) val);
-            }
-            ((NVStringList) nvb).setValue(values);
-            return;
-        }
-        if (clazz == NVStringSet.class) {
-            Set<String> values = new HashSet<String>();
-            List<Document> dbValues = (List<Document>) dbObject.get(nvc.getName());
-
-            for (Object val : dbValues) {
-                values.add((String) val);
-            }
-            ((NVStringSet) nvb).setValue(values);
-            return;
-        }
-
-
-        if (clazz == NVGenericMap.class) {
-            NVGenericMap nvgm = (NVGenericMap) nvb;
-            Document dbNVGM = (Document) dbObject.get(nvc.getName());
-            fromNVGenericMap(subjectGUID, nvgm, dbNVGM);
-            return;
-
-        }
-        if (clazz == NVGenericMapList.class) {
-
-        }
-        if (clazz == long.class || clazz == Long.class) {
-            ((NVLong) nvb).setValue(dbObject.getLong(nvc.getName()));
-            return;
-        }
-
-        if (clazz == boolean.class || clazz == Boolean.class) {
-            ((NVBoolean) nvb).setValue(dbObject.getBoolean(nvc.getName()));
-            return;
-        }
-
-        if (clazz == byte[].class) {
-            Binary mBinary = (Binary) dbObject.get(nvc.getName());
-            if(mBinary != null)
-                ((NVBlob) nvb).setValue(mBinary.getData());
-            return;
-        }
-
-        if (clazz == BigDecimal.class) {
-            ((NVBigDecimal) nvb).setValue(new BigDecimal(dbObject.getString(nvc.getName())));
-            return;
-        }
-
-        if (clazz == double.class || clazz == Double.class) {
-            ((NVDouble) nvb).setValue(dbObject.getDouble(nvc.getName()));
-            return;
-        }
-
-        if (clazz == float.class || clazz == Float.class) {
-            ((NVFloat) nvb).setValue(dbObject.getDouble(nvc.getName()).floatValue());
-            return;
-        }
-
-        if (clazz == int.class || clazz == Integer.class) {
-            ((NVInt) nvb).setValue(dbObject.getInteger(nvc.getName()));
-            return;
-        }
-
-        if (clazz == Date.class) {
-            ((NVLong) nvb).setValue(dbObject.getLong(nvc.getName()));
-            return;
-        }
-
-        if (clazz == Number.class) {
-            ((NVNumber) nvb).setValue((Number) dbObject.get(nvc.getName()));
-            return;
-        }
+//        if (clazz.isEnum()) {
+//            ((NVEnum) nvb).setValue(SharedUtil.enumValue(clazz, doc.getString(nvc.getName())));
+//            return;
+//        }
+//
+//        if (clazz == String.class) {
+//
+//            Object tempValue = doc.get(nvc.getName());
+//            if (tempValue instanceof Document) {
+//                tempValue = fromDB(subjectGUID, db, (Document) tempValue, EncryptedData.class);
+//            }
+//
+//            if (getAPIConfigInfo().getSecurityController() != null)
+//                ((NVPair) nvb).setValue((String) getAPIConfigInfo().getSecurityController().decryptValue(this, container, nvb, tempValue, null));
+//            else
+//                ((NVPair) nvb).setValue((String) tempValue);
+//
+//            return;
+//        }
+//
+//        if (clazz == NVStringList.class) {
+//            List<String> values = new ArrayList<String>();
+//            List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//            for (Object val : dbValues) {
+//                values.add((String) val);
+//            }
+//            ((NVStringList) nvb).setValue(values);
+//            return;
+//        }
+//        if (clazz == NVStringSet.class) {
+//            Set<String> values = new HashSet<String>();
+//            List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
+//
+//            for (Object val : dbValues) {
+//                values.add((String) val);
+//            }
+//            ((NVStringSet) nvb).setValue(values);
+//            return;
+//        }
+//
+//
+//        if (clazz == NVGenericMap.class) {
+//            NVGenericMap nvgm = (NVGenericMap) nvb;
+//            Document dbNVGM = (Document) doc.get(nvc.getName());
+//            fromNVGenericMap(subjectGUID, nvgm, dbNVGM);
+//            return;
+//
+//        }
+//        if (clazz == NVGenericMapList.class) {
+//
+//        }
+//        if (clazz == long.class || clazz == Long.class) {
+//            ((NVLong) nvb).setValue(doc.getLong(nvc.getName()));
+//            return;
+//        }
+//
+//        if (clazz == boolean.class || clazz == Boolean.class) {
+//            ((NVBoolean) nvb).setValue(doc.getBoolean(nvc.getName()));
+//            return;
+//        }
+//
+//        if (clazz == byte[].class) {
+//            Binary mBinary = (Binary) doc.get(nvc.getName());
+//            if (mBinary != null)
+//                ((NVBlob) nvb).setValue(mBinary.getData());
+//            return;
+//        }
+//
+//        if (clazz == BigDecimal.class) {
+//            ((NVBigDecimal) nvb).setValue(new BigDecimal(doc.getString(nvc.getName())));
+//            return;
+//        }
+//
+//        if (clazz == double.class || clazz == Double.class) {
+//            ((NVDouble) nvb).setValue(doc.getDouble(nvc.getName()));
+//            return;
+//        }
+//
+//        if (clazz == float.class || clazz == Float.class) {
+//            ((NVFloat) nvb).setValue(doc.getDouble(nvc.getName()).floatValue());
+//            return;
+//        }
+//
+//        if (clazz == int.class || clazz == Integer.class) {
+//            ((NVInt) nvb).setValue(doc.getInteger(nvc.getName()));
+//            return;
+//        }
+//
+//        if (clazz == Date.class) {
+//            ((NVLong) nvb).setValue(doc.getLong(nvc.getName()));
+//            return;
+//        }
+//
+//        if (clazz == Number.class) {
+//            ((NVNumber) nvb).setValue((Number) doc.get(nvc.getName()));
+//            return;
+//        }
 
         throw new IllegalArgumentException("Unsupported type: " + nvc + " " + clazz);
     }
@@ -766,7 +784,7 @@ public class SyncMongoDS
      * @param dbObject
      * @return
      */
-    private NVPair toNVPair(String userID, NVEntity container, Document dbObject) {
+    protected NVPair toNVPair(String userID, NVEntity container, Document dbObject) {
         NVPair nvp = new NVPair();
 
         Object value = dbObject.get(MetaToken.VALUE.getName());
@@ -836,7 +854,7 @@ public class SyncMongoDS
 
 
     @SuppressWarnings("unchecked")
-    private NVGenericMap fromNVGenericMap(String userID, NVGenericMap nvgm, Document dbNVGM) throws InstantiationException, IllegalAccessException, APIException {
+    NVGenericMap fromNVGenericMap(String userID, NVGenericMap nvgm, Document dbNVGM) throws InstantiationException, IllegalAccessException, APIException {
         if (nvgm == null) {
             nvgm = new NVGenericMap();
         }
@@ -966,10 +984,10 @@ public class SyncMongoDS
      * @param metaTypeName
      * @param objectId
      * @param projection
-     * @return Document not entity
      * @param <NT>
      * @param <RT>
      * @param <NIT>
+     * @return Document not entity
      */
 
     @SuppressWarnings("unchecked")
@@ -984,7 +1002,7 @@ public class SyncMongoDS
             query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), objectId);
         else if (objectId instanceof String) {
 
-            GetNameValue<?> nvID = MongoUtil.idToGNV((String) objectId);
+            GetNameValue<?> nvID = MongoUtil.SINGLETON.idToGNV((String) objectId);
             query.put(nvID.getName(), nvID.getValue());
 //
 //            try {
@@ -1220,27 +1238,27 @@ public class SyncMongoDS
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
                     doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
-                doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
+                doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
                     doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
-                doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
+                doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
                 //doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
-                List<Document> vals = mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
+                List<Document> vals = serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
                 doc.append(nvc.getName(), vals);
                 //if(log.isEnabled()) log.getLogger().info("vals:" + vals);
             } else if (nvb instanceof NVEnum) {
                 doc.append(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
             } else if (nvb instanceof NVEnumList) {
-                doc.append(nvc.getName(), mapEnumList((NVEnumList) nvb));
+                doc.append(nvc.getName(), mapEnumListToStringList((NVEnumList) nvb));
             } else if (nvb instanceof NVStringList) {
                 doc.append(nvc.getName(), ((NVStringList) nvb).getValue());
             } else if (nvb instanceof NVStringSet) {
                 doc.append(nvc.getName(), ((NVStringSet) nvb).getValue());
             } else if (nvb instanceof NVGenericMap) {
-                doc.append(nvc.getName(), mapNVGenericMap((NVGenericMap) nvb));
+                doc.append(nvc.getName(), serNVGenericMap((NVGenericMap) nvb));
             } else if (nvb instanceof NVGenericMapList) {
 
             } else if (nvb instanceof NVEntityReference) {
@@ -1249,10 +1267,13 @@ public class SyncMongoDS
 //				if (temp.getReferenceID() == null)
 //					insert(temp);	
 //				doc.append(nvc.getName(), new ObjectId(temp.getReferenceID()));
-
-                doc.append(nvc.getName(), mapComplexNVEntityReference(connect(), nve, temp, false, false, false));
+                NVEntityReference nver = (NVEntityReference) nvb;
+                if (nver.getNVConfig().isEmbedded()) {
+                    log.getLogger().info("We Have an embedded Object: " + nver);
+                }
+                doc.append(nvc.getName(), serComplexNVEntityReference(connect(), nve, temp, nver.getNVConfig().isEmbedded(), false, false));
             } else if (nvb instanceof NVEntityReferenceList || nvb instanceof NVEntityGetNameMap || nvb instanceof NVEntityReferenceIDMap) {
-                doc.append(nvc.getName(), mapArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, false, false, false));
+                doc.append(nvc.getName(), serArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, false, false, false));
             } else if (nvb instanceof NVBigDecimal) {
                 doc.append(nvc.getName(), nvb.getValue().toString());
             } else if (nvb instanceof NVBigDecimalList) {
@@ -1266,6 +1287,9 @@ public class SyncMongoDS
                 doc.append(nvc.getName(), values);
             } else if (nvb instanceof NVBlob) {
                 doc.append(nvc.getName(), nvb.getValue());
+            } else if (nvb instanceof NamedValue) {
+
+                doc.append(nvb.getName(), serNamedValue((NamedValue<?>) nvb));
             }
 
 //			else if (nvc.getMetaTypeBase() == Date.class)
@@ -1276,6 +1300,7 @@ public class SyncMongoDS
             else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (MetaToken.GUID.getName().equals(nvc.getName())) {
+                // set the GUID ass uuid in the database
                 doc.append(MongoUtil.ReservedID.GUID.getValue(), UUID.fromString((String) nvb.getValue()));
             } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
@@ -1322,12 +1347,12 @@ public class SyncMongoDS
             else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
                 Object tempValue = securityController != null ? securityController.encryptValue(this, nve, nvc, nvb, null) : nvb.getValue();
                 if (tempValue instanceof EncryptedData) {
-                    doc.append(nvc.getName(), toDBObject((EncryptedData) tempValue, true, false, false));
+                    doc.append(nvc.getName(), serNVEntity((EncryptedData) tempValue, true, false, false));
                 } else {
                     doc.append(nvc.getName(), tempValue);
                 }
             }
-        }
+        } // end of for loop of the attributes
 
         //////We might need to put before the insert, need to test to conclude.
         if (!SyncMongoMetaManager.SINGLETON.isIndexed(collection)) {
@@ -1340,7 +1365,7 @@ public class SyncMongoDS
 
 
         try {
-                collection.insertOne(doc);
+            collection.insertOne(doc);
         } catch (MongoException e) {
             e.printStackTrace();
             getAPIExceptionHandler().throwException(e);
@@ -1356,7 +1381,7 @@ public class SyncMongoDS
 
 
     @SuppressWarnings("unchecked")
-    public Document toDBObject(NVEntity nve, boolean embed, boolean sync, boolean updateReferenceOnly)
+    public Document serNVEntity(NVEntity nve, boolean embed, boolean sync, boolean updateReferenceOnly)
             throws NullPointerException, IllegalArgumentException, APIException {
         SUS.checkIfNulls("Null value", nve);
 
@@ -1376,21 +1401,21 @@ public class SyncMongoDS
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
                     doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
-                doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
+                doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
                     doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
-                doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
+                doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
                 //doc.append(MetaToken.IS_FIXED.getName(), ((NVPairList) nvb).isFixed());
-                ArrayList<Document> vals = mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync);
+                ArrayList<Document> vals = serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync);
                 doc.append(nvc.getName(), vals);
                 //if(log.isEnabled()) log.getLogger().info("vals:" + vals);
             } else if (nvb instanceof NVEnum) {
                 doc.append(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
             } else if (nvb instanceof NVEnumList) {
-                doc.append(nvc.getName(), mapEnumList((NVEnumList) nvb));
+                doc.append(nvc.getName(), mapEnumListToStringList((NVEnumList) nvb));
             } else if (nvb instanceof NVEntityReference) {
                 NVEntity temp = (NVEntity) nvb.getValue();
 
@@ -1398,11 +1423,13 @@ public class SyncMongoDS
 //					insert(temp);	
 //				doc.append(nvc.getName(), new ObjectId(temp.getReferenceID()));
 
-                doc.append(nvc.getName(), mapComplexNVEntityReference(connect(), nve, temp, embed, sync, updateReferenceOnly));
+                doc.append(nvc.getName(), serComplexNVEntityReference(connect(), nve, temp, embed, sync, updateReferenceOnly));
             } else if (nvb instanceof NVEntityReferenceList || nvb instanceof NVEntityGetNameMap || nvb instanceof NVEntityReferenceIDMap) {
-                doc.append(nvc.getName(), mapArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, embed, sync, updateReferenceOnly));
+                doc.append(nvc.getName(), serArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, embed, sync, updateReferenceOnly));
             } else if (nvb instanceof NVBigDecimal) {
                 doc.append(nvc.getName(), nvb.getValue().toString());
+            } else if (nvb instanceof NamedValue) {
+                doc.append(nvc.getName(), serNamedValue((NamedValue<?>) nvb));
             } else if (nvb instanceof NVBigDecimalList) {
                 List<String> values = new ArrayList<>();
                 List<BigDecimal> valuesToConvert = (List<BigDecimal>) nvb.getValue();
@@ -1711,7 +1738,10 @@ public class SyncMongoDS
                 updateLock.lock();
             }
             // TODO revisit logic
-            getAPIConfigInfo().getSecurityController().associateNVEntityToSubjectGUID(nve, null);
+            if (getAPIConfigInfo().getSecurityController() != null)
+                getAPIConfigInfo()
+                        .getSecurityController()
+                        .associateNVEntityToSubjectGUID(nve, null);
 
             if (nve.lookupValue(MetaToken.REFERENCE_ID) == null) {
                 return insert(nve);
@@ -1784,23 +1814,25 @@ public class SyncMongoDS
                     if (((NVPairList) nvb).isFixed())
                         updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 
-                    updatedDoc.put(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
+                    updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
                 } else if (nvb instanceof NVGetNameValueList) {
                     if (((NVGetNameValueList) nvb).isFixed())
                         updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
-                    updatedDoc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
+                    updatedDoc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
                 } else if (nvb instanceof NVPairGetNameMap) {
-                    updatedDoc.put(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
+                    updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
                 } else if (nvb instanceof NVEnum) {
                     updatedDoc.put(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
                 } else if (nvb instanceof NVEnumList) {
-                    updatedDoc.put(nvc.getName(), mapEnumList((NVEnumList) nvb));
+                    updatedDoc.put(nvc.getName(), mapEnumListToStringList((NVEnumList) nvb));
                 } else if (nvb instanceof NVStringList) {
                     updatedDoc.put(nvc.getName(), ((NVStringList) nvb).getValue());
                 } else if (nvb instanceof NVStringSet) {
                     updatedDoc.put(nvc.getName(), ((NVStringSet) nvb).getValue());
                 } else if (nvb instanceof NVGenericMap) {
-                    updatedDoc.put(nvc.getName(), mapNVGenericMap((NVGenericMap) nvb));
+                    updatedDoc.put(nvc.getName(), serNVGenericMap((NVGenericMap) nvb));
+                } else if (nvb instanceof NamedValue) {
+                    updatedDoc.put(nvc.getName(), serNamedValue((NamedValue<?>) nvb));
                 } else if (nvb instanceof NVGenericMapList) {
 
                 } else if (nvb instanceof NVEntityReference) {
@@ -1814,13 +1846,13 @@ public class SyncMongoDS
 
 
                         //updatedDoc.put(nvc.getName(), temp.getReferenceID());
-                        updatedDoc.put(nvc.getName(), mapComplexNVEntityReference(connect(), nve, temp, false, sync, updateReferenceOnly));// new ObjectId(temp.getReferenceID()));
+                        updatedDoc.put(nvc.getName(), serComplexNVEntityReference(connect(), nve, temp, nvc.isEmbedded(), sync, updateReferenceOnly));// new ObjectId(temp.getReferenceID()));
                     } else {
                         updatedDoc.put(nvc.getName(), null);
                     }
 
                 } else if (nvb instanceof NVEntityReferenceList || nvb instanceof NVEntityGetNameMap || nvb instanceof NVEntityReferenceIDMap) {
-                    updatedDoc.put(nvc.getName(), mapArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, false, sync, updateReferenceOnly));
+                    updatedDoc.put(nvc.getName(), serArrayValuesNVEntity(connect(), nve, (ArrayValues<NVEntity>) nvb, false, sync, updateReferenceOnly));
                 } else if (nvb instanceof NVBigDecimal) {
                     updatedDoc.put(nvc.getName(), nvb.getValue().toString());
                 } else if (nvb instanceof NVBigDecimalList) {
@@ -1845,9 +1877,9 @@ public class SyncMongoDS
                         updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                     }
                 } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
-                    Object tempValue = getAPIConfigInfo().getSecurityController().encryptValue(this, nve, nvc, nvb, null);
+                    Object tempValue = getAPIConfigInfo().getSecurityController() != null ? getAPIConfigInfo().getSecurityController().encryptValue(this, nve, nvc, nvb, null) : nvb.getValue();
                     if (tempValue instanceof EncryptedData) {
-                        updatedDoc.put(nvc.getName(), toDBObject((EncryptedData) tempValue, true, sync, updateReferenceOnly));
+                        updatedDoc.put(nvc.getName(), serNVEntity((EncryptedData) tempValue, true, sync, updateReferenceOnly));
                     } else {
                         updatedDoc.put(nvc.getName(), tempValue);
                     }
@@ -2061,8 +2093,8 @@ public class SyncMongoDS
         try {
 
             GridFSBucket gridFSBucket = createBucket();
-            gridFSBucket.uploadFromStream(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()), file.getOriginalFileInfo().getName(), is, new GridFSUploadOptions());
-            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.idAsGUID(file.getOriginalFileInfo())).first();
+            gridFSBucket.uploadFromStream(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), file.getOriginalFileInfo().getName(), is, new GridFSUploadOptions());
+            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
             if (gridFSFile != null) {
                 file.getOriginalFileInfo().setLength(gridFSFile.getLength());
             }
@@ -2110,11 +2142,11 @@ public class SyncMongoDS
         try {
 
             GridFSBucket gridFSBucket = createBucket();
-            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.idAsGUID(file.getOriginalFileInfo())).first();
+            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
 
 
             if (gridFSFile != null) {
-                gridFSBucket.downloadToStream(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()), os);
+                gridFSBucket.downloadToStream(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), os);
                 //out.writeTo(os);
             }
         } finally {
@@ -2182,7 +2214,7 @@ public class SyncMongoDS
 
 
         GridFSBucket gridFSBucket = createBucket();
-        gridFSBucket.delete(MongoUtil.bsonNVEGUID(file.getOriginalFileInfo()));
+        gridFSBucket.delete(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()));
 
 //        GridFS fs = new GridFS(connect());
 //
@@ -2286,7 +2318,7 @@ public class SyncMongoDS
 
         Document doc = new Document();
         doc.append(MetaToken.NAME.getName(), dynamicEnumMap.getName());
-        doc.append(MetaToken.VALUE.getName(), mapArrayValuesNVPair(null, dynamicEnumMap, false));
+        doc.append(MetaToken.VALUE.getName(), serArrayValuesNVPair(null, dynamicEnumMap, false));
         doc.append(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
 
         if (!SUS.isEmpty(dynamicEnumMap.getReferenceID())) {
@@ -2321,7 +2353,7 @@ public class SyncMongoDS
         } else {
             Document updatedDoc = new Document();
 
-            updatedDoc.put(MetaToken.VALUE.getName(), mapArrayValuesNVPair(null, dynamicEnumMap, false));
+            updatedDoc.put(MetaToken.VALUE.getName(), serArrayValuesNVPair(null, dynamicEnumMap, false));
             updatedDoc.put(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
 
             Document updatedObj = new Document();
@@ -2625,7 +2657,7 @@ public class SyncMongoDS
         List<?> listOfObjectIds = new ArrayList<ObjectId>();
 
         for (String id : ids) {
-            listOfObjectIds.add(MongoUtil.guessID(id));
+            listOfObjectIds.add(MongoUtil.SINGLETON.guessID(id));
         }
 
         List<Document> listOfDBObject = lookupByReferenceIDs(nvce.getName(), listOfObjectIds);

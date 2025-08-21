@@ -21,15 +21,15 @@ import java.util.List;
 public class MongoSyncTest {
 
     private static SyncMongoDS mongoDataStore;
-    private final static RateCounter rc = new RateCounter("Test");
-    private static CommonDataStoreTest<MongoClient, MongoDatabase> commonDataStoreTest;
+    //private final static RateCounter rc = new RateCounter("Test");
+    private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
 
     @BeforeAll
     public static void setup() {
 
         mongoDataStore = TestUtil.crateDataStore("test_local", "localhost", 27017);
         OPSecUtil.singleton();
-        commonDataStoreTest = new CommonDataStoreTest<>(mongoDataStore);
+        cdst = new CommonDataStoreTest<>(mongoDataStore);
 
     }
 
@@ -53,9 +53,8 @@ public class MongoSyncTest {
         rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getGUID()).get(0);
         System.out.println(rIntRange + " " + rIntRange.getStart().getClass() + " " + rIntRange.getEnd().getClass());
 
-
-        rc.reset();
-        rc.start();
+        cdst.rc.reset();
+        cdst.rc.start();
         int length = 1000;
         for (int i = 0; i < length; i++) {
             rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getReferenceID()).get(0);
@@ -63,18 +62,18 @@ public class MongoSyncTest {
             assert rIntRange != null;
 
         }
-        rc.stop(length);
-        System.out.println(rc);
+        cdst.rc.stop(length);
+        System.out.println(cdst.rc);
 
     }
 
     @Test
     public void testGetAllRange() {
-        rc.reset();
-        rc.start();
+        cdst.rc.reset();
+        cdst.rc.start();
         List<Range<Integer>> all = mongoDataStore.userSearch(null, Range.NVC_RANGE, null);
-        rc.stop(all.size());
-        System.out.println(rc);
+        cdst.rc.stop(all.size());
+        System.out.println(cdst.rc);
 
         List<String> idsList = new ArrayList<>();
         for (int i = 0; i < all.size(); i++) {
@@ -84,43 +83,56 @@ public class MongoSyncTest {
                 idsList.add(all.get(i).getGUID());
         }
         System.out.println(idsList);
-        rc.reset();
-        rc.start();
+        cdst.rc.reset();
+        cdst.rc.start();
         all = mongoDataStore.searchByID(Range.class.getName(), idsList.toArray(new String[0]));
-        rc.stop(all.size());
-        System.out.println(rc);
+        cdst.rc.stop(all.size());
+        System.out.println(cdst.rc);
         for (Range r : all)
             System.out.println(SUS.toCanonicalID(',', r.getReferenceID(), r.getGUID()));
     }
 
 
     @Test
-    public void insertTest()
+    public void insertNVGenericMapTest()
     {
-
-
-        rc.reset();
+        cdst.rc.reset();
         int length = 100;
-        rc.start();
+        cdst.rc.start();
         for(int i = 0; i < length; i++)
         {
             mongoDataStore.insert(createPropertyDAO("name " + i, "desc " + i, i));
         }
-        rc.stop(length);
-        System.out.println( "insert " + rc);
+        cdst.rc.stop(length);
+        System.out.println( "insert " + cdst.rc);
 
-        rc.reset().start();
+        cdst.rc.reset().start();
         List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
-        rc.stop();
-        System.out.println("read all " + all.size() + " " + rc);
+        cdst.rc.stop();
+        System.out.println("read all " + all.size() + " " + cdst.rc);
         for(PropertyDAO pd: all)
         {
             System.out.println(pd);
         }
+    }
 
+    @Test
+    public void testGetALLNVGenericMap()
+    {
+        cdst.rc.reset().start();
+        List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        cdst.rc.stop();
+        System.out.println("read all once " + all.size() + " " + cdst.rc);
+        cdst.rc.reset().start();
+        PropertyDAO result;
+        for(PropertyDAO pd : all)
+        {
+             result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+             assert pd.getReferenceID().equals(result.getReferenceID());
+        }
 
-
-
+        cdst.rc.stop(all.size());
+        System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
     public static PropertyDAO createPropertyDAO(String name, String description, int val)
@@ -141,12 +153,12 @@ public class MongoSyncTest {
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
 
-        commonDataStoreTest.testArgonPassword();
-        commonDataStoreTest.testBCryptPassword();
+        cdst.testArgonPassword();
+        cdst.testBCryptPassword();
     }
 
     @Test
     public void testHMCI() {
-        commonDataStoreTest.testHMCI();
+        cdst.testHMCI();
     }
 }

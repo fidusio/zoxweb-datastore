@@ -16,7 +16,6 @@
 package org.zoxweb.server.ds.mongo.sync;
 
 
-import com.mongodb.BasicDBObject;
 import com.mongodb.client.ListIndexesIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -160,7 +159,7 @@ public class SyncMongoMetaManager {
     }
 
     public synchronized SyncMongoDBObjectMeta lookupCollectionName(SyncMongoDS mds, ObjectId collectionID) {
-        BasicDBObject nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONFIG_ENTITIES.getName(), collectionID);
+        Document nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONFIG_ENTITIES.getName(), collectionID);
 
         NVConfigEntity nvce;
 
@@ -185,7 +184,19 @@ public class SyncMongoMetaManager {
         return entryElement;
     }
 
-    public static NVConfigEntity fromBasicDBObject(BasicDBObject dbo) throws ClassNotFoundException {
+//    public static NVConfigEntity fromBasicDBObject(BasicDBObject dbo) throws ClassNotFoundException {
+//        Class<?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
+//        NVConfigEntity ret = new NVConfigEntityLocal();
+//        ret.setName(dbo.getString(MetaToken.NAME.getName()));
+//        ret.setDescription(dbo.getString(MetaToken.DESCRIPTION.getName()));
+//        ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));
+//        ret.setMetaType(clazz);
+//        ret.setArray(dbo.getBoolean(MetaToken.IS_ARRAY.getName()));
+//        ret.setReferenceID(dbo.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue()).toHexString());
+//        return ret;
+//    }
+
+    public static NVConfigEntity fromBasicDBObject(Document dbo) throws ClassNotFoundException {
         Class<?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
         NVConfigEntity ret = new NVConfigEntityLocal();
         ret.setName(dbo.getString(MetaToken.NAME.getName()));
