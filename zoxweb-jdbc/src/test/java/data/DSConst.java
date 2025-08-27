@@ -85,7 +85,7 @@ public class DSConst {
                 return nvc;
             }
         }
-        public static final NVConfigEntity NVC_ALLTYPES_DOA = new NVConfigEntityLocal(
+        public static final NVConfigEntity NVC_ALLTYPES_DOA = new NVConfigEntityPortable(
                 "all_types",
                 null ,
                 "AllTypes",
@@ -285,7 +285,7 @@ public class DSConst {
             }
         }
 
-        public static final NVConfigEntity NVC_COMPLEX_TYPES = new NVConfigEntityLocal(
+        public static final NVConfigEntity NVC_COMPLEX_TYPES = new NVConfigEntityPortable(
                 "complex_types",
                 null,
                 "ComplexTypes",

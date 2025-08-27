@@ -190,7 +190,7 @@ public class MongoMetaManager
 	public static NVConfigEntity fromBasicDBObject(BasicDBObject dbo) throws ClassNotFoundException
 	{
 		Class <?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
-		NVConfigEntity ret = new NVConfigEntityLocal();
+		NVConfigEntity ret = new NVConfigEntityPortable();
 		ret.setName(dbo.getString(MetaToken.NAME.getName()));
 		ret.setDescription(dbo.getString(MetaToken.DESCRIPTION.getName()));
 		ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));

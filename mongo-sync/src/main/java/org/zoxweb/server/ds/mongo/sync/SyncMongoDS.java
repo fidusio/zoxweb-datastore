@@ -282,7 +282,7 @@ public class SyncMongoDS
                 ret.put(gnv.getName(), toAdd);
             } else if (value instanceof NVEntity) {
                 NVEntity nve = (NVEntity) value;
-                if (nve.getReferenceID() == null)
+                if (nve.getReferenceID() == null || nve.getGUID() == null)
                     insert(nve);
                 ret.put(gnv.getName(), serNVEntityReference(connect(), nve));
             } else if (gnv instanceof NVGenericMap) {
@@ -367,7 +367,7 @@ public class SyncMongoDS
                 return serNVEntity(nve, embed, sync, updateReferenceOnly);
 
             if (!embed) {
-                if (nve.getReferenceID() == null) {
+                if (nve.getReferenceID() == null || nve.getGUID() == null) {
                     //if(log.isEnabled()) log.getLogger().info("NVE do not exist we need to create it");
                     insert(nve);
                 } else {
@@ -389,8 +389,10 @@ public class SyncMongoDS
     private Document serNVEntityReference(MongoDatabase db, NVEntity nve) {
         Document entryElement = new Document();
         NVConfigEntity nvce = SyncMongoMetaManager.SINGLETON.addNVConfigEntity(db, ((NVConfigEntity) nve.getNVConfig()));
-        entryElement.put(MetaToken.CANONICAL_ID.getName(), new ObjectId(nvce.getReferenceID()));
-        entryElement.put(MetaToken.REFERENCE_ID.getName(), new ObjectId(nve.getReferenceID()));
+//        entryElement.put(MetaToken.CANONICAL_ID.getName(), new ObjectId(nvce.getReferenceID()));
+//        entryElement.put(MetaToken.REFERENCE_ID.getName(), new ObjectId(nve.getReferenceID()));
+        entryElement.put(MetaToken.CANONICAL_ID.getName(), UUID.fromString(nvce.getGUID()));
+        entryElement.put(MetaToken.GUID.getName(), UUID.fromString(nve.getGUID()));
         return entryElement;
     }
 

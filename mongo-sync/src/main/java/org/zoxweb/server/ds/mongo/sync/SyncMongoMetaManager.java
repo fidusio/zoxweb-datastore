@@ -27,6 +27,7 @@ import org.zoxweb.shared.util.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 public class SyncMongoMetaManager {
@@ -175,6 +176,7 @@ public class SyncMongoMetaManager {
 
     public static Document dbMapNVConfigEntity(NVConfigEntity nvce) {
         Document entryElement = new Document();
+        entryElement.put(MetaToken.GUID.getName(), UUID.randomUUID());
         entryElement.put(MetaToken.NAME.getName(), nvce.getName());
         entryElement.put(MetaToken.DESCRIPTION.getName(), nvce.getDescription());
         entryElement.put(MetaToken.DOMAIN_ID.getName(), nvce.getDomainID());
@@ -198,7 +200,7 @@ public class SyncMongoMetaManager {
 
     public static NVConfigEntity fromBasicDBObject(Document dbo) throws ClassNotFoundException {
         Class<?> clazz = Class.forName(dbo.getString(MetaToken.CLASS_TYPE.getName()));
-        NVConfigEntity ret = new NVConfigEntityLocal();
+        NVConfigEntity ret = new NVConfigEntityPortable();
         ret.setName(dbo.getString(MetaToken.NAME.getName()));
         ret.setDescription(dbo.getString(MetaToken.DESCRIPTION.getName()));
         ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));
