@@ -6,6 +6,7 @@ import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
+import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.http.*;
 import org.zoxweb.shared.util.*;
 
@@ -18,6 +19,10 @@ public class CommonDataStoreTest<P,S> {
     {
         this.dataStore = ds;
     }
+    private static final String PASSWORD = "P1ssw@rd";
+    private static final String NEW_PASSWORD = "P1ssw@rd123$";
+
+
 
     public void testHMCI()
     {
@@ -68,23 +73,58 @@ public class CommonDataStoreTest<P,S> {
 
     public void testBCryptPassword() throws NoSuchAlgorithmException {
         CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
-        CIPassword p = credentialHasher.hash("P1ssw@rd");
+        CIPassword p = credentialHasher.hash(PASSWORD);
         dataStore.insert(p);
 
         CIPassword found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
         assert found != p;
-        assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
+        assert credentialHasher.validate(found, PASSWORD);
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
     }
 
     public void testArgonPassword() throws NoSuchAlgorithmException {
         CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
-        CIPassword p = credentialHasher.hash("P1ssw@rd");
+        CIPassword p = credentialHasher.hash(PASSWORD);
         dataStore.insert(p);
 
         CIPassword found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
         assert found != p;
-        assert credentialHasher.isPasswordValid(found, "P1ssw@rd");
+        assert credentialHasher.validate(found, PASSWORD);
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
     }
+
+    public void testUpdatePassword() throws NoSuchAlgorithmException {
+        long count = dataStore.countMatch(CIPassword.NVCE_CI_PASSWORD);
+        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
+        CIPassword p = credentialHasher.hash(PASSWORD);
+        p.setName("ToBeUpdated-" + count);
+        dataStore.insert(p);
+
+        CIPassword found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
+        assert found != p;
+        assert credentialHasher.validate(found, PASSWORD);
+        assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
+        credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
+        CIPassword updated = credentialHasher.update(found, PASSWORD, NEW_PASSWORD);
+        dataStore.update(updated);
+
+        found = (CIPassword) dataStore.searchByID(CIPassword.class.getName(), p.getGUID()).get(0);
+        assert found != updated;
+        assert credentialHasher.validate(found, NEW_PASSWORD);
+        assert GSONUtil.toJSONDefault(updated).equals(GSONUtil.toJSONDefault(found));
+    }
+
+
+    public void insertAllType()
+    {
+        DSConst.AllTypes allTypes = DSConst.AllTypes.autoBuilder();
+        dataStore.insert(allTypes);
+    }
+    public void insertComplexType()
+    {
+        DSConst.ComplexTypes complexTypes = DSConst.ComplexTypes.buildComplex("batata");
+        dataStore.insert(complexTypes);
+    }
+
+
 }

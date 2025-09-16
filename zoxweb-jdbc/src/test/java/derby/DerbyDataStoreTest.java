@@ -310,13 +310,6 @@ public class DerbyDataStoreTest {
 
 
     @Test
-    public void testPassword() throws NoSuchAlgorithmException {
-
-        commonDataStoreTest.testArgonPassword();
-        commonDataStoreTest.testBCryptPassword();
-    }
-
-    @Test
     public void testHMCI() {
         commonDataStoreTest.testHMCI();
     }

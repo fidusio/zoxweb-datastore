@@ -4,7 +4,8 @@ import com.mongodb.client.MongoDatabase;
 import org.bson.BsonBinary;
 import org.bson.Document;
 import org.bson.types.Binary;
-import org.bson.types.ObjectId;
+//import org.bson.types.ObjectId;
+import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.util.*;
@@ -91,6 +92,8 @@ public class MongoUtil {
     }
 
 
+
+
     //private final KVMapStore<Class<?>, DataUpdater> BSONToData = new KVMapStoreDefault<>(new LinkedHashMap<>());
     public final KVMapStore<Class<?>, DataDeserializer> BSONToDataDeserializer = new KVMapStoreDefault<>(new LinkedHashMap<>());
 
@@ -100,22 +103,20 @@ public class MongoUtil {
         return new BsonBinary(UUID.fromString(nve.getGUID()));
     }
 
-    public UUID nveGUID(NVEntity nve) {
-        return UUID.fromString(nve.getGUID());
-    }
+//    public UUID nveGUID(NVEntity nve) {
+//        return UUID.fromString(nve.getGUID());
+//    }
 
-    public ObjectId nveRefID(NVEntity nve) {
-        return new ObjectId(nve.getReferenceID());
-    }
 
-    public <V> V guessID(String idToGuess) {
-        SUS.checkIfNulls("null idToGuess", idToGuess);
-        try {
-            return (V) new ObjectId(idToGuess);
-        } catch (Exception e) {
-            return (V) UUID.fromString(idToGuess);
-        }
-    }
+//    public <V> V guessID(String idToGuess) {
+//        SUS.checkIfNulls("null idToGuess", idToGuess);
+//        try {
+//            return (V) new ObjectId(idToGuess);
+//        } catch (Exception e) {
+//            return (V) UUID.fromString(idToGuess);
+//        }
+//    }
+
 
 
     private void init() {
@@ -309,21 +310,26 @@ public class MongoUtil {
         return BSONToDataDeserializer.get(clazz);
     }
 
-    public <V> GetNameValue<V> idToGNV(String idToGuess) {
-        SUS.checkIfNulls("null idToGuess", idToGuess);
-        try {
-            return (GetNameValue<V>) GetNameValue.create(ReservedID.REFERENCE_ID.getValue(), new ObjectId(idToGuess));
-        } catch (Exception e) {
-            return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
-        }
-    }
+//    public <V> GetNameValue<V> idToGNV(String idToGuess) {
+//        SUS.checkIfNulls("null idToGuess", idToGuess);
+//        return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
+////        try {
+////            return (GetNameValue<V>) GetNameValue.create(ReservedID.REFERENCE_ID.getValue(), new ObjectId(idToGuess));
+////        } catch (Exception e) {
+////            return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
+////        }
+//    }
 
     public Document idAsGUID(NVEntity nve) {
-        return new Document("_id", nveGUID(nve));
+        return new Document("_id", IDGs.UUIDV4.decode(nve.getReferenceID()));
     }
 
-    public Document idAsRefID(NVEntity nve) {
-        return new Document(ReservedID.REFERENCE_ID.getValue(), nveRefID(nve));
+//    public Document idAsRefID(NVEntity nve) {
+//        return new Document(ReservedID.REFERENCE_ID.getValue(), nveRefID(nve));
+//    }
+    public UUID getRefIDAsUUID(Document doc)
+    {
+        return doc.get("_id", UUID.class);
     }
 
 

@@ -3,7 +3,7 @@ package org.zoxweb.server.ds.derby;
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
-import org.zoxweb.server.util.IDGeneratorUtil;
+import org.zoxweb.server.util.IDGs;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
@@ -600,7 +600,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
             con = connect();
             MetaUtil.initTimeStamp(nve);
             if (SUS.isEmpty(nve.getGUID())) {
-                nve.setGUID(UUID.randomUUID().toString());
+                nve.setGUID(IDGs.UUIDV4.generateID());
             } else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID())) {
                 // already exit we must update
                 //if(log.isEnabled()) log.getLogger().info("invoke update for " + nve.getGlobalID());
@@ -735,7 +735,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
         }
 
         return delete((NVConfigEntity) nve.getNVConfig(),
-                new QueryMatch<String>(Const.RelationalOperator.EQUAL, nve.getGUID(), MetaToken.GUID));
+                new QueryMatch<UUID>(Const.RelationalOperator.EQUAL, IDGs.UUIDV4.decode(nve.getGUID()), MetaToken.GUID));
     }
 
     @Override
@@ -906,7 +906,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public IDGenerator<String, UUID> getIDGenerator() {
         // TODO Auto-generated method stub
-        return IDGeneratorUtil.UUIDV4;
+        return IDGs.UUIDV4;
     }
 
     @Override

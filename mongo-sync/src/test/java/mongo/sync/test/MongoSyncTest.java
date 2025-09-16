@@ -42,7 +42,7 @@ public class MongoSyncTest {
 
     @Test
     public void testRangeInt() {
-        Range<Integer> intRange = new Range<Integer>(1, 1000);
+        Range<Integer> intRange = new Range<>(1, 1000);
         intRange.setName("INT_RANGE");
         mongoDataStore.insert(intRange);
         System.out.println(intRange.getReferenceID() + " " + intRange.getGUID());
@@ -155,10 +155,18 @@ public class MongoSyncTest {
 
         cdst.testArgonPassword();
         cdst.testBCryptPassword();
+        cdst.testUpdatePassword();
     }
 
     @Test
     public void testHMCI() {
         cdst.testHMCI();
+    }
+
+    @Test
+    public void testComplicated()
+    {
+        cdst.insertAllType();
+        cdst.insertComplexType();
     }
 }

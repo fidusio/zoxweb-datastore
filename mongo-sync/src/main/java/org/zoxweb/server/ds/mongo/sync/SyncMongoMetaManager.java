@@ -21,7 +21,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import org.bson.Document;
-import org.bson.types.ObjectId;
+//import org.bson.types.ObjectId;
 import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
@@ -143,7 +143,8 @@ public class SyncMongoMetaManager {
             nvConfigEntities.insertOne(nvceDBO);
         }
 
-        nvce.setReferenceID(nvceDBO.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue()).toHexString());
+//        nvce.setReferenceID(nvceDBO.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue()).toHexString());
+        nvce.setReferenceID(MongoUtil.SINGLETON.getRefIDAsUUID(nvceDBO).toString());
         return nvce;
     }
 
@@ -159,7 +160,7 @@ public class SyncMongoMetaManager {
         removeCollectionInfo(collection.getNamespace().getFullName());
     }
 
-    public synchronized SyncMongoDBObjectMeta lookupCollectionName(SyncMongoDS mds, ObjectId collectionID) {
+    public synchronized SyncMongoDBObjectMeta lookupCollectionName(SyncMongoDS mds, UUID collectionID) {
         Document nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONFIG_ENTITIES.getName(), collectionID);
 
         NVConfigEntity nvce;
@@ -176,7 +177,8 @@ public class SyncMongoMetaManager {
 
     public static Document dbMapNVConfigEntity(NVConfigEntity nvce) {
         Document entryElement = new Document();
-        entryElement.put(MetaToken.GUID.getName(), UUID.randomUUID());
+//        entryElement.put(MetaToken.GUID.getName(), UUID.randomUUID());
+        entryElement.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), UUID.randomUUID());
         entryElement.put(MetaToken.NAME.getName(), nvce.getName());
         entryElement.put(MetaToken.DESCRIPTION.getName(), nvce.getDescription());
         entryElement.put(MetaToken.DOMAIN_ID.getName(), nvce.getDomainID());

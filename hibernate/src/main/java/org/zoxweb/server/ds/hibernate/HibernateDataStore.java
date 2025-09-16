@@ -21,7 +21,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
 import org.zoxweb.server.io.IOUtil;
-import org.zoxweb.server.util.IDGeneratorUtil;
+import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
@@ -31,6 +31,7 @@ import org.zoxweb.shared.util.*;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+//import java.util.UUID;
 
 @SuppressWarnings("serial")
 public class HibernateDataStore
@@ -295,12 +296,12 @@ public class HibernateDataStore
 
         if (nve.getReferenceID() == null) 
         {
-            nve.setReferenceID(UUID.randomUUID().toString());
+            nve.setReferenceID(IDGs.UUIDV4.generateID());
         }
         
         if (nve.getGUID() == null)
         {
-        	 nve.setGUID(UUID.randomUUID().toString());
+        	 nve.setGUID(nve.getReferenceID());
         }
 
         try 
@@ -537,7 +538,7 @@ public class HibernateDataStore
 	@SuppressWarnings("unchecked")
     public IDGenerator<String, UUID> getIDGenerator()
 	{
-		return IDGeneratorUtil.UUIDV4;
+		return IDGs.UUIDV4;
 	}
 
 	@Override

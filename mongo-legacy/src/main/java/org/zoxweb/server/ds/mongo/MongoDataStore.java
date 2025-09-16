@@ -28,7 +28,7 @@ import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.EncryptedData;
-import org.zoxweb.shared.crypto.EncryptedKey;
+import org.zoxweb.shared.crypto.EncapsulatedKey;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
@@ -70,8 +70,18 @@ public class MongoDataStore
     
     public static final IDGenerator<String, ObjectId> MongoIDGenerator = new IDGenerator<String, ObjectId>()
 	{
-		
-		@Override
+
+        @Override
+        public String encode(ObjectId input) {
+            return input.toHexString();
+        }
+
+        @Override
+        public ObjectId decode(String input) {
+            return new ObjectId(input);
+        }
+
+        @Override
 		public String generateID() 
 		{
 			return ObjectId.get().toHexString();
@@ -464,7 +474,7 @@ public class MongoDataStore
 			{
 				return toDBObject(nve, true, sync, updateReferenceOnly);
 			}
-			else if (!(nve instanceof EncryptedKey) && nve instanceof EncryptedData)
+			else if (!(nve instanceof EncapsulatedKey) && nve instanceof EncryptedData)
 			{
 				return toDBObject(nve, true, sync, updateReferenceOnly);
 			}
@@ -775,7 +785,7 @@ public class MongoDataStore
 		if (nvc instanceof NVConfigEntity)
 		{
 			//String nveRefID = dbObject.getString(nvc.getName());
-			if (container instanceof EncryptedKey)
+			if (container instanceof EncapsulatedKey)
 			{
 				return;
 			}
@@ -2284,7 +2294,7 @@ public class MongoDataStore
 			{
 
 				// the associated encryption key dao
-				DBCollection ekdCollection = connect().getCollection(EncryptedKey.NVCE_ENCRYPTED_KEY.getName());
+				DBCollection ekdCollection = connect().getCollection(EncapsulatedKey.NVCE_ENCAPSULATED_KEY.getName());
 				//if(log.isEnabled()) log.getLogger().info("EncryptedKeyDAO:" + ekdCollection);
 				if(ekdCollection != null)
 					ekdCollection.remove(doc);
