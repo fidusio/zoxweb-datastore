@@ -15,11 +15,8 @@
  */
 package org.zoxweb.server.ds.mongo.sync;
 
-//import com.mongodb.*;
-
 import com.mongodb.MongoException;
 import com.mongodb.ServerAddress;
-
 import com.mongodb.client.*;
 import com.mongodb.client.gridfs.GridFSBucket;
 import com.mongodb.client.gridfs.GridFSBuckets;
@@ -28,23 +25,19 @@ import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.model.Filters;
 import org.bson.Document;
 import org.bson.conversions.Bson;
-//import org.bson.types.ObjectId;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
-import org.zoxweb.server.util.IDGs;
-import org.zoxweb.server.util.MetaUtil;
-import org.zoxweb.server.util.ServerUtil;
+import org.zoxweb.server.util.*;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.crypto.EncapsulatedKey;
+import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
 import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.LongSequence;
-
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.filters.ChainedFilter;
@@ -186,6 +179,47 @@ public class SyncMongoDS
         bsonDoc.append(MetaToken.VALUE.getName(), namedValue.getValue())
                 .append("properties", serNVGenericMap(namedValue.getProperties()));
         return bsonDoc;
+    }
+
+
+    public NVGenericMap ping(boolean detailed)
+            throws APIException {
+        Document status = null;
+        Document buildInfo = null;
+        Document ping = null;
+        try {
+            MongoDatabase admin = newConnection().getDatabase("admin");
+
+            ping = admin.runCommand(new Document("ping", 1));
+            if (detailed) {
+                status = admin.runCommand(new Document("serverStatus", 1));
+                buildInfo = admin.runCommand(new Document("buildInfo", 1));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new APIException(e.getMessage());
+        }
+
+        NVGenericMap ret = new NVGenericMap();
+        ret.build("time-stamp", DateUtil.DEFAULT_DATE_FORMAT_TZ.format(new Date()));
+        if (buildInfo != null) {
+            NVGenericMap tmp = GSONUtil.fromJSONDefault(buildInfo.toJson(), NVGenericMap.class);
+            tmp.setName("build-info");
+            ret.build(tmp);
+        }
+        if (ping != null) {
+            NVGenericMap tmp = GSONUtil.fromJSONDefault(ping.toJson(), NVGenericMap.class);
+            System.out.println(ping.toJson());
+            ret.build(tmp);
+        }
+        if (status != null) {
+            NVGenericMap tmp = GSONUtil.fromJSONDefault(status.toJson(), NVGenericMap.class);
+            tmp.setName("status");
+            ret.build(tmp);
+        }
+
+        return ret;
+
     }
 
     private Document serNVPair(NVEntity container, NVPair nvp, boolean sync) {
@@ -371,9 +405,6 @@ public class SyncMongoDS
         }
         return null;
     }
-
-
-
 
 
     private Document serNVEntityReference(MongoDatabase db, NVEntity nve) {
@@ -1053,7 +1084,7 @@ public class SyncMongoDS
             MongoCollection<Document> collection = lookupCollection(collectionName);
 
 
-            Bson inQuery =  Filters.in(MongoUtil.ReservedID.REFERENCE_ID.getValue(), listOfObjectId);
+            Bson inQuery = Filters.in(MongoUtil.ReservedID.REFERENCE_ID.getValue(), listOfObjectId);
 
             MongoCursor<Document> cur = null;
 
@@ -1273,7 +1304,7 @@ public class SyncMongoDS
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (MetaToken.GUID.getName().equals(nvc.getName())) {
                 // set the GUID ass uuid in the database
-                doc.append(MongoUtil.ReservedID.GUID.getValue(),IDGs.UUIDV4.decode((String) nvb.getValue()));
+                doc.append(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV4.decode((String) nvb.getValue()));
             } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
                 if (value != null) {
@@ -1332,7 +1363,7 @@ public class SyncMongoDS
         }
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(),IDGs.UUIDV4.decode(nve.getGUID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode(nve.getGUID()));
         }
 
 
@@ -2935,6 +2966,6 @@ public class SyncMongoDS
 
 
     public boolean isValidReferenceID(String refID) {
-       return IDGs.UUIDV4.isValid(refID);
+        return IDGs.UUIDV4.isValid(refID);
     }
 }

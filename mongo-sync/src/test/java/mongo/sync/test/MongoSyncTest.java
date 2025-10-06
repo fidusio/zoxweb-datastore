@@ -7,12 +7,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
+import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
-import org.zoxweb.shared.util.NVFloat;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.RateCounter;
-import org.zoxweb.shared.util.SUS;
+import org.zoxweb.shared.util.*;
 
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -168,5 +166,12 @@ public class MongoSyncTest {
     {
         cdst.insertAllType();
         cdst.insertComplexType();
+    }
+
+    @Test
+    public void pingTest()
+    {
+        NVGenericMap nvgm = cdst.dataStore.ping(false);
+        System.out.println(GSONUtil.toJSONDefault(nvgm, true));
     }
 }

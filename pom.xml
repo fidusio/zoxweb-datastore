@@ -16,7 +16,7 @@
 
 
     <modules>
-        <module>common-datastore-test</module>
+        <module>common-datastore</module>
         <module>mongo-legacy</module>
         <module>hibernate</module>
         <module>mongo-sync</module>
