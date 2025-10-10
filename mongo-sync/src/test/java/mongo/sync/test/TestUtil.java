@@ -3,6 +3,7 @@ package mongo.sync.test;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDSCreator;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDSCreator.MongoParam;
+import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.util.NVInt;
 
@@ -14,6 +15,8 @@ public class TestUtil {
         apici.getProperties().build(MongoParam.DB_NAME, dataStoreName)
                 .build(MongoParam.HOST, mongoDBHost)
                 .build(new NVInt(MongoParam.PORT, mongoDBPort));
+
+        System.out.println("Config\n" + GSONUtil.toJSONDefault(apici, true));
 
         SyncMongoDS ret = new SyncMongoDS();
         ret.setAPIConfigInfo(apici);

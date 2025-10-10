@@ -1,0 +1,17 @@
+{
+  "class_type": "org.zoxweb.shared.api.APIConfigInfoDAO",
+  "description": "MongoDBSync java driver",
+  "properties": {
+    "db_name": "test_local",
+    "host": "localhost",
+    "port": 27017,
+    "data_cache": "false",
+    "gridfs_name": "_gridfs"
+  },
+  "api_type_name": "MongoDBSync",
+  "service_type": [
+    "DATA_STORAGE",
+    "DOCUMENT_STORAGE"
+  ],
+  "api_version": "10.0.0"
+}

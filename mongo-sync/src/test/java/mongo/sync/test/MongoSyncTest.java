@@ -8,9 +8,14 @@ import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
 import org.zoxweb.server.util.GSONUtil;
+import org.zoxweb.shared.api.APIDataStore;
+import org.zoxweb.shared.api.APIRegistrar;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
-import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.util.NVFloat;
+import org.zoxweb.shared.util.NVGenericMap;
+import org.zoxweb.shared.util.NVInt;
+import org.zoxweb.shared.util.SUS;
 
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -26,6 +31,7 @@ public class MongoSyncTest {
     public static void setup() {
 
         mongoDataStore = TestUtil.crateDataStore("test_local", "localhost", 27017);
+        //DataStores.SINGLETON.register(mongoDataStore, true);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
 
@@ -171,7 +177,7 @@ public class MongoSyncTest {
     @Test
     public void pingTest()
     {
-        NVGenericMap nvgm = cdst.dataStore.ping(false);
+        NVGenericMap nvgm = ((APIDataStore<?,?>) APIRegistrar.SINGLETON.getDefault()).ping(false);
         System.out.println(GSONUtil.toJSONDefault(nvgm, true));
     }
 }

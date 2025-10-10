@@ -191,31 +191,41 @@ public class SyncMongoDS
             MongoDatabase admin = newConnection().getDatabase("admin");
 
             ping = admin.runCommand(new Document("ping", 1));
-            if (detailed) {
-                status = admin.runCommand(new Document("serverStatus", 1));
-                buildInfo = admin.runCommand(new Document("buildInfo", 1));
-            }
+            status = admin.runCommand(new Document("serverStatus", 1));
+            buildInfo = admin.runCommand(new Document("buildInfo", 1));
+
         } catch (Exception e) {
             e.printStackTrace();
             throw new APIException(e.getMessage());
         }
 
         NVGenericMap ret = new NVGenericMap();
-        ret.build("time-stamp", DateUtil.DEFAULT_DATE_FORMAT_TZ.format(new Date()));
-        if (buildInfo != null) {
+        ret.build("time_stamp", DateUtil.DEFAULT_DATE_FORMAT_TZ.format(new Date()));
+
+        if (detailed) {
             NVGenericMap tmp = GSONUtil.fromJSONDefault(buildInfo.toJson(), NVGenericMap.class);
             tmp.setName("build-info");
             ret.build(tmp);
-        }
-        if (ping != null) {
-            NVGenericMap tmp = GSONUtil.fromJSONDefault(ping.toJson(), NVGenericMap.class);
-            System.out.println(ping.toJson());
+
+            tmp = GSONUtil.fromJSONDefault(ping.toJson(), NVGenericMap.class);
+            tmp.setName("ping");
             ret.build(tmp);
-        }
-        if (status != null) {
-            NVGenericMap tmp = GSONUtil.fromJSONDefault(status.toJson(), NVGenericMap.class);
+
+            tmp = GSONUtil.fromJSONDefault(status.toJson(), NVGenericMap.class);
             tmp.setName("status");
             ret.build(tmp);
+        } else {
+            Document summary = new Document("status", ping.get("ok").equals(1.0) ? "UP" : "DOWN")
+                    .append("version", status.get("version"))
+                    .append("uptime", Const.TimeInMillis.toString(status.get("uptimeMillis", Number.class).longValue()))
+                    .append("connections", status.get("connections"))
+                    .append("mem", status.get("mem"))
+//                .append("network", status.get("network"))
+                    ;
+            NVGenericMap tmp = GSONUtil.fromJSONDefault(summary.toJson(), NVGenericMap.class);
+            NVGenericMap.copy(tmp, ret, false);
+
+
         }
 
         return ret;
