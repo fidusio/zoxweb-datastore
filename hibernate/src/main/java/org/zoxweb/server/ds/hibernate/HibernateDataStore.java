@@ -35,93 +35,76 @@ import java.util.UUID;
 
 @SuppressWarnings("serial")
 public class HibernateDataStore
-    implements APIDataStore<SessionFactory, SessionFactory>
-{
+        implements APIDataStore<SessionFactory, SessionFactory> {
 
     private APIConfigInfo configInfo;
     private SessionFactory sessionFactory;
-    private String name =  "HibernateDataStore";
+    private String name = "HibernateDataStore";
     private String description = "Hibernate based data store";
 
     public static final String RESOURCE = "resource";
 
-    public HibernateDataStore(APIConfigInfo configInfo)
-    {
+    public HibernateDataStore(APIConfigInfo configInfo) {
         this();
         setAPIConfigInfo(configInfo);
     }
 
-    public HibernateDataStore()
-    {
+    public HibernateDataStore() {
 
     }
 
     @Override
-    public String getName()
-    {
+    public String getName() {
         return name;
     }
 
     @Override
-    public String getDescription()
-    {
+    public String getDescription() {
         return description;
     }
 
     @Override
-    public void setName(String name)
-    {
+    public void setName(String name) {
         this.name = name;
     }
 
     @Override
-    public void setDescription(String str)
-    {
+    public void setDescription(String str) {
         this.description = str;
     }
 
     @Override
-    public APIConfigInfo getAPIConfigInfo()
-    {
+    public APIConfigInfo getAPIConfigInfo() {
         return configInfo;
     }
 
     @Override
-    public void setAPIConfigInfo(APIConfigInfo configInfo)
-    {
+    public void setAPIConfigInfo(APIConfigInfo configInfo) {
         this.configInfo = configInfo;
     }
 
     @Override
-    public String toCanonicalID()
-    {
+    public String toCanonicalID() {
         return null;
     }
 
     @Override
-    public String getStoreName()
-    {
+    public String getStoreName() {
         return null;
     }
 
     @Override
-    public Set<String> getStoreTables()
-    {
+    public Set<String> getStoreTables() {
         return null;
     }
 
     @Override
     public SessionFactory connect()
-            throws APIException
-    {
-        if (sessionFactory == null)
-        {
-            synchronized (this)
-            {
-                if (sessionFactory == null)
-                {
-                    if (configInfo == null)
-                    {
+            throws APIException {
+        if (sessionFactory == null) {
+            synchronized (this) {
+                if (sessionFactory == null) {
+                    if (configInfo == null) {
                         throw new NullPointerException("Missing configuration info.");
                     }
 
@@ -131,13 +114,10 @@ public class HibernateDataStore
 
                     Configuration configuration = new Configuration();
 
-                    try
-                    {
-                            sessionFactory = configuration.configure(resource).buildSessionFactory();
-                    }
-                    catch (HibernateException e)
-                    {
-                    	e.printStackTrace();
+                    try {
+                        sessionFactory = configuration.configure(resource).buildSessionFactory();
+                    } catch (HibernateException e) {
+                        e.printStackTrace();
                         throw new APIException("Connect failed: " + e.getMessage());
                     }
                 }
@@ -149,17 +129,12 @@ public class HibernateDataStore
 
     @Override
     public void close()
-            throws APIException
-    {
-        if (sessionFactory != null)
-        {
-            try
-            {
+            throws APIException {
+        if (sessionFactory != null) {
+            try {
                 sessionFactory.close();
                 sessionFactory = null;
-            }
-            catch (HibernateException e)
-            {
+            } catch (HibernateException e) {
                 e.printStackTrace();
                 throw new APIException("Disconnect failed: " + e.getMessage());
             }
@@ -168,162 +143,135 @@ public class HibernateDataStore
 
     @Override
     public SessionFactory newConnection()
-            throws APIException
-    {
+            throws APIException {
         return null;
     }
 
     @Override
-    public  <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+    public <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames, QueryMarker... queryCriteria)
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
-    public boolean isProviderActive()
-    {
+    public boolean isProviderActive() {
         return false;
     }
 
     @Override
-    public APIExceptionHandler getAPIExceptionHandler()
-    {
+    public APIExceptionHandler getAPIExceptionHandler() {
         return null;
     }
 
     @Override
-    public void setAPIExceptionHandler(APIExceptionHandler exceptionHandler)
-    {
+    public void setAPIExceptionHandler(APIExceptionHandler exceptionHandler) {
 
     }
 
     @Override
-    public  <V extends NVEntity> List<V> search(String className, List<String> fieldNames, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+    public <V extends NVEntity> List<V> search(String className, List<String> fieldNames, QueryMarker... queryCriteria)
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
-    public <T> T lookupProperty(GetName propertyName)
-    {
+    public <T> T lookupProperty(GetName propertyName) {
         return null;
     }
 
     @Override
-    public long lastTimeAccessed()
-    {
+    public long lastTimeAccessed() {
         return 0;
     }
 
     @Override
-    public long inactivityDuration()
-    {
+    public long inactivityDuration() {
         return 0;
     }
 
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
-    public boolean isBusy()
-    {
+    public boolean isBusy() {
         return false;
     }
 
     @Override
     public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <T, V extends NVEntity> APIBatchResult<V> nextBatch(APISearchResult<T> results, int startIndex, int batchSize)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, NVConfigEntity nvce, List<String> fieldNames, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, String className, List<String> fieldNames, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> searchByID(NVConfigEntity nvce, String... ids)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> searchByID(String className, String... ids)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearchByID(String userID, NVConfigEntity nvce, String... ids)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> V insert(V nve)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
         Transaction transaction = null;
 
-        if (nve.getReferenceID() == null) 
-        {
+        if (nve.getReferenceID() == null) {
             nve.setReferenceID(IDGs.UUIDV4.generateID());
         }
-        
-        if (nve.getGUID() == null)
-        {
-        	 nve.setGUID(nve.getReferenceID());
+
+        if (nve.getGUID() == null) {
+            nve.setGUID(nve.getReferenceID());
         }
 
-        try 
-        {
-        	session = connect().openSession();
+        try {
+            session = connect().openSession();
             transaction = session.beginTransaction();
             session.save(nve);
             transaction.commit();
-        } 
-        catch (HibernateException e) 
-        {
+        } catch (HibernateException e) {
             e.printStackTrace();
-            if (transaction != null)
-            {
+            if (transaction != null) {
                 transaction.rollback();
             }
 
             throw new APIException("Insert failed: " + e.getMessage());
-        } 
-        finally 
-        {
-        	IOUtil.close(session);
+        } finally {
+            IOUtil.close(session);
         }
 
         return nve;
@@ -331,31 +279,24 @@ public class HibernateDataStore
 
     @Override
     public boolean delete(NVEntity nve, boolean withReference)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         SUS.checkIfNulls("NVEntity is null.", nve);
 
-        Session session = null; 
+        Session session = null;
         Transaction transaction = null;
 
-        try 
-        {
-        	session = connect().openSession();
+        try {
+            session = connect().openSession();
             transaction = session.beginTransaction();
             session.delete(nve);
             transaction.commit();
-        }
-        catch (HibernateException e) 
-        {
-            if (transaction != null)
-            {
+        } catch (HibernateException e) {
+            if (transaction != null) {
                 transaction.rollback();
             }
             throw new APIException("Delete failed: " + e.getMessage());
-        } 
-        finally 
-        {
-        	IOUtil.close(session);
+        } finally {
+            IOUtil.close(session);
         }
 
         return true;
@@ -363,66 +304,54 @@ public class HibernateDataStore
 
     @Override
     public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return false;
     }
 
     @Override
     public <V extends NVEntity> V update(V nve)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
         SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
         Transaction transaction = null;
 
-        try 
-        {
-        	session = connect().openSession();
+        try {
+            session = connect().openSession();
             transaction = session.beginTransaction();
             session.update(nve);
             transaction.commit();
-        } 
-        catch (HibernateException e) 
-        {
-            if (transaction != null)
-            {
+        } catch (HibernateException e) {
+            if (transaction != null) {
                 transaction.rollback();
             }
             throw new APIException("Updated failed: " + e.getMessage());
-        }
-        finally
-        {
-        	IOUtil.close(session);
+        } finally {
+            IOUtil.close(session);
         }
 
         return nve;
     }
 
     @Override
-    public  <V extends NVEntity> V patch(V nve, boolean updateTS, boolean sync, boolean updateRefOnly, boolean includeParam, String... nvConfigNames)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+    public <V extends NVEntity> V patch(V nve, boolean updateTS, boolean sync, boolean updateRefOnly, boolean includeParam, String... nvConfigNames)
+            throws NullPointerException, IllegalArgumentException, APIException {
         return null;
     }
 
     @Override
     public long countMatch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
         return 0;
     }
 
     @SuppressWarnings("unchecked")
-	@Override
-    public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId)
-    {
+    @Override
+    public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId) {
         SUS.checkIfNulls("Meta type name is null.", metaTypeName);
         SUS.checkIfNulls("Reference ID is null.", objectId);
 
-        if (!(objectId instanceof String))
-        {
+        if (!(objectId instanceof String)) {
             throw new IllegalArgumentException("Invalid reference ID class type: " + objectId.getClass() + ", expected: " + String.class);
         }
 
@@ -433,118 +362,106 @@ public class HibernateDataStore
         Transaction transaction = null;
         NVEntity nve;
 
-        try
-        {
-        	session = connect().openSession();
+        try {
+            session = connect().openSession();
             session.setDefaultReadOnly(true);
             transaction = session.beginTransaction();
             nve = (NVEntity) session.get(metaTypeName, referenceID);
             transaction.commit();
-        }
-        catch (HibernateException e)
-        {
+        } catch (HibernateException e) {
 //            if (transaction != null) {
 //                transaction.rollback();
 //            }
 //            e.printStackTrace();
             throw new APIException("Lookup failed: " + e.getMessage());
-        } 
-        finally 
-        {
-        	IOUtil.close(session);
+        } finally {
+            IOUtil.close(session);
         }
 
         return (NT) nve;
     }
 
     @Override
-    public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT objectId, NIT projection)
-    {
+    public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT objectId, NIT projection) {
         return null;
     }
 
     @Override
     public DynamicEnumMap insertDynamicEnumMap(DynamicEnumMap dynamicEnumMap)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
         return null;
     }
 
     @Override
     public DynamicEnumMap updateDynamicEnumMap(DynamicEnumMap dynamicEnumMap)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
         return null;
     }
 
     @Override
     public DynamicEnumMap searchDynamicEnumMapByName(String name)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
         return null;
     }
 
     @Override
     public void deleteDynamicEnumMap(String name)
-        throws NullPointerException, IllegalArgumentException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, APIException {
 
     }
 
     @Override
     public List<DynamicEnumMap> getAllDynamicEnumMap(String domainID, String userID)
-        throws NullPointerException, IllegalArgumentException, AccessException, APIException
-    {
+            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         return null;
     }
 
-	@Override
-	public LongSequence createSequence(String sequenceName, long stratValue, long increment) {
-		// TODO Auto-generated method stub
-		return null;
-	}
+    @Override
+    public LongSequence createSequence(String sequenceName, long stratValue, long increment) {
+        // TODO Auto-generated method stub
+        return null;
+    }
 
-	@Override
-	public long currentSequenceValue(String sequenceName) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
+    @Override
+    public long currentSequenceValue(String sequenceName) {
+        // TODO Auto-generated method stub
+        return 0;
+    }
 
-	@Override
-	public long nextSequenceValue(String sequenceName) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
+    @Override
+    public long nextSequenceValue(String sequenceName) {
+        // TODO Auto-generated method stub
+        return 0;
+    }
 
-	@Override
-	public long nextSequenceValue(String sequenceName, long increment) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
+    @Override
+    public long nextSequenceValue(String sequenceName, long increment) {
+        // TODO Auto-generated method stub
+        return 0;
+    }
 
-	@Override
-	public LongSequence createSequence(String sequenceName) {
-		// TODO Auto-generated method stub
-		return createSequence(sequenceName, 0, 1);
-	}
+    @Override
+    public LongSequence createSequence(String sequenceName) {
+        // TODO Auto-generated method stub
+        return createSequence(sequenceName, 0, 1);
+    }
 
-	@Override
-	public void deleteSequence(String sequenceName) {
-		// TODO Auto-generated method stub
-		
-	}
-	
-	
-	@SuppressWarnings("unchecked")
-    public IDGenerator<String, UUID> getIDGenerator()
-	{
-		return IDGs.UUIDV4;
-	}
+    @Override
+    public void deleteSequence(String sequenceName) {
+        // TODO Auto-generated method stub
 
-	@Override
-	public boolean isValidReferenceID(String refID) {
-		// TODO Auto-generated method stub
-		return false;
-	}
+    }
+
+
+    @SuppressWarnings("unchecked")
+    public IDGenerator<String, UUID> getIDGenerator() {
+        return IDGs.UUIDV4;
+    }
+
+    @Override
+    public boolean isValidReferenceID(String refID) {
+        // TODO Auto-generated method stub
+        return false;
+    }
 
 }

@@ -36,8 +36,6 @@ import java.util.List;
 public class MongoQueryFormatter {
 
 
-
-
     private static Document buildCondition(QueryMatch<?> qm, NVConfigEntity nvce) {
         NVConfig nvc = nvce.lookup(qm.getName());
         String key = MongoUtil.ReservedID.map(nvc, qm.getName());
@@ -108,7 +106,6 @@ public class MongoQueryFormatter {
         // Multiple filters → combine under $and
         return new Document("$and", filters);
     }
-
 
 
     private static Object map(NVConfig nvc, QueryMatch<?> queryMatch) {

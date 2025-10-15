@@ -98,56 +98,50 @@ public class MongoSyncTest {
 
 
     @Test
-    public void insertNVGenericMapTest()
-    {
+    public void insertNVGenericMapTest() {
         cdst.rc.reset();
         int length = 100;
         cdst.rc.start();
-        for(int i = 0; i < length; i++)
-        {
+        for (int i = 0; i < length; i++) {
             mongoDataStore.insert(createPropertyDAO("name " + i, "desc " + i, i));
         }
         cdst.rc.stop(length);
-        System.out.println( "insert " + cdst.rc);
+        System.out.println("insert " + cdst.rc);
 
         cdst.rc.reset().start();
         List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
         cdst.rc.stop();
         System.out.println("read all " + all.size() + " " + cdst.rc);
-        for(PropertyDAO pd: all)
-        {
+        for (PropertyDAO pd : all) {
             System.out.println(pd);
         }
     }
 
     @Test
-    public void testGetALLNVGenericMap()
-    {
+    public void testGetALLNVGenericMap() {
         cdst.rc.reset().start();
         List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
         cdst.rc.stop();
         System.out.println("read all once " + all.size() + " " + cdst.rc);
         cdst.rc.reset().start();
         PropertyDAO result;
-        for(PropertyDAO pd : all)
-        {
-             result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
-             assert pd.getReferenceID().equals(result.getReferenceID());
+        for (PropertyDAO pd : all) {
+            result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+            assert pd.getReferenceID().equals(result.getReferenceID());
         }
 
         cdst.rc.stop(all.size());
         System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
-    public static PropertyDAO createPropertyDAO(String name, String description, int val)
-    {
+    public static PropertyDAO createPropertyDAO(String name, String description, int val) {
         PropertyDAO ret = new PropertyDAO();
         ret.setName(name);
         ret.setDescription(description);
         ret.getProperties()
                 .build("str", name)
                 .build(new NVInt("int_val", val))
-                .build(new NVFloat("float", (float)5.78))
+                .build(new NVFloat("float", (float) 5.78))
         ;
 
         return ret;
@@ -168,16 +162,14 @@ public class MongoSyncTest {
     }
 
     @Test
-    public void testComplicated()
-    {
+    public void testComplicated() {
         cdst.insertAllType();
         cdst.insertComplexType();
     }
 
     @Test
-    public void pingTest()
-    {
-        NVGenericMap nvgm = ((APIDataStore<?,?>) APIRegistrar.SINGLETON.getDefault()).ping(false);
+    public void pingTest() {
+        NVGenericMap nvgm = ((APIDataStore<?, ?>) APIRegistrar.SINGLETON.getDefault()).ping(false);
         System.out.println(GSONUtil.toJSONDefault(nvgm, true));
     }
 }

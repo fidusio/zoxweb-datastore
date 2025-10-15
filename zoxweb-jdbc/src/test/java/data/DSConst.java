@@ -23,7 +23,7 @@ import java.util.UUID;
  */
 public class DSConst {
 
-    public static SecureRandom sr =  new SecureRandom();
+    public static SecureRandom sr = new SecureRandom();
     // AES 256 bit secret NEVER NEVER NEVER to be used in production
     public static final SecretKey MS_KEY = CryptoUtil.toSecretKey(SharedBase64.decode("Lq/bGZ2qRJZMEIQqi3OeKth8+IpoZRd5/bevzaRVRVE="), "AES");
     public static final String MONGO_CONF = "mongo_conf.json";
@@ -31,9 +31,9 @@ public class DSConst {
     public static final String SHIRO_INI = "shiro.ini";
     public static final String TEST_USER = "test@xlogistx.io";
     public static final String TEST_USER_TWO = "test-two@xlogistx.io";
-    public static final String TEST_PASSWORD= "T!st2s3r";
+    public static final String TEST_PASSWORD = "T!st2s3r";
     public static final String ILLEGAL_USER = "illegal@xlogistx.io";
-    public static final String ILLEGAL_PASSWORD= "T!st2s3r";
+    public static final String ILLEGAL_PASSWORD = "T!st2s3r";
     public static final String DEFAULT_API_KEY = "test_default_api_key";
 
     public static final String SUPER_ADMIN = "superadmin@xlogistx.io";
@@ -42,15 +42,11 @@ public class DSConst {
     public static final String APP_ID = "testapp";
 
 
-
-
     @SuppressWarnings("serial")
     public static class AllTypes
-        extends SetNameDescriptionDAO
-    {
+            extends SetNameDescriptionDAO {
         public enum Param
-                implements GetNVConfig
-        {
+                implements GetNVConfig {
 
             BOOL_VAL(NVConfigManager.createNVConfig("boolean_val", "Bool Value", "BoolVal", false, true, boolean.class)),
             BYTES_VAL(NVConfigManager.createNVConfig("bytes_val", "Byte array", "BytesVal", false, true, byte[].class)),
@@ -66,13 +62,11 @@ public class DSConst {
 
             private NVConfig nvc;
 
-            Param(NVConfig nvc)
-            {
+            Param(NVConfig nvc) {
                 this.nvc = nvc;
             }
 
-            public String toString()
-            {
+            public String toString() {
                 return getNVConfig().getName();
             }
 
@@ -80,14 +74,14 @@ public class DSConst {
              * @see org.zoxweb.shared.util.GetNVConfig#getNVConfig()
              */
             @Override
-            public NVConfig getNVConfig()
-            {
+            public NVConfig getNVConfig() {
                 return nvc;
             }
         }
+
         public static final NVConfigEntity NVC_ALLTYPES_DOA = new NVConfigEntityPortable(
                 "all_types",
-                null ,
+                null,
                 "AllTypes",
                 true,
                 false,
@@ -100,115 +94,93 @@ public class DSConst {
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
         );
 
-        public AllTypes()
-        {
+        public AllTypes() {
             super(NVC_ALLTYPES_DOA);
         }
 
-        public boolean getBoolean()
-        {
+        public boolean getBoolean() {
             return lookupValue(Param.BOOL_VAL);
         }
 
-        public void setBoolean(boolean val)
-        {
+        public void setBoolean(boolean val) {
             setValue(Param.BOOL_VAL, val);
         }
 
-        public byte[] getBytes()
-        {
+        public byte[] getBytes() {
             return lookupValue(Param.BYTES_VAL);
         }
 
-        public void setBytes(byte[] val)
-        {
+        public void setBytes(byte[] val) {
             setValue(Param.BYTES_VAL, val);
         }
 
-        public int getInt()
-        {
+        public int getInt() {
             return lookupValue(Param.INT_VAL);
         }
 
-        public void setInt(int val)
-        {
+        public void setInt(int val) {
             setValue(Param.INT_VAL, val);
         }
 
-        public int getUniqueInt()
-        {
+        public int getUniqueInt() {
             return lookupValue(Param.UNIQUE_INT_VAL);
         }
 
-        public void setUniqueInt(int val)
-        {
+        public void setUniqueInt(int val) {
             setValue(Param.UNIQUE_INT_VAL, val);
         }
 
-        public long getLong()
-        {
+        public long getLong() {
             return lookupValue(Param.LONG_VAL);
         }
 
-        public void setLong(long val)
-        {
+        public void setLong(long val) {
             setValue(Param.LONG_VAL, val);
         }
 
-        public float getFloat()
-        {
+        public float getFloat() {
             return lookupValue(Param.FLOAT_VAL);
         }
 
-        public void setFloat(float val)
-        {
+        public void setFloat(float val) {
             setValue(Param.FLOAT_VAL, val);
         }
 
-        public double getDouble()
-        {
+        public double getDouble() {
             return lookupValue(Param.DOUBLE_VAL);
         }
 
-        public void setDouble(double val)
-        {
+        public void setDouble(double val) {
             setValue(Param.DOUBLE_VAL, val);
         }
 
-        public Const.Status getStatus()
-        {
+        public Const.Status getStatus() {
             return lookupValue(Param.ENUM_VAL);
         }
 
-        public void setStatus(Const.Status val)
-        {
+        public void setStatus(Const.Status val) {
             setValue(Param.ENUM_VAL, val);
         }
-        public String[] getStringArray()
-        {
-            return ((NVStringList)lookup(Param.STRING_ARRAY)).getValues();
+
+        public String[] getStringArray() {
+            return ((NVStringList) lookup(Param.STRING_ARRAY)).getValues();
         }
 
-        public void setStringArray(String ...vals)
-        {
-            ((NVStringList)lookup(Param.STRING_ARRAY)).setValues(vals);
+        public void setStringArray(String... vals) {
+            ((NVStringList) lookup(Param.STRING_ARRAY)).setValues(vals);
         }
 
-        public void setDate(Date date)
-        {
+        public void setDate(Date date) {
             setValue(Param.DATE_VAL, date.getTime());
         }
 
-        public Date getDate()
-        {
-            return new Date((long)lookupValue(Param.DOUBLE_VAL));
+        public Date getDate() {
+            return new Date((long) lookupValue(Param.DOUBLE_VAL));
         }
 
 
-
         @SuppressWarnings("unused")
-        public static void testValues(AllTypes at)
-        {
+        public static void testValues(AllTypes at) {
             boolean bool = at.getBoolean();
             int integer = at.getInt();
             byte[] bytes = at.getBytes();
@@ -220,8 +192,7 @@ public class DSConst {
 
         }
 
-        public static AllTypes autoBuilder()
-        {
+        public static AllTypes autoBuilder() {
             AllTypes ret = new AllTypes();
             try {
 
@@ -238,9 +209,7 @@ public class DSConst {
                 ret.setStringArray("toto", "titi", "tata");
                 ret.setDate(new Date());
 
-            }
-            catch(Exception e)
-            {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
 
@@ -248,7 +217,6 @@ public class DSConst {
         }
 
     }
-
 
 
     @SuppressWarnings("serial")
@@ -300,23 +268,19 @@ public class DSConst {
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
         );
 
-        public ComplexTypes()
-        {
+        public ComplexTypes() {
             super(NVC_COMPLEX_TYPES);
         }
 
-        public AllTypes getAllTypes()
-        {
+        public AllTypes getAllTypes() {
             return lookupValue(Param.ALL_TYPES);
         }
 
-        public void setAllTypes(AllTypes at)
-        {
+        public void setAllTypes(AllTypes at) {
             setValue(Param.ALL_TYPES, at);
         }
 
-        public static ComplexTypes buildComplex(String name)
-        {
+        public static ComplexTypes buildComplex(String name) {
             ComplexTypes ret = new ComplexTypes();
             if (name != null)
                 ret.setName(name);
@@ -339,44 +303,29 @@ public class DSConst {
     }
 
     @SuppressWarnings("unchecked")
-    public static  <V extends NVEntity> V init(V nve)
-    {
+    public static <V extends NVEntity> V init(V nve) {
         int index = 0;
         MetaUtil.initTimeStamp(nve);
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
-        if (nve instanceof DeviceID)
-        {
+        if (nve instanceof DeviceID) {
             ((DeviceID<String>) nve).setDeviceID(UUID.randomUUID().toString());
         }
-        if (nve instanceof SubjectID)
-        {
+        if (nve instanceof SubjectID) {
             ((SubjectID<String>) nve).getSubjectID();
         }
-        for (NVBase<?> nvb : nve.getAttributes().values())
-        {
-            if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_UPDATE_EXCLUSION, nvb))
-            {
-                if(nvce.lookup(nvb.getName()).getMetaType() == Date.class) {
-                }
-                else if(nvb instanceof NVInt)
-                {
-                    ((NVInt)nvb).setValue(sr.nextInt());
-                }
-                else if(nvb instanceof NVLong)
-                {
-                    ((NVLong)nvb).setValue(sr.nextLong());
-                }
-                else if(nvb instanceof NVFloat)
-                {
-                    ((NVFloat)nvb).setValue(sr.nextFloat());
-                }
-                else if(nvb instanceof NVDouble)
-                {
-                    ((NVDouble)nvb).setValue(sr.nextDouble());
-                }
-                else if(nvb instanceof NVPair && nvb.getValue() == null)
-                {
-                    ((NVPair)nvb).setValue("str-" + ++index);
+        for (NVBase<?> nvb : nve.getAttributes().values()) {
+            if (!DerbyDBMeta.excludeMeta(DerbyDBMeta.META_UPDATE_EXCLUSION, nvb)) {
+                if (nvce.lookup(nvb.getName()).getMetaType() == Date.class) {
+                } else if (nvb instanceof NVInt) {
+                    ((NVInt) nvb).setValue(sr.nextInt());
+                } else if (nvb instanceof NVLong) {
+                    ((NVLong) nvb).setValue(sr.nextLong());
+                } else if (nvb instanceof NVFloat) {
+                    ((NVFloat) nvb).setValue(sr.nextFloat());
+                } else if (nvb instanceof NVDouble) {
+                    ((NVDouble) nvb).setValue(sr.nextDouble());
+                } else if (nvb instanceof NVPair && nvb.getValue() == null) {
+                    ((NVPair) nvb).setValue("str-" + ++index);
                 }
             }
         }
@@ -386,9 +335,8 @@ public class DSConst {
     }
 
 
-    public static void createUser(RealmController<AuthorizationInfo, PrincipalCollection> rc, String subjectID, String password)
-    {
-        if(rc.lookupSubjectIdentifier(subjectID) == null) {
+    public static void createUser(RealmController<AuthorizationInfo, PrincipalCollection> rc, String subjectID, String password) {
+        if (rc.lookupSubjectIdentifier(subjectID) == null) {
             SubjectIdentifier subjectIdentifier = new SubjectIdentifier();
             subjectIdentifier.setSubjectID(subjectID);
             subjectIdentifier.setSubjectType(BaseSubjectID.SubjectType.USER);

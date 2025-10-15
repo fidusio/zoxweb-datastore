@@ -33,9 +33,6 @@ public class DerbyDBMeta {
         private NVNCodec() {
         }
 
-        ;
-
-
         @Override
         public String encode(NVNumber input) {
             Number v = input.getValue();
@@ -137,7 +134,7 @@ public class DerbyDBMeta {
         if (nvb.getValue() == null) {
             ps.setObject(index, null);
         } else if (nvb instanceof NamedValue) {
-            ps.setString(index, ""+nvb.getValue());
+            ps.setString(index, "" + nvb.getValue());
         } else if (nvb instanceof NVBlob) {
             ps.setBinaryStream(index, new ByteArrayInputStream(((NVBlob) nvb).getValue()));
         } else if (nvb.getValue() instanceof String) {

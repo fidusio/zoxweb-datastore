@@ -92,8 +92,6 @@ public class MongoUtil {
     }
 
 
-
-
     //private final KVMapStore<Class<?>, DataUpdater> BSONToData = new KVMapStoreDefault<>(new LinkedHashMap<>());
     public final KVMapStore<Class<?>, DataDeserializer> BSONToDataDeserializer = new KVMapStoreDefault<>(new LinkedHashMap<>());
 
@@ -116,7 +114,6 @@ public class MongoUtil {
 //            return (V) UUID.fromString(idToGuess);
 //        }
 //    }
-
 
 
     private void init() {
@@ -298,7 +295,7 @@ public class MongoUtil {
                     Document nvDoc = (Document) doc.get(nvc.getName());
                     namedValue.setValue(nvDoc.get(MetaToken.VALUE.getName()));
                     lookupDataDeserializer(NVGenericMap.class).deserialize(mds, subjectGUID, db, nvDoc, container, null, namedValue.getProperties());
-                },NamedValue.class)
+                }, NamedValue.class)
 
 
         ;
@@ -313,22 +310,21 @@ public class MongoUtil {
 //    public <V> GetNameValue<V> idToGNV(String idToGuess) {
 //        SUS.checkIfNulls("null idToGuess", idToGuess);
 //        return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
-////        try {
-////            return (GetNameValue<V>) GetNameValue.create(ReservedID.REFERENCE_ID.getValue(), new ObjectId(idToGuess));
-////        } catch (Exception e) {
-////            return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
-////        }
-//    }
 
+    ////        try {
+    ////            return (GetNameValue<V>) GetNameValue.create(ReservedID.REFERENCE_ID.getValue(), new ObjectId(idToGuess));
+    ////        } catch (Exception e) {
+    ////            return (GetNameValue<V>) GetNameValue.create(ReservedID.GUID.getValue(), UUID.fromString(idToGuess));
+    ////        }
+//    }
     public Document idAsGUID(NVEntity nve) {
         return new Document("_id", IDGs.UUIDV4.decode(nve.getReferenceID()));
     }
 
-//    public Document idAsRefID(NVEntity nve) {
+    //    public Document idAsRefID(NVEntity nve) {
 //        return new Document(ReservedID.REFERENCE_ID.getValue(), nveRefID(nve));
 //    }
-    public UUID getRefIDAsUUID(Document doc)
-    {
+    public UUID getRefIDAsUUID(Document doc) {
         return doc.get("_id", UUID.class);
     }
 

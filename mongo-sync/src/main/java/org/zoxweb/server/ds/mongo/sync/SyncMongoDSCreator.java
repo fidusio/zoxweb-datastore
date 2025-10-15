@@ -35,9 +35,7 @@ public class SyncMongoDSCreator
         DB_URI("db_uri", null),
         DATA_CACHE("data_cache", "false"),
         DATA_CACHE_CLASS_NAME("data_cache_class_name", null),
-        GRIDFS_POSTFIX("gridfs_name", "_gridfs");
-
-        ;
+        GRIDFS_POSTFIX("gridfs_name", "_gridfs");;
 
         private final String name;
         private final String value;
@@ -56,22 +54,19 @@ public class SyncMongoDSCreator
             return value;
         }
 
-        public static String dataStoreName(APIConfigInfo aci)
-        {
+        public static String dataStoreName(APIConfigInfo aci) {
             return aci.getProperties().getValue(DB_NAME);
         }
 
-        public static String dataStoreURI(APIConfigInfo aci)
-        {
+        public static String dataStoreURI(APIConfigInfo aci) {
             String uri = aci.getProperties().getValue(DB_URI);
             if (SUS.isEmpty(uri))
-                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" +  aci.getProperties().getValue(PORT) + "/?uuidRepresentation=standard";
+                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT) + "/?uuidRepresentation=standard";
 
             return uri;
         }
 
-        public static String gridFSDataStoreName(APIConfigInfo aci)
-        {
+        public static String gridFSDataStoreName(APIConfigInfo aci) {
             return dataStoreName(aci) + aci.getProperties().getValue(GRIDFS_POSTFIX);
         }
 
