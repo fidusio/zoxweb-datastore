@@ -93,7 +93,12 @@ public class MongoUtil {
 
 
     //private final KVMapStore<Class<?>, DataUpdater> BSONToData = new KVMapStoreDefault<>(new LinkedHashMap<>());
-    public final KVMapStore<Class<?>, DataDeserializer> BSONToDataDeserializer = new KVMapStoreDefault<>(new LinkedHashMap<>());
+    public final RegistrarMapDefault<Class<?>, DataDeserializer> BSONToDataDeserializer = new RegistrarMapDefault<>(c -> {
+        if (c.isArray() && c.getComponentType().isEnum())
+            return Enum[].class;
+
+        return c.isEnum() ? Enum.class : c;
+    }, null);
 
     private final HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
@@ -118,15 +123,12 @@ public class MongoUtil {
 
     private void init() {
 
-        BSONToDataDeserializer.setKeyFilter(new DataEncoder<Class<?>, Class<?>>() {
-            @Override
-            public Class<?> encode(Class<?> c) {
-                if (c.isArray() && c.getComponentType().isEnum())
-                    return Enum[].class;
-
-                return c.isEnum() ? Enum.class : c;
-            }
-        });
+//        BSONToDataDeserializer.setKeyFilter(c -> {
+//            if (c.isArray() && c.getComponentType().isEnum())
+//                return Enum[].class;
+//
+//            return c.isEnum() ? Enum.class : c;
+//        });
 
         BSONToDataDeserializer.map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                     Object tempValue = doc.get(nvc.getName());
