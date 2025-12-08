@@ -32,11 +32,11 @@
         </dependency>
 
 
-        <dependency>
-            <groupId>org.zoxweb</groupId>
-            <artifactId>zoxweb-core</artifactId>
-            <version>${zoxweb-core.version}</version>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.zoxweb</groupId>-->
+<!--            <artifactId>zoxweb-core</artifactId>-->
+<!--            <version>${zoxweb-core.version}</version>-->
+<!--        </dependency>-->
 
         <dependency>
             <groupId>org.zoxweb</groupId>

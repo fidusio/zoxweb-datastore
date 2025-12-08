@@ -21,7 +21,6 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import org.bson.Document;
-//import org.bson.types.ObjectId;
 import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
@@ -208,7 +207,7 @@ public class SyncMongoMetaManager {
         ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));
         ret.setMetaType(clazz);
         ret.setArray(dbo.getBoolean(MetaToken.IS_ARRAY.getName()));
-        ret.setReferenceID(dbo.getObjectId(MongoUtil.ReservedID.REFERENCE_ID.getValue()).toHexString());
+        ret.setReferenceID(MongoUtil.ReservedID.REFERENCE_ID.decode(dbo));
         return ret;
     }
 

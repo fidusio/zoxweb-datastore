@@ -440,23 +440,21 @@ public class SyncMongoDS
     @SuppressWarnings("unchecked")
     public <V extends NVEntity> V fromDB(String subjectGUID, MongoDatabase db, Document dbObject, Class<? extends NVEntity> clazz)
             throws InstantiationException, IllegalAccessException {
-        NVEntity nve = clazz.newInstance();
-        NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+        try {
+            NVEntity nve = clazz.getConstructor().newInstance();
+            NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+
+            for (NVConfig nvc : nvce.getAttributes()) {
+                //if (ReservedID.lookupByName(nvc) == null)
+                updateMappedValue(subjectGUID, db, dbObject, nve, nvc, nve.lookup(nvc.getName()));
+            }
 
 
-        // for encryption support we must set the referenced id and user id pre-hand
-//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.REFERENCE_ID.getName()), nve.lookup(MetaToken.REFERENCE_ID.getName()));
-//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.GUID.getName()), nve.lookup(MetaToken.GUID.getName()));
-//		updateMappedValue(subjectGUID, db, dbObject, nve, nvce.lookup(MetaToken.SUBJECT_GUID.getName()), nve.lookup(MetaToken.SUBJECT_GUID.getName()));
-
-
-        for (NVConfig nvc : nvce.getAttributes()) {
-            //if (ReservedID.lookupByName(nvc) == null)
-            updateMappedValue(subjectGUID, db, dbObject, nve, nvc, nve.lookup(nvc.getName()));
+            return (V) nve;
+        } catch (ReflectiveOperationException e) {
+            throw new InstantiationException(e.getMessage());
         }
 
-
-        return (V) nve;
     }
 
     /**
@@ -531,121 +529,6 @@ public class SyncMongoDS
                 }
             }
 
-//            if (nvc.isEnum()) {
-//                List<String> listOfEnumNames = (List<String>) doc.get(nvc.getName());
-//                List<Enum<?>> listOfEnums = new ArrayList<Enum<?>>();
-//
-//                for (String enumName : listOfEnumNames) {
-//                    listOfEnums.add(SharedUtil.enumValue(clazz, enumName));
-//                }
-//
-//                ((NVEnumList) nvb).setValue(listOfEnums);
-//
-//                return;
-//            }
-//
-//            if (clazz == long[].class || clazz == Long[].class || clazz == Date[].class) {
-//
-//                List<Long> values = new ArrayList<Long>();
-//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//                for (Object val : dbValues) {
-//                    values.add((Long) val);
-//                }
-//                ((NVLongList) nvb).setValue(values);
-//                return;
-//            }
-//
-//            if (clazz == boolean[].class || clazz == Boolean[].class) {
-//                //((NVBooleanList) nvb).setValue((List<Boolean>) dbObject.get(nvc.getName()));
-//                return;
-//            }
-//
-//            if (clazz == BigDecimal[].class) {
-//                List<BigDecimal> ret = new ArrayList<BigDecimal>();
-//                List<String> values = (List<String>) doc.get(nvc.getName());
-//
-//                for (String val : values) {
-//                    ret.add(new BigDecimal(val));
-//                }
-//
-//                ((NVBigDecimalList) nvb).setValue(ret);
-//
-//                return;
-//            }
-//
-//            if (clazz == double[].class || clazz == Double[].class) {
-//
-//                List<Double> values = new ArrayList<Double>();
-//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//                for (Object val : dbValues) {
-//                    values.add((Double) val);
-//                }
-//                ((NVDoubleList) nvb).setValue(values);
-//                return;
-//            }
-//
-//            if (clazz == float[].class || clazz == Float[].class) {
-//                List<Float> values = new ArrayList<Float>();
-//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//                for (Object val : dbValues) {
-//                    if (val instanceof Double) {
-//                        val = ((Double) val).floatValue();
-//                    }
-//
-//                    values.add((Float) val);
-//                }
-//                ((NVFloatList) nvb).setValue(values);
-//
-//                return;
-//            }
-//
-//            if (clazz == int[].class || clazz == Integer[].class) {
-//                List<Integer> values = new ArrayList<Integer>();
-//                List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//                for (Object val : dbValues) {
-//                    values.add((Integer) val);
-//                }
-//                ((NVIntList) nvb).setValue(values);
-//                return;
-//            }
-//
-//            // String[] moved not used yet
-//            if (clazz == String[].class) {
-//                //if(log.isEnabled()) log.getLogger().info("nvc:" + nvc.getName());
-//                boolean isFixed = doc.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
-//
-//                List<Document> list = (List<Document>) doc.get(nvc.getName());
-//
-//                //List<NVPair> nvpl = new ArrayList<NVPair>();
-//                if (nvb instanceof NVGetNameValueList) {
-//                    if (list != null) {
-//                        for (int i = 0; i < list.size(); i++) {
-//                            ((NVGetNameValueList) nvb).add(toNVPair(subjectGUID, container, list.get(i)));
-//                        }
-//                    }
-//                    ((NVGetNameValueList) nvb).setFixed(isFixed);
-//                } else {
-//                    ArrayValues<NVPair> arrayValues = (ArrayValues<NVPair>) nvb;
-//
-//                    if (list != null) {
-//                        for (int i = 0; i < list.size(); i++) {
-//                            arrayValues.add(toNVPair(subjectGUID, container, list.get(i)));
-//                        }
-//                    }
-//
-//                    if (nvb instanceof NVPairList)
-//                        ((NVPairList) nvb).setFixed(isFixed);
-//                }
-//                //((NVPairList) nvb).setValue(nvpl);
-//
-//                return;
-//            }
-//            // String[] moved not used yet
-
 
             // Adding a list or set of NVEntities an array in this case
             if (NVEntity.class.isAssignableFrom(nvc.getMetaTypeBase())) {
@@ -690,120 +573,9 @@ public class SyncMongoDS
             if (mdbom != null && mdbom.getContent() != null) {
                 ((NVEntityReference) nvb).setValue(fromDB(subjectGUID, db, mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase()));
             }
-//			if (!SharedStringUtil.isEmpty(dbObject.getObjectId(nvc.getName()).toHexString()))
-//			{
-//				NVConfigEntity nvce = (NVConfigEntity) nvc;
-//				//BasicDBObject dbObj = lookupByReferenceID(db, nvce.getReferencedNVConfigEntity().getName(), nveRefID);
-//				BasicDBObject dbObj = lookupByReferenceID(nvce.getReferencedNVConfigEntity().getName(), dbObject.getObjectId(nvc.getName()));
-//								
-//				if (dbObj != null)
-//				{
-//					((NVEntityReference) nvb).setValue(fromDB(db, dbObj, (Class<? extends NVEntity>) nvce.getMetaType()));
-//				}
-//			}
 
             return;
         }
-
-
-//        if (clazz.isEnum()) {
-//            ((NVEnum) nvb).setValue(SharedUtil.enumValue(clazz, doc.getString(nvc.getName())));
-//            return;
-//        }
-//
-//        if (clazz == String.class) {
-//
-//            Object tempValue = doc.get(nvc.getName());
-//            if (tempValue instanceof Document) {
-//                tempValue = fromDB(subjectGUID, db, (Document) tempValue, EncryptedData.class);
-//            }
-//
-//            if (getAPIConfigInfo().getSecurityController() != null)
-//                ((NVPair) nvb).setValue((String) getAPIConfigInfo().getSecurityController().decryptValue(this, container, nvb, tempValue, null));
-//            else
-//                ((NVPair) nvb).setValue((String) tempValue);
-//
-//            return;
-//        }
-//
-//        if (clazz == NVStringList.class) {
-//            List<String> values = new ArrayList<String>();
-//            List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//            for (Object val : dbValues) {
-//                values.add((String) val);
-//            }
-//            ((NVStringList) nvb).setValue(values);
-//            return;
-//        }
-//        if (clazz == NVStringSet.class) {
-//            Set<String> values = new HashSet<String>();
-//            List<Document> dbValues = (List<Document>) doc.get(nvc.getName());
-//
-//            for (Object val : dbValues) {
-//                values.add((String) val);
-//            }
-//            ((NVStringSet) nvb).setValue(values);
-//            return;
-//        }
-//
-//
-//        if (clazz == NVGenericMap.class) {
-//            NVGenericMap nvgm = (NVGenericMap) nvb;
-//            Document dbNVGM = (Document) doc.get(nvc.getName());
-//            fromNVGenericMap(subjectGUID, nvgm, dbNVGM);
-//            return;
-//
-//        }
-//        if (clazz == NVGenericMapList.class) {
-//
-//        }
-//        if (clazz == long.class || clazz == Long.class) {
-//            ((NVLong) nvb).setValue(doc.getLong(nvc.getName()));
-//            return;
-//        }
-//
-//        if (clazz == boolean.class || clazz == Boolean.class) {
-//            ((NVBoolean) nvb).setValue(doc.getBoolean(nvc.getName()));
-//            return;
-//        }
-//
-//        if (clazz == byte[].class) {
-//            Binary mBinary = (Binary) doc.get(nvc.getName());
-//            if (mBinary != null)
-//                ((NVBlob) nvb).setValue(mBinary.getData());
-//            return;
-//        }
-//
-//        if (clazz == BigDecimal.class) {
-//            ((NVBigDecimal) nvb).setValue(new BigDecimal(doc.getString(nvc.getName())));
-//            return;
-//        }
-//
-//        if (clazz == double.class || clazz == Double.class) {
-//            ((NVDouble) nvb).setValue(doc.getDouble(nvc.getName()));
-//            return;
-//        }
-//
-//        if (clazz == float.class || clazz == Float.class) {
-//            ((NVFloat) nvb).setValue(doc.getDouble(nvc.getName()).floatValue());
-//            return;
-//        }
-//
-//        if (clazz == int.class || clazz == Integer.class) {
-//            ((NVInt) nvb).setValue(doc.getInteger(nvc.getName()));
-//            return;
-//        }
-//
-//        if (clazz == Date.class) {
-//            ((NVLong) nvb).setValue(doc.getLong(nvc.getName()));
-//            return;
-//        }
-//
-//        if (clazz == Number.class) {
-//            ((NVNumber) nvb).setValue((Number) doc.get(nvc.getName()));
-//            return;
-//        }
 
         throw new IllegalArgumentException("Unsupported type: " + nvc + " " + clazz);
     }
@@ -955,13 +727,14 @@ public class SyncMongoDS
         MongoCursor<Document> cur = null;
         MongoCollection<Document> collection = db.getCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 
-        try {
-            if (collection != null) {
-                cur = collection.find().iterator();
-            }
-        } finally {
-            IOUtil.close(cur);
+//        try {
+        if (collection != null) {
+            cur = collection.find().iterator();
         }
+//        }
+//        finally {
+//            IOUtil.close(cur);
+//        }
 
 
         return cur;
@@ -1013,7 +786,7 @@ public class SyncMongoDS
     /**
      *
      * @param metaTypeName
-     * @param refId
+     * @param refID
      * @param projection
      * @param <NT>
      * @param <RT>
@@ -1023,33 +796,23 @@ public class SyncMongoDS
 
     @SuppressWarnings("unchecked")
     @Override
-    public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT refId, NIT projection) {
-        MongoCollection<Document> collection = lookupCollection(metaTypeName);
-        Document query = new Document();
-        //query.put("_id", new ObjectId(refID));
-        if (refId instanceof UUID)
-            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), refId);
-//        else if (objectId instanceof ObjectId)
-//            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), objectId);
-        else if (refId instanceof String) {
-            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode((String) refId));
-//
-//            try {
-//                // check if it is uuid
-//                query.put(MongoUtil.ReservedID.GUID.getValue(),IDGs.UUIDV4.decode((String) objectId));
-//            } catch (Exception e) {
-//                // uuid failed try object id
-//                query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new ObjectId((String) objectId));
-//            }
-        }
+    public <NT, RT, NIT> NT lookupByReferenceID(String metaTypeName, RT refID, NIT projection) {
+        SUS.checkIfNulls("NULL refID or metaTypeName", refID, metaTypeName);
 
+        Document query = new Document();
+
+        if (refID instanceof UUID)
+            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), refID);
+        else if (refID instanceof String)
+            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode((String) refID));
+        else
+            throw new IllegalArgumentException("Invalid refID: " + refID);
+
+        MongoCollection<Document> collection = lookupCollection(metaTypeName);
 
         Document dbObj = null;
-
         try {
-            if (collection != null)
-                dbObj = collection.find(query).projection((Bson) projection).first();
-//                dbObj = collection.findOne(query, (DBObject) projection);
+            dbObj = collection.find(query).projection((Bson) projection).first();
         } catch (MongoException e) {
             getAPIExceptionHandler().throwException(e);
         }
@@ -1142,6 +905,58 @@ public class SyncMongoDS
         }
         return null;
     }
+
+    public List<SyncMongoDBObjectMeta> lookupByReferenceIDsMaybe(List<Document> listOfObjectRefID) {
+        if (listOfObjectRefID == null || listOfObjectRefID.isEmpty()) {
+            return null;
+        }
+
+        List<SyncMongoDBObjectMeta> listOfDBObjects = new ArrayList<>();
+
+        // Step 1: Group references by collection (canonical_id)
+        Map<UUID, List<UUID>> refsByCollection = new HashMap<>();
+        Map<UUID, Document> refDocMap = new HashMap<>();  // To retrieve original doc info
+
+        for (Document toFind : listOfObjectRefID) {
+            UUID canonicalId = (UUID) toFind.get(MetaToken.CANONICAL_ID.getName());
+            UUID refId = (UUID) toFind.get(MongoUtil.ReservedID.REFERENCE_ID.getValue());
+
+            if (canonicalId != null && refId != null) {
+                refsByCollection.computeIfAbsent(canonicalId, k -> new ArrayList<>()).add(refId);
+                refDocMap.put(refId, toFind);
+            }
+        }
+
+        // Step 2: Execute one batch query per collection
+        for (Map.Entry<UUID, List<UUID>> entry : refsByCollection.entrySet()) {
+            UUID canonicalId = entry.getKey();
+            List<UUID> refIds = entry.getValue();
+
+            // Lookup collection metadata
+            SyncMongoDBObjectMeta meta = SyncMongoMetaManager.SINGLETON.lookupCollectionName(this, canonicalId);
+            if (meta == null || meta.getNVConfigEntity() == null) {
+                continue;
+            }
+
+            String collectionName = meta.getNVConfigEntity().toCanonicalID();
+            MongoCollection<Document> collection = connect().getCollection(collectionName);
+
+            // Single query with $in operator for all refs in this collection
+            Document query = new Document(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new Document("$in", refIds));
+
+            try (MongoCursor<Document> cursor = collection.find(query).iterator()) {
+                while (cursor.hasNext()) {
+                    Document dbObject = cursor.next();
+                    SyncMongoDBObjectMeta toAdd = new SyncMongoDBObjectMeta(meta.getNVConfigEntity());
+                    toAdd.setContent(dbObject);
+                    listOfDBObjects.add(toAdd);
+                }
+            }
+        }
+
+        return listOfDBObjects;
+    }
+
 
 
     public SyncMongoDBObjectMeta lookupByReferenceID(Document toFind) {
@@ -1933,26 +1748,24 @@ public class SyncMongoDS
     public <V extends NVEntity> boolean delete(V nve, boolean withReference)
             throws NullPointerException, IllegalArgumentException, APIException {
         SUS.checkIfNulls("Null value", nve);
+        boolean ret = false;
 
         if (nve.getReferenceID() != null) {
             Document doc = new Document();
-            doc.put(MongoUtil.ReservedID.GUID.getValue(), nve.getGUID());
+            doc.put(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV4.decode(nve.getGUID()));
             MongoCollection<Document> collection = lookupCollection(nve.getNVConfig().getName());
 
 
             try {
-                if (collection != null) {
-                    collection.deleteOne(doc);
-                    if (dataCacheMonitor != null) {
-                        dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, nve));
-                    }
-
+                ret = collection.deleteOne(doc).wasAcknowledged();
+                if (ret && dataCacheMonitor != null) {
+                    dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, nve));
                 }
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             }
 
-            if (withReference) {
+            if (ret && withReference) {
 
                 // the associated encryption key dao
                 MongoCollection<Document> ekdCollection = lookupCollection(EncapsulatedKey.NVCE_ENCAPSULATED_KEY.getName());
@@ -1991,19 +1804,16 @@ public class SyncMongoDS
                     }
                 }
             }
-
-            return true;
         }
 
-        return false;
+        return ret;
     }
 
     public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, APIException, AccessException {
         Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
         MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
-        collection.deleteMany(query);
-        return false;
+        return collection.deleteMany(query).wasAcknowledged();
     }
 
     /**
@@ -2031,6 +1841,7 @@ public class SyncMongoDS
 
 
     private MongoCollection<Document> lookupCollection(String name) {
+        SUS.checkIfNulls("Null collection name ", name);
         return connect().getCollection(name);
     }
 
@@ -2628,7 +2439,8 @@ public class SyncMongoDS
         if (mongoClient == null)
             synchronized (this) {
                 try {
-                    mongoClient = MongoClients.create(SyncMongoDSCreator.MongoParam.dataStoreURI(getAPIConfigInfo()));
+                    if (mongoClient == null)
+                        mongoClient = MongoClients.create(SyncMongoDSCreator.MongoParam.dataStoreURI(getAPIConfigInfo()));
                 } catch (Exception e) {
                     e.printStackTrace();
                     throw new APIException(e.getMessage());
@@ -2793,8 +2605,8 @@ public class SyncMongoDS
 
                 while (cur.hasNext()) {
                     Document dbObject = cur.next();
-                    String guid = (String) dbObject.get(MetaToken.GUID.getName());
-                    String subjectGUID = (String) dbObject.get(MetaToken.SUBJECT_GUID.getName());
+                    String guid = MongoUtil.ReservedID.GUID.decode(dbObject);//(String) dbObject.get(MetaToken.GUID.getName());
+                    String subjectGUID = MongoUtil.ReservedID.SUBJECT_GUID.decode(dbObject);//(String) dbObject.get(MetaToken.SUBJECT_GUID.getName());
                     // check if the user has access to the object
                     if (guid != null && subjectGUID != null && getAPIConfigInfo().getSecurityController().isNVEntityAccessible(guid, subjectGUID, CRUD.READ)) {
                         list.add((T) guid);

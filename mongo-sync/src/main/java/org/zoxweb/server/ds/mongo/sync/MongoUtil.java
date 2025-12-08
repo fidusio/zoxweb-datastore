@@ -18,7 +18,7 @@ public class MongoUtil {
      * Contains reference ID, account ID, and user ID.
      */
     public enum ReservedID
-            implements GetNameValue<String> {
+            implements GetNameValue<String>, DataDecoder<Document, String> {
         REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
         SUBJECT_GUID(MetaToken.SUBJECT_GUID),
         GUID(MetaToken.GUID);
@@ -46,6 +46,19 @@ public class MongoUtil {
         @Override
         public String getValue() {
             return value;
+        }
+
+        /**
+         * Convert UUID to String
+         * @param doc that has the UUID
+         * @return
+         */
+        public String decode(Document doc) {
+            Object value = doc.get(getValue());
+            if (value instanceof UUID)
+                return IDGs.UUIDV4.encode((UUID) value);
+
+            return (String) value;
         }
 
         public static ReservedID lookupByName(GetName gn) {
@@ -177,7 +190,7 @@ public class MongoUtil {
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVDouble) nvb).setValue(doc.getDouble(nvc.getName())),
                         double.class, Double.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVFloat) nvb).setValue(doc.getDouble(nvc.getName()).floatValue()),
-                        double.class, Double.class)
+                        float.class, Float.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVLong) nvb).setValue(doc.getLong(nvc.getName()))
                         , long.class, Long.class, Date.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVInt) nvb).setValue(doc.getInteger(nvc.getName()))
@@ -213,7 +226,7 @@ public class MongoUtil {
                         String[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<Long> values = new ArrayList<Long>();
-                            for (Object val : (List<String>) doc.get(nvc.getName())) {
+                            for (Object val : (List<Long>) doc.get(nvc.getName())) {
                                 values.add((Long) val);
                             }
                             ((NVLongList) nvb).setValue(values);
@@ -229,7 +242,7 @@ public class MongoUtil {
                         BigDecimal[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<Double> values = new ArrayList<Double>();
-                            for (Object val : (List<Document>) doc.get(nvc.getName())) {
+                            for (Object val : (List<Double>) doc.get(nvc.getName())) {
                                 values.add((Double) val);
                             }
                             ((NVDoubleList) nvb).setValue(values);
@@ -237,7 +250,7 @@ public class MongoUtil {
                         double[].class, Double[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<Float> values = new ArrayList<Float>();
-                            for (Object val : (List<Document>) doc.get(nvc.getName())) {
+                            for (Object val : (List<Float>) doc.get(nvc.getName())) {
                                 if (val instanceof Double)
                                     val = ((Double) val).floatValue();
 
@@ -248,7 +261,7 @@ public class MongoUtil {
                         float[].class, Float[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<Integer> values = new ArrayList<Integer>();
-                            for (Object val : (List<Document>) doc.get(nvc.getName())) {
+                            for (Object val : (List<Integer>) doc.get(nvc.getName())) {
                                 values.add((Integer) val);
                             }
                             ((NVIntList) nvb).setValue(values);
