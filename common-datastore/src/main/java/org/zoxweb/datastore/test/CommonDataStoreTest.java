@@ -72,7 +72,7 @@ public class CommonDataStoreTest<P,S> {
     }
 
     public void testBCryptPassword() throws NoSuchAlgorithmException {
-        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
+        CredentialHasher<CIPassword> credentialHasher =  SecUtil.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
         CIPassword p = credentialHasher.hash(PASSWORD);
         ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).insert(p);
 
@@ -83,7 +83,7 @@ public class CommonDataStoreTest<P,S> {
     }
 
     public void testArgonPassword() throws NoSuchAlgorithmException {
-        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
+        CredentialHasher<CIPassword> credentialHasher =  SecUtil.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
         CIPassword p = credentialHasher.hash(PASSWORD);
         ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).insert(p);
 
@@ -95,7 +95,7 @@ public class CommonDataStoreTest<P,S> {
 
     public void testUpdatePassword() throws NoSuchAlgorithmException {
         long count = ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).countMatch(CIPassword.NVCE_CI_PASSWORD);
-        CredentialHasher<CIPassword> credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
+        CredentialHasher<CIPassword> credentialHasher =  SecUtil.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
         CIPassword p = credentialHasher.hash(PASSWORD);
         p.setName("ToBeUpdated-" + count);
         ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).insert(p);
@@ -104,7 +104,7 @@ public class CommonDataStoreTest<P,S> {
         assert found != p;
         assert credentialHasher.validate(found, PASSWORD);
         assert GSONUtil.toJSONDefault(p).equals(GSONUtil.toJSONDefault(found));
-        credentialHasher =  SecUtil.SINGLETON.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
+        credentialHasher =  SecUtil.lookupCredentialHasher(CryptoConst.HashType.BCRYPT.getName());
         CIPassword updated = credentialHasher.update(found, PASSWORD, NEW_PASSWORD);
         ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).update(updated);
 
