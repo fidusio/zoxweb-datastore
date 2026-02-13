@@ -26,7 +26,6 @@ import com.mongodb.client.model.Filters;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.zoxweb.server.api.APIServiceProviderBase;
-import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.*;
 import org.zoxweb.shared.api.*;
@@ -44,6 +43,7 @@ import org.zoxweb.shared.filters.ChainedFilter;
 import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
+import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
@@ -169,7 +169,7 @@ public class SyncMongoDS
      * Closes all connections to the database.
      */
     public synchronized void close() {
-        IOUtil.close(mongoClient);
+        SharedIOUtil.close(mongoClient);
         mongoClient = null;
 
     }
@@ -871,7 +871,7 @@ public class SyncMongoDS
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             } finally {
-                IOUtil.close(cur);
+                SharedIOUtil.close(cur);
             }
 
             return listOfDocuments;
@@ -1938,7 +1938,7 @@ public class SyncMongoDS
         } finally {
 
             if (closeStream)
-                IOUtil.close(is);
+                SharedIOUtil.close(is);
         }
 
         return file;
@@ -1969,7 +1969,7 @@ public class SyncMongoDS
             }
         } finally {
             if (closeStream)
-                IOUtil.close(os);
+                SharedIOUtil.close(os);
         }
         if (log.isEnabled()) log.getLogger().info(file.getOriginalFileInfo().getName());
         return file;
@@ -2423,7 +2423,7 @@ public class SyncMongoDS
                 list.add(fromDBtoDynamicEnumMap((Document) cur.next()));
             }
         } finally {
-            IOUtil.close(cur);
+            SharedIOUtil.close(cur);
         }
 
         return list;
@@ -2525,7 +2525,7 @@ public class SyncMongoDS
             e.printStackTrace();
             getAPIExceptionHandler().throwException(e);
         } finally {
-            IOUtil.close(cur);
+            SharedIOUtil.close(cur);
         }
 
         if (userID == null && dataCacheMonitor != null) {
@@ -2617,7 +2617,7 @@ public class SyncMongoDS
             e.printStackTrace();
             getAPIExceptionHandler().throwException(e);
         } finally {
-            IOUtil.close(cur);
+            SharedIOUtil.close(cur);
         }
 
         APISearchResult<T> results = new APISearchResult<T>();

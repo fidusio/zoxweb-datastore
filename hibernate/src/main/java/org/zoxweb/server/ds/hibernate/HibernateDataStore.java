@@ -20,11 +20,11 @@ import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
-import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
+import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
 
@@ -271,7 +271,7 @@ public class HibernateDataStore
 
             throw new APIException("Insert failed: " + e.getMessage());
         } finally {
-            IOUtil.close(session);
+            SharedIOUtil.close(session);
         }
 
         return nve;
@@ -296,7 +296,7 @@ public class HibernateDataStore
             }
             throw new APIException("Delete failed: " + e.getMessage());
         } finally {
-            IOUtil.close(session);
+            SharedIOUtil.close(session);
         }
 
         return true;
@@ -327,7 +327,7 @@ public class HibernateDataStore
             }
             throw new APIException("Updated failed: " + e.getMessage());
         } finally {
-            IOUtil.close(session);
+            SharedIOUtil.close(session);
         }
 
         return nve;
@@ -375,7 +375,7 @@ public class HibernateDataStore
 //            e.printStackTrace();
             throw new APIException("Lookup failed: " + e.getMessage());
         } finally {
-            IOUtil.close(session);
+            SharedIOUtil.close(session);
         }
 
         return (NT) nve;

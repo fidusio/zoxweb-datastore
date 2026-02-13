@@ -27,8 +27,8 @@ import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.server.util.ServerUtil;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.crypto.EncapsulatedKey;
+import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.data.CRUDNVEntityDAO;
 import org.zoxweb.shared.data.CRUDNVEntityListDAO;
 import org.zoxweb.shared.data.DataConst.APIProperty;
@@ -40,6 +40,7 @@ import org.zoxweb.shared.filters.ChainedFilter;
 import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
+import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
@@ -279,7 +280,7 @@ public class MongoDataStore
 	 */
 	public synchronized void close()
 	{
-		IOUtil.close(mongoClient);
+		SharedIOUtil.close(mongoClient);
 		mongoClient = null;
 		
 	}
@@ -1120,7 +1121,7 @@ public class MongoDataStore
 		}
 		finally
 		{
-			IOUtil.close(cur);
+			SharedIOUtil.close(cur);
 		}
 		
 		
@@ -1252,7 +1253,7 @@ public class MongoDataStore
 			}
 			finally
 			{
-				IOUtil.close(cur);
+				SharedIOUtil.close(cur);
 			}
 	
 			return listOfDBObjects;
@@ -2463,11 +2464,11 @@ public class MongoDataStore
 		}
 		finally
 		{
-			IOUtil.close(os);
+			SharedIOUtil.close(os);
 			
 			
 			if (closeStream)
-				IOUtil.close(is);
+				SharedIOUtil.close(is);
 			if (temp != null)
 			{
 				try
@@ -2518,7 +2519,7 @@ public class MongoDataStore
 		finally
 		{
 			if (closeStream)
-				IOUtil.close(os);
+				SharedIOUtil.close(os);
 			if (temp != null)
 			{
 				try
@@ -2571,7 +2572,7 @@ public class MongoDataStore
 //		finally
 //		{
 //			if (closeStream)
-//				IOUtil.close(is);
+//				SharedIOUtil.close(is);
 //		}
 //		
 //		return file;
@@ -3026,7 +3027,7 @@ public class MongoDataStore
 		}
 		finally
 		{
-			IOUtil.close(cur);
+			SharedIOUtil.close(cur);
 		}		
 		
 		return list;
@@ -3150,7 +3151,7 @@ public class MongoDataStore
 		}
 		finally
 		{
-			IOUtil.close(cur);
+			SharedIOUtil.close(cur);
 		}
 		
 		if (userID == null && dataCacheMonitor != null)
@@ -3259,7 +3260,7 @@ public class MongoDataStore
 		}
 		finally
 		{
-			IOUtil.close(cur);
+			SharedIOUtil.close(cur);
 		}
 		
 		APISearchResult<T> results = new APISearchResult<T>();

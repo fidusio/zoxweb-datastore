@@ -1,7 +1,6 @@
 package org.zoxweb.server.ds.derby;
 
 import org.zoxweb.server.ds.derby.DerbyDataStoreCreator.DerbyParam;
-import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.server.util.MetaUtil;
@@ -9,6 +8,7 @@ import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
+import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.util.*;
 
@@ -204,7 +204,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
                     synchronized (connections) {
                         connections.remove(au);
                     }
-                IOUtil.close(au);
+                SharedIOUtil.close(au);
             }
         }
     }
@@ -273,7 +273,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     public void close() throws APIException {
         // TODO Auto-generated method stub
         synchronized (connections) {
-            connections.stream().forEach(c -> IOUtil.close(c));
+            connections.stream().forEach(c -> SharedIOUtil.close(c));
             connections.clear();
 
 //      try {
