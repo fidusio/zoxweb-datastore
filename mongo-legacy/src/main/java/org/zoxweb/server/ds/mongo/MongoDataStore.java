@@ -2051,7 +2051,7 @@ public class MongoDataStore
 					// the list of parameters to be updated
 					for (String name : nvConfigNames)
 					{
-						name = SharedStringUtil.trimOrNull(name);
+						name = SUS.trimOrNull(name);
 						if (name != null)
 						{
 							NVConfig nvc = nvce.lookup(name);
@@ -2069,7 +2069,7 @@ public class MongoDataStore
 					Set<String> exclusionSet = new HashSet<String>();
 					for (String name : nvConfigNames)
 					{
-						name = SharedStringUtil.trimOrNull(name);
+						name = SUS.trimOrNull(name);
 						if (name != null)
 							exclusionSet.add(name);
 					}

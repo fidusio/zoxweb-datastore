@@ -1596,7 +1596,7 @@ public class SyncMongoDS
                 if (includeParam) {
                     // the list of parameters to be updated
                     for (String name : nvConfigNames) {
-                        name = SharedStringUtil.trimOrNull(name);
+                        name = SUS.trimOrNull(name);
                         if (name != null) {
                             NVConfig nvc = nvce.lookup(name);
 
@@ -1609,7 +1609,7 @@ public class SyncMongoDS
                     // the list of parameters to be excluded from the update
                     Set<String> exclusionSet = new HashSet<String>();
                     for (String name : nvConfigNames) {
-                        name = SharedStringUtil.trimOrNull(name);
+                        name = SUS.trimOrNull(name);
                         if (name != null)
                             exclusionSet.add(name);
                     }
