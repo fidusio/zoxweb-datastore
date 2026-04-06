@@ -50,6 +50,7 @@ tmp/
 
 # IntelliJ IDEA
 .idea/
+.claude/
 *.iws
 *.iml
 *.ipr
