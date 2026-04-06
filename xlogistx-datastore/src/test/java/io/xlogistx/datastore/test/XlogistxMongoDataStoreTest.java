@@ -1,15 +1,16 @@
-package mongo.sync.test;
+package io.xlogistx.datastore.test;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import io.xlogistx.datastore.XlogistxMongoDataStore;
+import io.xlogistx.datastore.XlogistxMongoDSCreator;
+import io.xlogistx.datastore.XlogistxMongoDSCreator.MongoParam;
 import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
-import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
 import org.zoxweb.server.util.GSONUtil;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIRegistrar;
+import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.util.NVFloat;
@@ -21,20 +22,27 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MongoSyncTest {
+public class XlogistxMongoDataStoreTest {
 
-    private static SyncMongoDS mongoDataStore;
-    //private final static RateCounter rc = new RateCounter("Test");
+    public static final String MONGO_DB_TEST = "xlogistx_ds_test";
+
+    private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
 
     @BeforeAll
     public static void setup() {
+        XlogistxMongoDSCreator creator = new XlogistxMongoDSCreator();
+        APIConfigInfo configInfo = creator.createEmptyConfigInfo();
+        configInfo.getProperties().build(MongoParam.DB_NAME, MONGO_DB_TEST)
+                .build(MongoParam.HOST, "localhost")
+                .build(new NVInt(MongoParam.PORT, 27017));
 
-        mongoDataStore = TestUtil.createDataStore("test_local", "localhost", 27017);
-        //DataStores.SINGLETON.register(mongoDataStore, true);
+        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
+
+        mongoDataStore = new XlogistxMongoDataStore();
+        mongoDataStore.setAPIConfigInfo(configInfo);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
-
     }
 
     @Test
@@ -51,7 +59,6 @@ public class MongoSyncTest {
         mongoDataStore.insert(intRange);
         System.out.println(intRange.getReferenceID() + " " + intRange.getGUID());
 
-
         Range<Integer> rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getReferenceID()).get(0);
         System.out.println(intRange + " " + rIntRange.getStart().getClass() + " " + rIntRange.getEnd().getClass());
         rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getGUID()).get(0);
@@ -64,11 +71,9 @@ public class MongoSyncTest {
             rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getReferenceID()).get(0);
             rIntRange = (Range<Integer>) mongoDataStore.searchByID(Range.class.getName(), intRange.getGUID()).get(0);
             assert rIntRange != null;
-
         }
         cdst.rc.stop(length);
         System.out.println(cdst.rc);
-
     }
 
     @Test
@@ -95,7 +100,6 @@ public class MongoSyncTest {
         for (Range r : all)
             System.out.println(SUS.toCanonicalID(',', r.getReferenceID(), r.getGUID()));
     }
-
 
     @Test
     public void insertNVGenericMapTest() {
@@ -147,10 +151,8 @@ public class MongoSyncTest {
         return ret;
     }
 
-
     @Test
     public void testPassword() throws NoSuchAlgorithmException {
-
         cdst.testArgonPassword();
         cdst.testBCryptPassword();
         cdst.testUpdatePassword();
@@ -169,7 +171,7 @@ public class MongoSyncTest {
 
     @Test
     public void pingTest() {
-        NVGenericMap nvgm = ((APIDataStore<?, ?>) APIRegistrar.SINGLETON.getDefault()).ping(false);
+        NVGenericMap nvgm = mongoDataStore.ping(false);
         System.out.println(GSONUtil.toJSONDefault(nvgm, true));
     }
 }
