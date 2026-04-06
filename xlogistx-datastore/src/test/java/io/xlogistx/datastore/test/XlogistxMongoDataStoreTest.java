@@ -24,7 +24,7 @@ import java.util.List;
 
 public class XlogistxMongoDataStoreTest {
 
-    public static final String MONGO_DB_TEST = "xlogistx_ds_test";
+    public static final String MONGO_DB_URI = "mongodb://localhost:27017/xlogistx_ds_test";
 
     private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
@@ -33,9 +33,10 @@ public class XlogistxMongoDataStoreTest {
     public static void setup() {
         XlogistxMongoDSCreator creator = new XlogistxMongoDSCreator();
         APIConfigInfo configInfo = creator.createEmptyConfigInfo();
-        configInfo.getProperties().build(MongoParam.DB_NAME, MONGO_DB_TEST)
-                .build(MongoParam.HOST, "localhost")
-                .build(new NVInt(MongoParam.PORT, 27017));
+        configInfo.getProperties().build(MongoParam.DB_URI,  MONGO_DB_URI);
+//        configInfo.getProperties().build(MongoParam.DB_NAME, MONGO_DB_TEST)
+//                .build(MongoParam.HOST, "localhost")
+//                .build(new NVInt(MongoParam.PORT, 27017));
 
         System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
 
