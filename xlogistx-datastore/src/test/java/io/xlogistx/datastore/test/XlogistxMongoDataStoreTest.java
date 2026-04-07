@@ -24,7 +24,7 @@ import java.util.List;
 
 public class XlogistxMongoDataStoreTest {
 
-    public static final String MONGO_DB_URI = "mongodb://localhost:27017/xlogistx_ds_test";
+    public static final String MONGO_DB_URI = "mongodb://localhost:27017/xlogistx_ds_test?uuidRepresentation=standard";
 
     private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
