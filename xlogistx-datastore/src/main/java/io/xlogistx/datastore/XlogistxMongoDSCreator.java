@@ -16,6 +16,7 @@
 package io.xlogistx.datastore;
 
 import org.zoxweb.shared.api.*;
+import org.zoxweb.shared.http.URLInfo;
 import org.zoxweb.shared.util.*;
 
 public class XlogistxMongoDSCreator
@@ -32,7 +33,7 @@ public class XlogistxMongoDSCreator
         HOST("host", "localhost"),
         PORT("port", "27017"),
         // "mongodb://localhost:27017";
-        DB_URI("db_uri", null),
+        //DB_URI("db_uri", null),
         DATA_CACHE("data_cache", "false"),
         DATA_CACHE_CLASS_NAME("data_cache_class_name", null),
         GRIDFS_POSTFIX("gridfs_name", "_gridfs");;
@@ -59,17 +60,23 @@ public class XlogistxMongoDSCreator
         }
 
         public static String dataStoreURI(APIConfigInfo aci) {
-            String uri = aci.getProperties().getValue(DB_URI);
-            if (SUS.isEmpty(uri))
-                uri = "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT) + "/?uuidRepresentation=standard";
-
-            return uri;
+           return "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT) + "/"+ aci.getProperties().getValue(DB_NAME) + "?uuidRepresentation=standard";
         }
 
         public static String gridFSDataStoreName(APIConfigInfo aci) {
             return dataStoreName(aci) + aci.getProperties().getValue(GRIDFS_POSTFIX);
         }
 
+    }
+
+    public APIConfigInfo toAPIConfigInfo(String mongoURL)
+    {
+        URLInfo urlInfo = URLInfo.parse(mongoURL);
+        APIConfigInfo ret = createEmptyConfigInfo();
+        ret.getProperties().build(MongoParam.HOST, urlInfo.ipAddress.getInetAddress())
+                .build(new NVInt(MongoParam.PORT, urlInfo.ipAddress.getPort()))
+                .build(MongoParam.DB_NAME, urlInfo.justPath());
+        return ret;
     }
 
     @Override

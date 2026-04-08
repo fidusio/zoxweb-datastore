@@ -79,32 +79,70 @@ The post-port review surfaced 37 issues. All have been addressed in the `xlogist
 
 - **37** `MongoUtil.idAsGUID(NVEntity)` reads `getReferenceID()` despite its name. Works because `insert()` sets guid == referenceID. Revisit only if they diverge.
 
+### NV type coverage — full support for all `org.zoxweb.shared` types
+
+An audit of all NVEntity classes and NVBase types in `org.zoxweb.shared.util` and `org.zoxweb.shared.data` revealed 5 gaps in serialization/deserialization. All have been fixed.
+
+| # | Category | Location | Fix applied |
+|---|---|---|---|
+| 38 | Critical | `insert()`, `patch()` | **NVGenericMapList** — serialization body was empty (silent data loss). Now serializes as `List<Document>` via `serNVGenericMap()` for each entry |
+| 39 | Critical | `MongoUtil.init()` | **NVGenericMapList** — no deserialization handler existed. Added `NVGenericMapList.class` deserializer that reads `List<Document>` and converts each via `fromNVGenericMap()` |
+| 40 | Moderate | `serNVEntity()` | Missing `NVStringList`, `NVStringSet`, `NVGenericMap`, `NVGenericMapList` branches. These types fell through to the default path, which would serialize `NVGenericMap` as a raw Java map instead of a proper BSON Document. Added explicit branches matching `insert()` and `patch()` |
+| 41 | Moderate | `fromNVGenericMap()` | `List<Document>` values (NVGenericMapList entries nested inside NVGenericMap) were silently dropped during deserialization. Added `value instanceof List` handling before the `Document` check |
+| 42 | Moderate | `serNVGenericMap()` | NVGenericMapList entries within an NVGenericMap were silently dropped during serialization. Added `gnv instanceof NVGenericMapList` branch that serializes each map via `serNVGenericMap()` |
+
+#### NV types now fully covered
+
+**Scalar:** NVPair, NVInt, NVLong, NVDouble, NVFloat, NVBoolean, NVNumber, NVBigDecimal, NVBlob, NVEnum, NamedValue
+
+**List/Set:** NVStringList, NVStringSet, NVIntList, NVLongList, NVDoubleList, NVFloatList, NVBigDecimalList, NVEnumList, NVPairList, NVGetNameValueList, NVPairGetNameMap
+
+**Entity references:** NVEntityReference, NVEntityReferenceList, NVEntityGetNameMap, NVEntityReferenceIDMap
+
+**Generic containers:** NVGenericMap, NVGenericMapList
+
+**All 48 DAO classes** (UserInfoDAO, AddressDAO, PropertyDAO, CreditCardDAO, Range, etc.) work through the generic NVConfigEntity reflection mechanism — no per-DAO handling needed.
+
+#### Test coverage added
+
+Three new test methods in `XlogistxMongoDataStoreTest.java`:
+
+| Test | What it covers |
+|---|---|
+| `testNVGenericMapList()` | NVGenericMapList insert + read-back round-trip inside PropertyDAO's NVGenericMap properties |
+| `testNVGenericMapListUpdate()` | NVGenericMapList mutation followed by `update()`, verifying the patch path |
+| `testNVGenericMapDiverseTypes()` | NVGenericMap with mixed types: String, Int, Long, Double, Float, nested NVGenericMap, NVGenericMapList, NVStringList — full round-trip |
+
+### Configuration change
+
+`XlogistxMongoDSCreator.MongoParam.DB_URI` was removed. Connection is now configured via `DB_NAME` + `HOST` + `PORT` components, with `dataStoreURI()` building the full URI string. Test database changed from `xlogistx_ds_test` to `DB_TEST`.
+
 ### Verification
 
 `mvn -pl xlogistx-datastore -DskipTests compile` → `BUILD SUCCESS` at every checkpoint through the fix sequence.
 
-### Line counts after cleanup
+### Line counts (current)
 
-| File | Before | After |
-|---|---:|---:|
-| `XlogistxMongoDataStore.java` | 2792 | 2421 |
-| `MongoUtil.java` | 388 | 276 |
-| `XlogistxMongoMetaManager.java` | 270 | 264 |
-| `XlogistxMongoDSCreator.java` | 142 | 142 |
-| `XlogistxMongoExceptionHandler.java` | 133 | 133 |
-| `MongoQueryFormatter.java` | 127 | 133 |
-| `UpdateFilterClass.java` | 82 | 106 |
-| `XlogistxMongoDBObjectMeta.java` | 40 | 40 |
-| **Total** | **3974** | **3515** |
-
-`MongoQueryFormatter` and `UpdateFilterClass` grew because of rewritten precedence logic and the configurable blacklist respectively; everything else shrank or stayed the same.
+| File | Lines |
+|---|---:|
+| `XlogistxMongoDataStore.java` | 2457 |
+| `MongoUtil.java` | 286 |
+| `XlogistxMongoMetaManager.java` | 264 |
+| `XlogistxMongoDSCreator.java` | 139 |
+| `XlogistxMongoExceptionHandler.java` | 133 |
+| `MongoQueryFormatter.java` | 133 |
+| `UpdateFilterClass.java` | 106 |
+| `XlogistxMongoDBObjectMeta.java` | 40 |
+| **Total (main)** | **3558** |
+| `XlogistxMongoDataStoreTest.java` | 330 |
 
 ## Ground rules for future sessions on this module
 
-1. `mongo-sync` is immutable — never edit anything under `D:/dev/data/java/projects/zoxweb-datastore/mongo-sync/`.
+1. `mongo-sync` is immutable — never edit anything under the `mongo-sync/` directory.
 2. Do not add `mongo-sync` as a Maven dependency of `xlogistx-datastore`. Fixes belong in the ported copies.
 3. Preserve the package-private visibility of `XlogistxMongoDataStore` methods that `MongoUtil` calls (`fromDB`, `toNVPair`, `fromNVGenericMap`, `getAPIConfigInfo`) — they all live in the same package.
 4. Compile check: `mvn -pl xlogistx-datastore -DskipTests compile` from the repo root.
 5. When evaluating new `//`-comment lines, prefer Javadoc `/** */` for documentation so the dead-code-strip heuristic can stay simple.
 6. `XlogistxMongoMetaManager` is per-instance; use `datastore.getMetaManager()` rather than any global state.
 7. `operationTimeoutMS` and `maxSearchResults` on `XlogistxMongoDataStore` are tunable at runtime via setters — surface them via config if callers need non-default values.
+8. When adding support for a new NV type, update **all five serialization paths**: `insert()`, `serNVEntity()`, `patch()`, `serNVGenericMap()` (for NVGenericMap-embedded values), and the deserializer in `MongoUtil.init()` / `fromNVGenericMap()`.

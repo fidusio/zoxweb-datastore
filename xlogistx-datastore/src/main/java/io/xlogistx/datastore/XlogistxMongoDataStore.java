@@ -318,6 +318,12 @@ public class XlogistxMongoDataStore
                 ret.put(gnv.getName(), serNVEntityReference(connect(), nve));
             } else if (gnv instanceof NVGenericMap) {
                 ret.put(gnv.getName(), serNVGenericMap((NVGenericMap) gnv));
+            } else if (gnv instanceof NVGenericMapList) {
+                List<Document> mapDocs = new ArrayList<>();
+                for (NVGenericMap gm : ((NVGenericMapList) gnv).getValue()) {
+                    mapDocs.add(serNVGenericMap(gm));
+                }
+                ret.put(gnv.getName(), mapDocs);
             }
         }
 
@@ -634,6 +640,16 @@ public class XlogistxMongoDataStore
                     }
                 }
                 nvgm.add(possibleNVB);
+            } else if (value instanceof List) {
+                List<?> listValue = (List<?>) value;
+                if (!listValue.isEmpty() && listValue.get(0) instanceof Document) {
+                    // List of Documents — treat as NVGenericMapList
+                    NVGenericMapList nvgml = new NVGenericMapList(key);
+                    for (Object item : listValue) {
+                        nvgml.add(fromNVGenericMap(userID, null, (Document) item));
+                    }
+                    nvgm.add(nvgml);
+                }
             } else if (value instanceof Document) {
                 String classType = (String) ((Document) value).get(MetaToken.CLASS_TYPE.getName());
                 Document subDBObject = (Document) value;
@@ -980,7 +996,11 @@ public class XlogistxMongoDataStore
             } else if (nvb instanceof NVGenericMap) {
                 doc.append(nvc.getName(), serNVGenericMap((NVGenericMap) nvb));
             } else if (nvb instanceof NVGenericMapList) {
-
+                List<Document> mapDocs = new ArrayList<>();
+                for (NVGenericMap gm : ((NVGenericMapList) nvb).getValue()) {
+                    mapDocs.add(serNVGenericMap(gm));
+                }
+                doc.append(nvc.getName(), mapDocs);
             } else if (nvb instanceof NVEntityReference) {
                 NVEntity temp = (NVEntity) nvb.getValue();
 
@@ -1094,6 +1114,18 @@ public class XlogistxMongoDataStore
                 doc.append(nvc.getName(), nvb.getValue() != null ? ((Enum<?>) nvb.getValue()).name() : null);
             } else if (nvb instanceof NVEnumList) {
                 doc.append(nvc.getName(), mapEnumListToStringList((NVEnumList) nvb));
+            } else if (nvb instanceof NVStringList) {
+                doc.append(nvc.getName(), ((NVStringList) nvb).getValue());
+            } else if (nvb instanceof NVStringSet) {
+                doc.append(nvc.getName(), ((NVStringSet) nvb).getValue());
+            } else if (nvb instanceof NVGenericMap) {
+                doc.append(nvc.getName(), serNVGenericMap((NVGenericMap) nvb));
+            } else if (nvb instanceof NVGenericMapList) {
+                List<Document> mapDocs = new ArrayList<>();
+                for (NVGenericMap gm : ((NVGenericMapList) nvb).getValue()) {
+                    mapDocs.add(serNVGenericMap(gm));
+                }
+                doc.append(nvc.getName(), mapDocs);
             } else if (nvb instanceof NVEntityReference) {
                 NVEntity temp = (NVEntity) nvb.getValue();
 
@@ -1278,7 +1310,11 @@ public class XlogistxMongoDataStore
                 } else if (nvb instanceof NamedValue) {
                     updatedDoc.put(nvc.getName(), serNamedValue((NamedValue<?>) nvb));
                 } else if (nvb instanceof NVGenericMapList) {
-
+                    List<Document> mapDocs = new ArrayList<>();
+                    for (NVGenericMap gm : ((NVGenericMapList) nvb).getValue()) {
+                        mapDocs.add(serNVGenericMap(gm));
+                    }
+                    updatedDoc.put(nvc.getName(), mapDocs);
                 } else if (nvb instanceof NVEntityReference) {
                     NVEntity temp = (NVEntity) nvb.getValue();
 

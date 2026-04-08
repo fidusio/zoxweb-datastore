@@ -255,6 +255,16 @@ public class MongoUtil {
                     namedValue.setValue(nvDoc.get(MetaToken.VALUE.getName()));
                     lookupDataDeserializer(NVGenericMap.class).deserialize(mds, subjectGUID, db, nvDoc, container, null, namedValue.getProperties());
                 }, NamedValue.class)
+                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
+                    List<Document> dbList = (List<Document>) doc.get(nvc.getName());
+                    if (dbList != null) {
+                        List<NVGenericMap> maps = new ArrayList<>();
+                        for (Document d : dbList) {
+                            maps.add(mds.fromNVGenericMap(subjectGUID, null, d));
+                        }
+                        ((NVGenericMapList) nvb).setValue(maps);
+                    }
+                }, NVGenericMapList.class)
 
 
         ;
