@@ -120,12 +120,12 @@ public class MongoQueryFormatter {
         }
 
         if (nvc != null && nvc.isTypeReferenceID() && queryMatch.getValue() instanceof String) {
-            return IDGs.UUIDV4.decode((String) queryMatch.getValue());
+            return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }
 
         if (nvc == null && MongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == MongoUtil.ReservedID.REFERENCE_ID
                 && queryMatch.getValue() instanceof String) {
-            return IDGs.UUIDV4.decode((String) queryMatch.getValue());
+            return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }
 
         return queryMatch.getValue();

@@ -263,7 +263,7 @@ public class SyncMongoDS
                 }
 
                 Document dbObject = new Document();
-                dbObject.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV4.decode(dem.getReferenceID()));
+                dbObject.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV7.decode(dem.getReferenceID()));
                 dbObject.append(MetaToken.COLLECTION_NAME.getName(), dem.getClass().getName());
 
                 bsonDoc.append(MetaToken.VALUE_FILTER.getName(), dbObject);
@@ -422,8 +422,8 @@ public class SyncMongoDS
         NVConfigEntity nvce = SyncMongoMetaManager.SINGLETON.addNVConfigEntity(db, ((NVConfigEntity) nve.getNVConfig()));
 //        entryElement.put(MetaToken.CANONICAL_ID.getName(), new ObjectId(nvce.getReferenceID()));
 //        entryElement.put(MetaToken.REFERENCE_ID.getName(), new ObjectId(nve.getReferenceID()));
-        entryElement.put(MetaToken.CANONICAL_ID.getName(), IDGs.UUIDV4.decode(nvce.getGUID()));
-        entryElement.put(MetaToken.GUID.getName(), IDGs.UUIDV4.decode(nve.getGUID()));
+        entryElement.put(MetaToken.CANONICAL_ID.getName(), IDGs.UUIDV7.decode(nvce.getGUID()));
+        entryElement.put(MetaToken.GUID.getName(), IDGs.UUIDV7.decode(nve.getGUID()));
         return entryElement;
     }
 
@@ -502,7 +502,7 @@ public class SyncMongoDS
 
             Object value = doc.get(resID.getValue());
             if (value instanceof UUID)
-                ((NVPair) nvb).setValue(IDGs.UUIDV4.encode((UUID) value));
+                ((NVPair) nvb).setValue(IDGs.UUIDV7.encode((UUID) value));
             else if (value instanceof String)
                 ((NVPair) nvb).setValue((String) value);
 
@@ -804,7 +804,7 @@ public class SyncMongoDS
         if (refID instanceof UUID)
             query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), refID);
         else if (refID instanceof String)
-            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode((String) refID));
+            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode((String) refID));
         else
             throw new IllegalArgumentException("Invalid refID: " + refID);
 
@@ -1038,7 +1038,7 @@ public class SyncMongoDS
             securityController.associateNVEntityToSubjectGUID(nve, null);
 
         if (SUS.isEmpty(nve.getGUID())) {
-            nve.setGUID(IDGs.UUIDV4.generateID());
+            nve.setGUID(IDGs.UUIDV7.genID());
             nve.setReferenceID(nve.getGUID());
         }
 
@@ -1129,11 +1129,11 @@ public class SyncMongoDS
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (MetaToken.GUID.getName().equals(nvc.getName())) {
                 // set the GUID ass uuid in the database
-                doc.append(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV4.decode((String) nvb.getValue()));
+                doc.append(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) nvb.getValue()));
             } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
                 if (value != null) {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV4.decode(value));
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                 } else {
                     doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
@@ -1188,7 +1188,7 @@ public class SyncMongoDS
         }
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode(nve.getGUID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getGUID()));
         }
 
 
@@ -1280,7 +1280,7 @@ public class SyncMongoDS
                 String value = (String) nvb.getValue();
 
                 if (value != null) {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV4.decode(value));
+                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                 } else {
                     doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
@@ -1325,7 +1325,7 @@ public class SyncMongoDS
 
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV4.decode(nve.getReferenceID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
         }
 
 
@@ -1575,7 +1575,7 @@ public class SyncMongoDS
 
             MongoCollection<Document> collection = lookupCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 
-            Document originalDoc = lookupByReferenceID(nve.getNVConfig().getName(), IDGs.UUIDV4.decode(nve.getReferenceID()));
+            Document originalDoc = lookupByReferenceID(nve.getNVConfig().getName(), IDGs.UUIDV7.decode(nve.getReferenceID()));
             if (originalDoc == null) {
                 throw new APIException("Can not update a missing object " + nve.getReferenceID());
             }
@@ -1694,7 +1694,7 @@ public class SyncMongoDS
                     String value = (String) nvb.getValue();
 
                     if (value != null) {
-                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV4.decode(value));
+                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                     } else {
                         updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                     }
@@ -1752,7 +1752,7 @@ public class SyncMongoDS
 
         if (nve.getReferenceID() != null) {
             Document doc = new Document();
-            doc.put(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV4.decode(nve.getGUID()));
+            doc.put(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getGUID()));
             MongoCollection<Document> collection = lookupCollection(nve.getNVConfig().getName());
 
 
@@ -2141,7 +2141,7 @@ public class SyncMongoDS
 
         if (!SUS.isEmpty(dynamicEnumMap.getReferenceID())) {
             // Since we are referencing the object, we will use the reference_id NOT _id.
-            doc.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV4.decode(dynamicEnumMap.getReferenceID()));
+            doc.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV7.decode(dynamicEnumMap.getReferenceID()));
         }
 
         try {
@@ -2152,7 +2152,7 @@ public class SyncMongoDS
             getAPIExceptionHandler().throwException(e);
         }
 
-        dynamicEnumMap.setReferenceID(IDGs.UUIDV4.encode(MongoUtil.SINGLETON.getRefIDAsUUID(doc)));
+        dynamicEnumMap.setReferenceID(IDGs.UUIDV7.encode(MongoUtil.SINGLETON.getRefIDAsUUID(doc)));
 
         return dynamicEnumMap;
     }
@@ -2235,7 +2235,7 @@ public class SyncMongoDS
         String demName = (String) obj.get(MetaToken.NAME.getName());
         //if(log.isEnabled()) log.getLogger().info("DynamicEnumMap Name : " + demName);
         DynamicEnumMap dem = new DynamicEnumMap(demName, nvpl);
-        dem.setReferenceID(IDGs.UUIDV4.encode(objectID));
+        dem.setReferenceID(IDGs.UUIDV7.encode(objectID));
         //if(log.isEnabled()) log.getLogger().info("values " + dem.getValue());
         dem = DynamicEnumMapManager.SINGLETON.addDynamicEnumMap(dem);
         //if(log.isEnabled()) log.getLogger().info(dem.getName() + ":" + dem.getValue());
@@ -2280,7 +2280,7 @@ public class SyncMongoDS
         }
 
 
-        return searchDynamicEnumMapByReferenceID(IDGs.UUIDV4.decode(refID), collection.getNamespace().getCollectionName());
+        return searchDynamicEnumMapByReferenceID(IDGs.UUIDV7.decode(refID), collection.getNamespace().getCollectionName());
     }
 
 
@@ -2476,7 +2476,7 @@ public class SyncMongoDS
         List<UUID> refIdsToLookFor = new ArrayList<>();
 
         for (String id : ids) {
-            refIdsToLookFor.add(IDGs.UUIDV4.decode(id));
+            refIdsToLookFor.add(IDGs.UUIDV7.decode(id));
         }
 
         List<Document> listOfDBObject = lookupByReferenceIDs(nvce.getName(), refIdsToLookFor);
@@ -2778,7 +2778,7 @@ public class SyncMongoDS
 
     @SuppressWarnings("unchecked")
     public IDGenerator<String, UUID> getIDGenerator() {
-        return IDGs.UUIDV4;
+        return IDGs.UUIDV7;
     }
 
 
@@ -2788,6 +2788,6 @@ public class SyncMongoDS
 
 
     public boolean isValidReferenceID(String refID) {
-        return IDGs.UUIDV4.isValid(refID);
+        return IDGs.UUIDV7.isValid(refID);
     }
 }

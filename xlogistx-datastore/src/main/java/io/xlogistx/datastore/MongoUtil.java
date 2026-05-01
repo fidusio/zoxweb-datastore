@@ -55,7 +55,7 @@ public class MongoUtil {
         public String decode(Document doc) {
             Object value = doc.get(getValue());
             if (value instanceof UUID)
-                return IDGs.UUIDV4.encode((UUID) value);
+                return IDGs.UUIDV7.encode((UUID) value);
 
             return (String) value;
         }
@@ -107,7 +107,7 @@ public class MongoUtil {
     private final HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
     public BsonBinary bsonNVEGUID(NVEntity nve) {
-        return new BsonBinary(IDGs.UUIDV4.decode(nve.getGUID()));
+        return new BsonBinary(IDGs.UUIDV7.decode(nve.getGUID()));
     }
 
 
@@ -277,7 +277,7 @@ public class MongoUtil {
     }
 
     public Document idAsGUID(NVEntity nve) {
-        return new Document("_id", IDGs.UUIDV4.decode(nve.getReferenceID()));
+        return new Document("_id", IDGs.UUIDV7.decode(nve.getReferenceID()));
     }
 
     public UUID getRefIDAsUUID(Document doc) {

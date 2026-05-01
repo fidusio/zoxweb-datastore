@@ -83,12 +83,13 @@ public class MongoDataStore
         }
 
         @Override
-		public String generateID() 
+		public String genID()
 		{
 			return ObjectId.get().toHexString();
 		}
-		
-		public ObjectId generateNativeID() 
+
+		@Override
+		public ObjectId genNativeID()
         {
             return ObjectId.get();
         }

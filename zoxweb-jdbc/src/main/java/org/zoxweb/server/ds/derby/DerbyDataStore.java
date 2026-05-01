@@ -600,7 +600,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
             con = connect();
             MetaUtil.initTimeStamp(nve);
             if (SUS.isEmpty(nve.getGUID())) {
-                nve.setGUID(IDGs.UUIDV4.generateID());
+                nve.setGUID(IDGs.UUIDV7.genID());
             } else if (isRefCreated(con, nve.getNVConfig().getName(), nve.getGUID())) {
                 // already exit we must update
                 //if(log.isEnabled()) log.getLogger().info("invoke update for " + nve.getGlobalID());
@@ -735,7 +735,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
         }
 
         return delete((NVConfigEntity) nve.getNVConfig(),
-                new QueryMatch<UUID>(Const.RelationalOperator.EQUAL, IDGs.UUIDV4.decode(nve.getGUID()), MetaToken.GUID));
+                new QueryMatch<UUID>(Const.RelationalOperator.EQUAL, IDGs.UUIDV7.decode(nve.getGUID()), MetaToken.GUID));
     }
 
     @Override
@@ -906,7 +906,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public IDGenerator<String, UUID> getIDGenerator() {
         // TODO Auto-generated method stub
-        return IDGs.UUIDV4;
+        return IDGs.UUIDV7;
     }
 
     @Override

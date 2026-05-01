@@ -41,7 +41,7 @@ The post-port review surfaced 37 issues. All have been addressed in the `xlogist
 |---|---|---|---|
 | 1 | Critical | `XlogistxMongoDataStore.batchSearch` / `nextBatch` | `batchSearch` now stores UUIDs decoded from `_id` (was storing guid strings but casting to `List<UUID>` on read) |
 | 2 | Critical | `XlogistxMongoDataStore.lookupByReferenceID(Document)` | Reads UUID from `ReservedID.REFERENCE_ID.getValue()` (`_id`), not `MetaToken.REFERENCE_ID.getName()` via `getObjectId` |
-| 3 | Critical | `MongoQueryFormatter.map()` | `new ObjectId((String) val)` → `IDGs.UUIDV4.decode((String) val)` for ref-id query values |
+| 3 | Critical | `MongoQueryFormatter.map()` | `new ObjectId((String) val)` → `IDGs.UUIDV4.decode((String) val)` for ref-id query values (later migrated to `UUIDV7` — see below) |
 | 4 | Critical | `deleteAll` + `patch()` | Both now use `nvce.toCanonicalID()` for collection / lookup, matching the rest of the codebase |
 | 5 | Critical | `delete(NVConfigEntity, QueryMarker...)` | Rejects empty criteria; directs callers to `deleteAll` explicitly |
 | 6 | Critical | `delete(V, boolean)` | Filters by `_id` (decoded from `getReferenceID()`), not by the unindexed `guid` field. Uses `toCanonicalID()` for collection |
@@ -57,7 +57,7 @@ The post-port review surfaced 37 issues. All have been addressed in the `xlogist
 | 16 | Robustness | `patch()` | Uses `Filters.eq("_id", refIdUUID)` as the update filter — no longer passes the entire original document |
 | 18 | Robustness | `ping()` | `APIException` now carries the underlying cause via `initCause` |
 | 19 | Robustness | `fromDB` | `printStackTrace` → `log.getLogger().log(WARNING, ..., e)` for `ClassNotFoundException` |
-| 20 | Robustness | `MongoUtil.bsonNVEGUID` | `UUID.fromString(...)` → `IDGs.UUIDV4.decode(...)` to match the rest of the codebase |
+| 20 | Robustness | `MongoUtil.bsonNVEGUID` | `UUID.fromString(...)` → `IDGs.UUIDV4.decode(...)` to match the rest of the codebase (later migrated to `UUIDV7` — see below) |
 | 21 | Robustness | `createFile()` | Metadata update failure rolls back the GridFS upload via `bucket.delete(...)`; rollback errors are logged |
 | 22 | Perf | `XlogistxMongoMetaManager` | Backed by `ConcurrentHashMap`; reads (`isIndexed`, etc.) are lock-free |
 | 23 | Perf | `XlogistxMongoMetaManager.addCollectionInfo` | No longer holds a class-wide lock during `createIndex` I/O; uses `putIfAbsent` semantics |
@@ -112,6 +112,17 @@ Three new test methods in `XlogistxMongoDataStoreTest.java`:
 | `testNVGenericMapList()` | NVGenericMapList insert + read-back round-trip inside PropertyDAO's NVGenericMap properties |
 | `testNVGenericMapListUpdate()` | NVGenericMapList mutation followed by `update()`, verifying the patch path |
 | `testNVGenericMapDiverseTypes()` | NVGenericMap with mixed types: String, Int, Long, Double, Float, nested NVGenericMap, NVGenericMapList, NVStringList — full round-trip |
+
+### ID generator migration (UUIDV4 → UUIDV7)
+
+Project-wide swap of `IDGs.UUIDV4` → `IDGs.UUIDV7` across all modules (8 files, 50 call sites). In this module: `XlogistxMongoDataStore.java` (19), `MongoUtil.java` (3), `MongoQueryFormatter.java` (2).
+
+Both generators implement the same `IDGenerator<String, UUID>` contract (`encode`, `decode`, `isValid`, `genID`), so call sites are unchanged.
+
+Implications:
+- New `_id` / `referenceID` / `guid` values are now **time-ordered** (UUID v7 embeds a millisecond timestamp). This improves Mongo `_id` B-tree index locality and makes range scans by insertion time meaningful.
+- Existing v4 records decode correctly — both formats are standard 128-bit UUIDs.
+- `IDGs.UUIDV7.isValid(refID)` validates v7 specifically; legacy v4 strings written before the migration may need a transitional check if strict validation is enforced. Verify behavior of the shared `IDGs.UUIDV7.isValid(...)` implementation before relying on it for mixed v4/v7 data.
 
 ### Configuration change
 

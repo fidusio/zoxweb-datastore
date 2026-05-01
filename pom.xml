@@ -198,6 +198,13 @@
             <artifactId>zoxweb-core</artifactId>
             <version>${zoxweb-core.version}</version>
         </dependency>
+        <dependency>
+
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+            <version>${uuid.gen.version}</version>
+        </dependency>
+
 
         <dependency>
             <groupId>io.xlogistx</groupId>

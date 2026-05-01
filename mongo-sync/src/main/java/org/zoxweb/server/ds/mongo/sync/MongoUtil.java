@@ -56,7 +56,7 @@ public class MongoUtil {
         public String decode(Document doc) {
             Object value = doc.get(getValue());
             if (value instanceof UUID)
-                return IDGs.UUIDV4.encode((UUID) value);
+                return IDGs.UUIDV7.encode((UUID) value);
 
             return (String) value;
         }
@@ -333,7 +333,7 @@ public class MongoUtil {
     ////        }
 //    }
     public Document idAsGUID(NVEntity nve) {
-        return new Document("_id", IDGs.UUIDV4.decode(nve.getReferenceID()));
+        return new Document("_id", IDGs.UUIDV7.decode(nve.getReferenceID()));
     }
 
     //    public Document idAsRefID(NVEntity nve) {

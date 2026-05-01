@@ -251,7 +251,7 @@ public class HibernateDataStore
         Transaction transaction = null;
 
         if (nve.getReferenceID() == null) {
-            nve.setReferenceID(IDGs.UUIDV4.generateID());
+            nve.setReferenceID(IDGs.UUIDV7.genID());
         }
 
         if (nve.getGUID() == null) {
@@ -455,7 +455,7 @@ public class HibernateDataStore
 
     @SuppressWarnings("unchecked")
     public IDGenerator<String, UUID> getIDGenerator() {
-        return IDGs.UUIDV4;
+        return IDGs.UUIDV7;
     }
 
     @Override
