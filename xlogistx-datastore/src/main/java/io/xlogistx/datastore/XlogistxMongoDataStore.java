@@ -99,11 +99,21 @@ public class XlogistxMongoDataStore
     /** Hard safety cap on rows materialized by {@link #search}/{@link #userSearch}. */
     private volatile int maxSearchResults = 10_000;
 
-    public long getOperationTimeoutMS() { return operationTimeoutMS; }
-    public void setOperationTimeoutMS(long ms) { this.operationTimeoutMS = Math.max(0L, ms); }
+    public long getOperationTimeoutMS() {
+        return operationTimeoutMS;
+    }
 
-    public int getMaxSearchResults() { return maxSearchResults; }
-    public void setMaxSearchResults(int n) { this.maxSearchResults = Math.max(1, n); }
+    public void setOperationTimeoutMS(long ms) {
+        this.operationTimeoutMS = Math.max(0L, ms);
+    }
+
+    public int getMaxSearchResults() {
+        return maxSearchResults;
+    }
+
+    public void setMaxSearchResults(int n) {
+        this.maxSearchResults = Math.max(1, n);
+    }
 
     /** Apply the configured {@link #operationTimeoutMS} to a FindIterable if > 0. */
     private <D> com.mongodb.client.FindIterable<D> withTimeout(com.mongodb.client.FindIterable<D> it) {
@@ -739,8 +749,6 @@ public class XlogistxMongoDataStore
     }
 
 
-
-
     @Override
     public <NT, RT> NT lookupByReferenceID(String metaTypeName, RT objectId) {
         return lookupByReferenceID(metaTypeName, objectId, null);
@@ -782,8 +790,6 @@ public class XlogistxMongoDataStore
 
         return (NT) dbObj;
     }
-
-
 
 
     /**
@@ -867,7 +873,6 @@ public class XlogistxMongoDataStore
     }
 
 
-
     public XlogistxMongoDBObjectMeta lookupByReferenceID(Document toFind) {
         if (toFind != null) {
             XlogistxMongoDBObjectMeta ret = metaManager.lookupCollectionName(this, (UUID) toFind.get(MetaToken.CANONICAL_ID.getName()));
@@ -949,6 +954,12 @@ public class XlogistxMongoDataStore
 
         if (SUS.isEmpty(nve.getGUID())) {
             nve.setGUID(IDGs.UUIDV7.genID());
+        }
+        // The datastore keys every document's _id off referenceID (see the _id append below,
+        // and serNVEntity / patch / delete). guid == referenceID is an enforced invariant, not
+        // a convention: reconcile unconditionally so a caller that pre-set only one of the two
+        // cannot desync the persisted _id from the value used to look the row back up.
+        if (SUS.isEmpty(nve.getReferenceID())) {
             nve.setReferenceID(nve.getGUID());
         }
 
@@ -1027,10 +1038,7 @@ public class XlogistxMongoDataStore
             } else if (nvb instanceof NamedValue) {
 
                 doc.append(nvb.getName(), serNamedValue((NamedValue<?>) nvb));
-            }
-
-
-            else if (nvc.isArray()) {
+            } else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (MetaToken.GUID.getName().equals(nvc.getName())) {
                 // set the GUID ass uuid in the database
@@ -1042,11 +1050,7 @@ public class XlogistxMongoDataStore
                 } else {
                     doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
-            }
-
-
-
-            else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
                 Object tempValue = securityController != null ? securityController.encryptValue(this, nve, nvc, nvb, null) : nvb.getValue();
                 if (tempValue instanceof EncryptedData) {
                     doc.append(nvc.getName(), serNVEntity((EncryptedData) tempValue, true, false, false));
@@ -1062,7 +1066,7 @@ public class XlogistxMongoDataStore
         }
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getGUID()));
+            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
         }
 
 
@@ -1148,10 +1152,7 @@ public class XlogistxMongoDataStore
                 doc.append(nvc.getName(), values);
             } else if (nvb instanceof NVBlob) {
                 doc.append(nvc.getName(), nvb.getValue());
-            }
-
-
-            else if (nvc.isArray()) {
+            } else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
@@ -1161,10 +1162,7 @@ public class XlogistxMongoDataStore
                 } else {
                     doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
-            }
-
-
-            else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
                 doc.append(nvc.getName(), nvb.getValue());
             }
         }
@@ -1191,7 +1189,6 @@ public class XlogistxMongoDataStore
             throws NullPointerException, IllegalArgumentException, APIException {
         return patch(nve, true, false, false, false);
     }
-
 
 
     /**
@@ -1648,7 +1645,6 @@ public class XlogistxMongoDataStore
         return createFile(null, file, is, closeStream);
 
 
-
     }
 
     /**
@@ -1868,7 +1864,6 @@ public class XlogistxMongoDataStore
         //if(log.isEnabled()) log.getLogger().info("values " + dem.getValue());
         dem = DynamicEnumMapManager.SINGLETON.addDynamicEnumMap(dem);
         //if(log.isEnabled()) log.getLogger().info(dem.getName() + ":" + dem.getValue());
-
 
 
         return dem;

@@ -106,6 +106,13 @@ public class MongoUtil {
 
     private final HashMap<String, ReservedID> reservedIDMap = new LinkedHashMap<>();
 
+    /**
+     * GridFS file id used for upload / download / delete. Paired with
+     * {@link #idAsGUID(NVEntity)} (the {@code find} filter), so both MUST resolve to the
+     * same UUID. Keyed off the GUID because that is the field reliably populated at
+     * GridFS-upload time — the metadata insert (which would set referenceID) runs afterwards.
+     * With the {@code insert()} invariant guid == referenceID this is also the main store's _id.
+     */
     public BsonBinary bsonNVEGUID(NVEntity nve) {
         return new BsonBinary(IDGs.UUIDV7.decode(nve.getGUID()));
     }
@@ -276,8 +283,15 @@ public class MongoUtil {
         return BSONToDataDeserializer.get(clazz);
     }
 
+    /**
+     * GridFS {@code files} collection {@code _id} filter. Must match the id produced by
+     * {@link #bsonNVEGUID(NVEntity)} at upload time, so it keys off the GUID — not
+     * referenceID, which may still be null when the file is uploaded (the metadata
+     * insert runs after the GridFS upload in {@code createFile}). Resolves the deferred
+     * guid/referenceID GridFS mismatch.
+     */
     public Document idAsGUID(NVEntity nve) {
-        return new Document("_id", IDGs.UUIDV7.decode(nve.getReferenceID()));
+        return new Document("_id", IDGs.UUIDV7.decode(nve.getGUID()));
     }
 
     public UUID getRefIDAsUUID(Document doc) {
