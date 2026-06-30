@@ -9,7 +9,7 @@ import java.util.Date;
 
 public enum DerbyDT
         implements GetValue<String> {
-    ACCOUNT_ID("VARCHAR(64)", Types.VARCHAR, String.class, null),
+    //ACCOUNT_ID("VARCHAR(64)", Types.VARCHAR, String.class, null),
     BIGINT("BIGINT", Types.BIGINT, Long.class, NVLong.class),
     BLOB("BLOB", Types.BLOB, byte[].class, NVBlob.class),
     BOOLEAN("BOOLEAN", Types.BOOLEAN, Boolean.class, NVBoolean.class),

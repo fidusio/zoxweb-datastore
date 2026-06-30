@@ -21,6 +21,8 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import org.bson.Document;
+import org.zoxweb.server.logging.LogWrapper;
+import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
@@ -42,7 +44,7 @@ import java.util.logging.Logger;
  * longer held during that I/O.
  */
 public class XlogistxMongoMetaManager {
-    private static final Logger log = Logger.getLogger(XlogistxMongoMetaManager.class.getName());
+    public static final LogWrapper log = new LogWrapper(XlogistxMongoMetaManager.class).setEnabled(true);
 
     /** Full-collection-name → NVConfigEntity (or DynamicEnumMap.class marker). */
     private final ConcurrentMap<String, Object> indexedCollections = new ConcurrentHashMap<>();
@@ -134,7 +136,7 @@ public class XlogistxMongoMetaManager {
         String canonicalId = nvce.toCanonicalID();
         NVConfigEntity cached = nvConfigEntityCache.get(canonicalId);
         if (cached != null && cached.getReferenceID() != null) {
-            nvce.setReferenceID(cached.getReferenceID());
+            nvce.setGUID(cached.getReferenceID());
             return nvce;
         }
 
@@ -155,7 +157,7 @@ public class XlogistxMongoMetaManager {
             nvConfigEntities.insertOne(nvceDBO);
         }
 
-        nvce.setReferenceID(MongoUtil.SINGLETON.getRefIDAsUUID(nvceDBO).toString());
+        nvce.setGUID(XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(nvceDBO).toString());
         nvConfigEntityCache.putIfAbsent(canonicalId, nvce);
         return nvce;
     }
@@ -173,9 +175,8 @@ public class XlogistxMongoMetaManager {
         try {
             nvce = fromBasicDBObject(nvceDB);
         } catch (Exception e) {
-            if (log.isLoggable(java.util.logging.Level.WARNING)) {
-                log.log(java.util.logging.Level.WARNING, "lookupCollectionName failed for " + collectionID, e);
-            }
+
+            if(log.isEnabled()) log.getLogger().info( "lookupCollectionName failed for " + collectionID);
             return null;
         }
 
@@ -184,7 +185,7 @@ public class XlogistxMongoMetaManager {
 
     public static Document dbMapNVConfigEntity(NVConfigEntity nvce) {
         Document entryElement = new Document();
-        entryElement.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), UUID.randomUUID());
+        entryElement.put(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.genNativeID());
         entryElement.put(MetaToken.NAME.getName(), nvce.getName());
         entryElement.put(MetaToken.DESCRIPTION.getName(), nvce.getDescription());
         entryElement.put(MetaToken.DOMAIN_ID.getName(), nvce.getDomainID());
@@ -202,7 +203,7 @@ public class XlogistxMongoMetaManager {
         ret.setDomainID(dbo.getString(MetaToken.DOMAIN_ID.getName()));
         ret.setMetaType(clazz);
         ret.setArray(dbo.getBoolean(MetaToken.IS_ARRAY.getName()));
-        ret.setReferenceID(MongoUtil.ReservedID.REFERENCE_ID.decode(dbo));
+        ret.setGUID(XlogistxMongoUtil.ReservedID.GUID.decode(dbo));
         return ret;
     }
 
@@ -213,7 +214,8 @@ public class XlogistxMongoMetaManager {
     private void addUniqueIndexes(MongoCollection<Document> collection, NVConfigEntity nvce) {
         addNVConfigEntity(getMongoDatabase(), nvce);
         for (NVConfig nvc : nvce.getAttributes()) {
-            if (!nvc.getName().equals(MetaToken.REFERENCE_ID.getName()) && nvc.isUnique() && !nvc.isArray()) {
+            if (!nvc.getName().equals(MetaToken.GUID.getName()) && nvc.isUnique() && !nvc.isArray()) {
+                if(log.isEnabled()) log.getLogger().info("**************************************** " + nvc.getName());
                 createUniqueIndex(collection, nvc.getName());
             }
         }
@@ -224,14 +226,11 @@ public class XlogistxMongoMetaManager {
         ArrayList<String> ret = new ArrayList<String>();
 
         ListIndexesIterable<Document> indexes = collection.listIndexes();
-        if (log.isLoggable(java.util.logging.Level.FINE)) {
-            log.fine("List of DBObject Indexes: " + indexes);
-        }
+        if(log.isEnabled()) log.getLogger().info("List of DBObject Indexes: " + indexes);
 
         for (String indexToAdd : uniqueIndexNames) {
-            if (log.isLoggable(java.util.logging.Level.FINE)) {
-                log.fine("Index to be added:" + indexToAdd + " to collection:" + collection.getNamespace().getFullName());
-            }
+            if (log.isEnabled()) log.getLogger().info("Index to be added:" + indexToAdd + " to collection:" + collection.getNamespace().getFullName());
+
             if (SUS.isNotEmpty(indexToAdd)) {
                 for (Document dbIndex : indexes) {
                     if ((dbIndex.get("key") != null && ((Document) dbIndex.get("key")).get(indexToAdd) != null)) {
@@ -243,9 +242,8 @@ public class XlogistxMongoMetaManager {
                 if (indexToAdd != null) {
                     ret.add(indexToAdd);
                     collection.createIndex(new Document(indexToAdd, 1), new IndexOptions().unique(true));
-                    if (log.isLoggable(java.util.logging.Level.FINE)) {
-                        log.fine("Index added:" + indexToAdd + " to collection:" + collection.getNamespace().getFullName());
-                    }
+                    if (log.isEnabled()) log.getLogger().info("Index added:" + indexToAdd + " to collection:" + collection.getNamespace().getFullName());
+
                 }
             }
         }

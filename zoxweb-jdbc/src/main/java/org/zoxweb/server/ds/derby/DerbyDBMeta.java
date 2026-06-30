@@ -242,9 +242,9 @@ public class DerbyDBMeta {
                 ddt = DerbyDT.GLOBAL_ID;
             } else if (nvc.getName().equals(MetaToken.SUBJECT_GUID.getName())) {
                 ddt = DerbyDT.SUBJECT_GUID;
-            } else if (nvc.getName().equals(MetaToken.ACCOUNT_ID.getName())) {
+            } /*else if (nvc.getName().equals(MetaToken.ACCOUNT_ID.getName())) {
                 ddt = DerbyDT.ACCOUNT_ID;
-            } else {
+            }*/ else {
                 ddt = DerbyDT.K4_VARCHAR;
             }
         } else if (nvcJavaClass == Integer.class) {

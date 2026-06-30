@@ -12,15 +12,15 @@ import org.zoxweb.shared.util.*;
 import java.math.BigDecimal;
 import java.util.*;
 
-public class MongoUtil {
+public class XlogistxMongoUtil {
     /**
      * Contains reference ID, account ID, and user ID.
      */
     public enum ReservedID
             implements GetNameValue<String>, DataDecoder<Document, String> {
-        REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
+        //REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
         SUBJECT_GUID(MetaToken.SUBJECT_GUID),
-        GUID(MetaToken.GUID);
+        GUID(MetaToken.GUID.getName(), "_id");
 
         private final String name;
         private final String value;
@@ -34,7 +34,7 @@ public class MongoUtil {
         ReservedID(String name, String value) {
             this.name = name;
             this.value = value;
-            MongoUtil.SINGLETON.reservedIDMap.put(name, this);
+            XlogistxMongoUtil.SINGLETON.reservedIDMap.put(name, this);
         }
 
         @Override
@@ -61,11 +61,11 @@ public class MongoUtil {
         }
 
         public static ReservedID lookupByName(GetName gn) {
-            return MongoUtil.SINGLETON.reservedIDMap.get(gn.getName());
+            return XlogistxMongoUtil.SINGLETON.reservedIDMap.get(gn.getName());
         }
 
         public static ReservedID lookupByName(String name) {
-            return MongoUtil.SINGLETON.reservedIDMap.get(name);
+            return XlogistxMongoUtil.SINGLETON.reservedIDMap.get(name);
         }
 
         public static String map(NVConfig nvc, String name) {
@@ -89,9 +89,9 @@ public class MongoUtil {
     }
 
 
-    public final static MongoUtil SINGLETON = new MongoUtil();
+    public final static XlogistxMongoUtil SINGLETON = new XlogistxMongoUtil();
 
-    private MongoUtil() {
+    private XlogistxMongoUtil() {
         init();
     }
 

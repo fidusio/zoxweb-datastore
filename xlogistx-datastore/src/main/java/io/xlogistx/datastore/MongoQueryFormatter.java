@@ -37,7 +37,7 @@ public class MongoQueryFormatter {
 
     private static Document buildCondition(QueryMatch<?> qm, NVConfigEntity nvce) {
         NVConfig nvc = nvce.lookup(qm.getName());
-        String key = MongoUtil.ReservedID.map(nvc, qm.getName());
+        String key = XlogistxMongoUtil.ReservedID.map(nvc, qm.getName());
         Object val = map(nvc, qm);
 
         switch (qm.getOperator()) {
@@ -123,7 +123,7 @@ public class MongoQueryFormatter {
             return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }
 
-        if (nvc == null && MongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == MongoUtil.ReservedID.REFERENCE_ID
+        if (nvc == null && XlogistxMongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == XlogistxMongoUtil.ReservedID.GUID
                 && queryMatch.getValue() instanceof String) {
             return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }

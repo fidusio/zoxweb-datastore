@@ -172,6 +172,7 @@ public class XlogistxMongoDataStoreTest {
     public void testComplicated() {
         cdst.insertAllType();
         cdst.insertComplexType();
+        cdst.insertComplexType();
     }
 
     @Test
@@ -323,8 +324,48 @@ public class XlogistxMongoDataStoreTest {
         URLInfo url  = URLInfo.parse("mongodb://localhost:27017/batata_test?uuidRepresentation=standard");
         System.out.println(url);
         URI uri = new URI("mongodb://localhost:27017/batata_test?uuidRepresentation=standard");
+    }
 
 
+    @Test
+    public void deleteTest() {
+        PropertyDAO pd = new PropertyDAO();
+        pd.setName("diverse_types_test");
+        pd.setDescription("NVGenericMap diverse type round-trip");
+
+        // Nested NVGenericMap
+        NVGenericMap nested = new NVGenericMap("nested_map");
+        nested.build("nested_key", "nested_value");
+        nested.build(new NVInt("nested_int", 100));
+
+        // NVGenericMapList
+        NVGenericMap listEntry = new NVGenericMap("le");
+        listEntry.build("le_key", "le_value");
+        NVGenericMapList nvgml = new NVGenericMapList("generic_map_list");
+        nvgml.add(listEntry);
+
+        // NVStringList
+        NVStringList strList = new NVStringList("string_list", "alpha", "beta", "gamma");
+
+        pd.getProperties()
+                .build("str_val", "hello")
+                .build(new NVInt("int_val", 42))
+                .build(new NVLong("long_val", 123456789L))
+                .build(new NVDouble("double_val", 2.718))
+                .build(new NVFloat("float_val", 1.5f))
+                .build(nested)
+                .build(nvgml)
+                .build(strList);
+
+        mongoDataStore.insert(pd);
+
+        PropertyDAO result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        System.out.println("To be deleted " + result.getGUID());
+
+        mongoDataStore.delete(result, false);
+        result =  mongoDataStore.lookupByReferenceID(result.getNVConfig().getName(), pd.getGUID());
+
+        assert result == null;
 
     }
 }

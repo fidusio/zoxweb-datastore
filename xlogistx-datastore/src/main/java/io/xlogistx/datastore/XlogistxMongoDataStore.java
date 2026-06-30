@@ -274,7 +274,7 @@ public class XlogistxMongoDataStore
                 }
 
                 Document dbObject = new Document();
-                dbObject.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV7.decode(dem.getReferenceID()));
+                dbObject.append(MetaToken.GUID.getName(), IDGs.UUIDV7.decode(dem.getReferenceID()));
                 dbObject.append(MetaToken.COLLECTION_NAME.getName(), dem.getClass().getName());
 
                 bsonDoc.append(MetaToken.VALUE_FILTER.getName(), dbObject);
@@ -483,7 +483,7 @@ public class XlogistxMongoDataStore
 
         Class<?> clazz = nvc.getMetaType();
 
-        MongoUtil.ReservedID resID = MongoUtil.ReservedID.lookupByName(nvc);
+        XlogistxMongoUtil.ReservedID resID = XlogistxMongoUtil.ReservedID.lookupByName(nvc);
         if (resID != null && clazz == String.class) {
             if (container.lookupValue(nvc) != null)
                 return;
@@ -502,7 +502,7 @@ public class XlogistxMongoDataStore
             return;
 
 
-        MongoUtil.DataDeserializer updater = MongoUtil.SINGLETON.lookupDataDeserializer(clazz);
+        XlogistxMongoUtil.DataDeserializer updater = XlogistxMongoUtil.SINGLETON.lookupDataDeserializer(clazz);
         if (updater != null) {
             updater.deserialize(this, subjectGUID, db, doc, container, nvc, nvb);
             return;
@@ -619,7 +619,7 @@ public class XlogistxMongoDataStore
                 Document demRefObject = (Document) valueFilterValue;
 
 
-                UUID demRefID = MongoUtil.SINGLETON.getRefIDAsUUID(demRefObject);
+                UUID demRefID = XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(demRefObject);
                 String collectionName = demRefObject.getString(MetaToken.COLLECTION_NAME.getName());
 
                 return searchDynamicEnumMapByReferenceID(demRefID, collectionName);
@@ -687,7 +687,7 @@ public class XlogistxMongoDataStore
                         nvgm.add(nvgmToAdd);
                         continue;
                     }
-                } else if (subDBObject.containsKey(MetaToken.CANONICAL_ID.getName()) && subDBObject.containsKey(MetaToken.REFERENCE_ID.getName())) {
+                } else if (subDBObject.containsKey(MetaToken.CANONICAL_ID.getName()) && subDBObject.containsKey(MetaToken.GUID.getName())) {
                     XlogistxMongoDBObjectMeta mdbom = lookupByReferenceID(subDBObject);
                     NVEntity nveToAdd = fromDB(userID, connect(), mdbom.getContent(), (Class<? extends NVEntity>) mdbom.getNVConfigEntity().getMetaTypeBase());
                     nvgm.add(key, nveToAdd);
@@ -772,10 +772,10 @@ public class XlogistxMongoDataStore
 
         Document query = new Document();
 
-        if (refID instanceof UUID)
-            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), refID);
+        if(refID instanceof UUID)
+            query.put(XlogistxMongoUtil.ReservedID.GUID.getValue(), refID);
         else if (refID instanceof String)
-            query.put(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode((String) refID));
+            query.put(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) refID));
         else
             throw new IllegalArgumentException("Invalid refID: " + refID);
 
@@ -806,7 +806,7 @@ public class XlogistxMongoDataStore
         }
         MongoCollection<Document> collection = lookupCollection(collectionName);
 
-        Bson inQuery = Filters.in(MongoUtil.ReservedID.REFERENCE_ID.getValue(), listOfObjectId);
+        Bson inQuery = Filters.in(XlogistxMongoUtil.ReservedID.GUID.getValue(), listOfObjectId);
 
         List<Document> listOfDocuments = new ArrayList<>();
         try (MongoCursor<Document> cur = withTimeout(collection.find(inQuery)).iterator()) {
@@ -834,7 +834,7 @@ public class XlogistxMongoDataStore
 
         for (Document toFind : listOfObjectRefID) {
             UUID canonicalId = (UUID) toFind.get(MetaToken.CANONICAL_ID.getName());
-            UUID refId = (UUID) toFind.get(MongoUtil.ReservedID.REFERENCE_ID.getValue());
+            UUID refId = (UUID) toFind.get(XlogistxMongoUtil.ReservedID.GUID.getValue());
 
             if (canonicalId != null && refId != null) {
                 refsByCollection.computeIfAbsent(canonicalId, k -> new ArrayList<>()).add(refId);
@@ -857,7 +857,7 @@ public class XlogistxMongoDataStore
             MongoCollection<Document> collection = connect().getCollection(collectionName);
 
             // Single query with $in operator for all refs in this collection
-            Document query = new Document(MongoUtil.ReservedID.REFERENCE_ID.getValue(), new Document("$in", refIds));
+            Document query = new Document(XlogistxMongoUtil.ReservedID.GUID.getValue(), new Document("$in", refIds));
 
             try (MongoCursor<Document> cursor = collection.find(query).iterator()) {
                 while (cursor.hasNext()) {
@@ -877,7 +877,7 @@ public class XlogistxMongoDataStore
         if (toFind != null) {
             XlogistxMongoDBObjectMeta ret = metaManager.lookupCollectionName(this, (UUID) toFind.get(MetaToken.CANONICAL_ID.getName()));
             if (ret != null) {
-                UUID refID = (UUID) toFind.get(MongoUtil.ReservedID.REFERENCE_ID.getValue());
+                UUID refID = (UUID) toFind.get(XlogistxMongoUtil.ReservedID.GUID.getValue());
                 Document dbObject = lookupByReferenceID(ret.getNVConfigEntity().toCanonicalID(), refID);
                 if (dbObject != null) {
                     ret.setContent(dbObject);
@@ -959,9 +959,9 @@ public class XlogistxMongoDataStore
         // and serNVEntity / patch / delete). guid == referenceID is an enforced invariant, not
         // a convention: reconcile unconditionally so a caller that pre-set only one of the two
         // cannot desync the persisted _id from the value used to look the row back up.
-        if (SUS.isEmpty(nve.getReferenceID())) {
-            nve.setReferenceID(nve.getGUID());
-        }
+//        if (SUS.isEmpty(nve.getReferenceID())) {
+//            nve.setReferenceID(nve.getGUID());
+//        }
 
         if (nve instanceof TimeStampInterface) {
             SharedUtil.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
@@ -1040,17 +1040,17 @@ public class XlogistxMongoDataStore
                 doc.append(nvb.getName(), serNamedValue((NamedValue<?>) nvb));
             } else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
-            } else if (MetaToken.GUID.getName().equals(nvc.getName())) {
+            } /*else if (MetaToken.GUID.getName().equals(nvc.getName())) {
                 // set the GUID ass uuid in the database
-                doc.append(MongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) nvb.getValue()));
-            } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+                doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) nvb.getValue()));
+            }*/ else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
                 if (value != null) {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
+                    doc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                 } else {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
+                    doc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
-            } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (!MetaToken.GUID.getName().equals(nvc.getName())) {
                 Object tempValue = securityController != null ? securityController.encryptValue(this, nve, nvc, nvb, null) : nvb.getValue();
                 if (tempValue instanceof EncryptedData) {
                     doc.append(nvc.getName(), serNVEntity((EncryptedData) tempValue, true, false, false));
@@ -1065,12 +1065,13 @@ public class XlogistxMongoDataStore
             metaManager.addCollectionInfo(collection, nvce);
         }
 
-        if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
+        if (SUS.isNotEmpty(nve.getReferenceID())) {
+            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
         }
 
 
         try {
+            System.out.println(doc);
             collection.insertOne(doc);
         } catch (MongoException e) {
             e.printStackTrace();
@@ -1154,22 +1155,22 @@ public class XlogistxMongoDataStore
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
-            } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
 
                 if (value != null) {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
+                    doc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                 } else {
-                    doc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
+                    doc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                 }
-            } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
+            } else if (!MetaToken.GUID.getName().equals(nvc.getName())) {
                 doc.append(nvc.getName(), nvb.getValue());
             }
         }
 
 
         if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(MongoUtil.ReservedID.REFERENCE_ID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
+            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
         }
 
 
@@ -1220,7 +1221,7 @@ public class XlogistxMongoDataStore
                         .getSecurityController()
                         .associateNVEntityToSubjectGUID(nve, null);
 
-            if (nve.lookupValue(MetaToken.GUID) == null) {
+            if (nve.getGUID() == null) {
                 return insert(nve);
             }
 
@@ -1265,7 +1266,7 @@ public class XlogistxMongoDataStore
                             exclusionSet.add(name);
                     }
 
-                    if (exclusionSet.size() > 0) {
+                    if (SUS.isNotEmpty(exclusionSet)) {
                         for (NVConfig nvc : nvce.getAttributes()) {
                             if (!exclusionSet.contains(nvc.getName())) {
                                 paramsToUpdate.add(nvc);
@@ -1275,7 +1276,7 @@ public class XlogistxMongoDataStore
                 }
             }
 
-            if (paramsToUpdate == null || paramsToUpdate.size() == 0) {
+            if (paramsToUpdate == null || paramsToUpdate.isEmpty()) {
                 paramsToUpdate = nvce.getAttributes();
                 patchMode = false;
             }
@@ -1341,15 +1342,15 @@ public class XlogistxMongoDataStore
                     updatedDoc.put(nvc.getName(), nvb.getValue());
                 } else if (nvc.isArray()) {
                     updatedDoc.put(nvc.getName(), nvb.getValue());
-                } else if (nvc.isTypeReferenceID() && !MongoUtil.ReservedID.REFERENCE_ID.getName().equals(nvc.getName())) {
+                } else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                     String value = (String) nvb.getValue();
 
                     if (value != null) {
-                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
+                        updatedDoc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
                     } else {
-                        updatedDoc.append(MongoUtil.ReservedID.map(nvc, nvc.getName()), null);
+                        updatedDoc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), null);
                     }
-                } else if (!MetaToken.REFERENCE_ID.getName().equals(nvc.getName())) {
+                } else if (!MetaToken.GUID.getName().equals(nvc.getName())) {
                     Object tempValue = getAPIConfigInfo().getSecurityController() != null ? getAPIConfigInfo().getSecurityController().encryptValue(this, nve, nvc, nvb, null) : nvb.getValue();
                     if (tempValue instanceof EncryptedData) {
                         updatedDoc.put(nvc.getName(), serNVEntity((EncryptedData) tempValue, true, sync, updateReferenceOnly));
@@ -1365,7 +1366,7 @@ public class XlogistxMongoDataStore
 
             try {
                 if (collection != null) {
-                    collection.updateOne(Filters.eq(MongoUtil.ReservedID.REFERENCE_ID.getValue(), refIdUUID), updatedObj);
+                    collection.updateOne(Filters.eq(XlogistxMongoUtil.ReservedID.GUID.getValue(), refIdUUID), updatedObj);
                 }
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
@@ -1403,7 +1404,7 @@ public class XlogistxMongoDataStore
 
         if (nve.getReferenceID() != null) {
             UUID deleteKey = IDGs.UUIDV7.decode(nve.getReferenceID());
-            Document filter = new Document(MongoUtil.ReservedID.REFERENCE_ID.getValue(), deleteKey);
+            Document filter = new Document(XlogistxMongoUtil.ReservedID.GUID.getValue(), deleteKey);
             MongoCollection<Document> collection = lookupCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 
 
@@ -1569,8 +1570,8 @@ public class XlogistxMongoDataStore
         GridFSBucket gridFSBucket = createBucket();
         try {
 
-            gridFSBucket.uploadFromStream(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), file.getOriginalFileInfo().getName(), is, new GridFSUploadOptions());
-            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
+            gridFSBucket.uploadFromStream(XlogistxMongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), file.getOriginalFileInfo().getName(), is, new GridFSUploadOptions());
+            GridFSFile gridFSFile = gridFSBucket.find(XlogistxMongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
             if (gridFSFile != null) {
                 file.getOriginalFileInfo().setLength(gridFSFile.getLength());
             }
@@ -1580,7 +1581,7 @@ public class XlogistxMongoDataStore
             } catch (RuntimeException metadataEx) {
                 // Metadata write failed — roll back the uploaded chunks to avoid orphans.
                 try {
-                    gridFSBucket.delete(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()));
+                    gridFSBucket.delete(XlogistxMongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()));
                 } catch (Exception rollbackEx) {
                     if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING,
                             "GridFS rollback failed for " + file.getOriginalFileInfo().getName(), rollbackEx);
@@ -1613,11 +1614,11 @@ public class XlogistxMongoDataStore
         try {
 
             GridFSBucket gridFSBucket = createBucket();
-            GridFSFile gridFSFile = gridFSBucket.find(MongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
+            GridFSFile gridFSFile = gridFSBucket.find(XlogistxMongoUtil.SINGLETON.idAsGUID(file.getOriginalFileInfo())).first();
 
 
             if (gridFSFile != null) {
-                gridFSBucket.downloadToStream(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), os);
+                gridFSBucket.downloadToStream(XlogistxMongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()), os);
                 //out.writeTo(os);
             }
         } finally {
@@ -1660,7 +1661,7 @@ public class XlogistxMongoDataStore
 
 
         GridFSBucket gridFSBucket = createBucket();
-        gridFSBucket.delete(MongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()));
+        gridFSBucket.delete(XlogistxMongoUtil.SINGLETON.bsonNVEGUID(file.getOriginalFileInfo()));
 
 
     }
@@ -1766,7 +1767,7 @@ public class XlogistxMongoDataStore
 
         if (!SUS.isEmpty(dynamicEnumMap.getReferenceID())) {
             // Since we are referencing the object, we will use the reference_id NOT _id.
-            doc.append(MetaToken.REFERENCE_ID.getName(), IDGs.UUIDV7.decode(dynamicEnumMap.getReferenceID()));
+            doc.append(MetaToken.GUID.getName(), IDGs.UUIDV7.decode(dynamicEnumMap.getReferenceID()));
         }
 
         try {
@@ -1777,7 +1778,7 @@ public class XlogistxMongoDataStore
             getAPIExceptionHandler().throwException(e);
         }
 
-        dynamicEnumMap.setReferenceID(IDGs.UUIDV7.encode(MongoUtil.SINGLETON.getRefIDAsUUID(doc)));
+        dynamicEnumMap.setGUID(IDGs.UUIDV7.encode(XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(doc)));
 
         return dynamicEnumMap;
     }
@@ -1846,7 +1847,7 @@ public class XlogistxMongoDataStore
      */
     private DynamicEnumMap fromDBtoDynamicEnumMap(Document obj) {
         List<Document> list = (List<Document>) obj.get(MetaToken.VALUE.getName());
-        UUID objectID = MongoUtil.SINGLETON.getRefIDAsUUID(obj);
+        UUID objectID = XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(obj);
 
         List<NVPair> nvpl = new ArrayList<NVPair>();
 
@@ -1860,7 +1861,7 @@ public class XlogistxMongoDataStore
         String demName = (String) obj.get(MetaToken.NAME.getName());
         //if(log.isEnabled()) log.getLogger().info("DynamicEnumMap Name : " + demName);
         DynamicEnumMap dem = new DynamicEnumMap(demName, nvpl);
-        dem.setReferenceID(IDGs.UUIDV7.encode(objectID));
+        dem.setGUID(IDGs.UUIDV7.encode(objectID));
         //if(log.isEnabled()) log.getLogger().info("values " + dem.getValue());
         dem = DynamicEnumMapManager.SINGLETON.addDynamicEnumMap(dem);
         //if(log.isEnabled()) log.getLogger().info(dem.getName() + ":" + dem.getValue());
@@ -2223,7 +2224,7 @@ public class XlogistxMongoDataStore
         try {
             if (collection != null) {
                 List<String> fieldNames = new ArrayList<String>();
-                fieldNames.add(MongoUtil.ReservedID.REFERENCE_ID.getValue());
+                fieldNames.add(XlogistxMongoUtil.ReservedID.GUID.getValue());
                 fieldNames.add(MetaToken.GUID.getName());
                 fieldNames.add(MetaToken.SUBJECT_GUID.getName());
                 cur = withTimeout(collection.find(query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
@@ -2232,11 +2233,11 @@ public class XlogistxMongoDataStore
 
                 while (cur.hasNext()) {
                     Document dbObject = cur.next();
-                    UUID refID = (UUID) dbObject.get(MongoUtil.ReservedID.REFERENCE_ID.getValue());
+                    UUID refID = (UUID) dbObject.get(XlogistxMongoUtil.ReservedID.GUID.getValue());
                     if (refID == null) continue;
 
-                    String guid = MongoUtil.ReservedID.GUID.decode(dbObject);
-                    String subjectGUID = MongoUtil.ReservedID.SUBJECT_GUID.decode(dbObject);
+                    String guid = XlogistxMongoUtil.ReservedID.GUID.decode(dbObject);
+                    String subjectGUID = XlogistxMongoUtil.ReservedID.SUBJECT_GUID.decode(dbObject);
 
                     // Access control: if a security controller is present, enforce it.
                     // Otherwise allow the match.
