@@ -17,9 +17,11 @@ Files created under `src/main/java/io/xlogistx/datastore/`:
 | `XlogistxMongoExceptionHandler.java` | `SyncMongoExceptionHandler.java` |
 | `XlogistxMongoMetaManager.java` | `SyncMongoMetaManager.java` |
 | `XlogistxMongoDBObjectMeta.java` | `SyncMongoDBObjectMeta.java` |
-| `MongoUtil.java` | `MongoUtil.java` |
+| `XlogistxMongoUtil.java` | `MongoUtil.java` |
 | `MongoQueryFormatter.java` | `MongoQueryFormatter.java` |
 | `UpdateFilterClass.java` | `UpdateFilterClass.java` |
+
+> **Note:** `MongoUtil` was subsequently renamed to `XlogistxMongoUtil`. Older rows below that say "MongoUtil" refer to this file.
 
 Mechanical rewrites applied in each file:
 
@@ -128,6 +130,22 @@ Implications:
 
 `XlogistxMongoDSCreator.MongoParam.DB_URI` was removed. Connection is now configured via `DB_NAME` + `HOST` + `PORT` components, with `dataStoreURI()` building the full URI string. Test database changed from `xlogistx_ds_test` to `DB_TEST`.
 
+### GUID canonicalization + hygiene pass (2026-06-30)
+
+`referenceID` is deprecated in favor of `GUID`. This pass made `GUID` the single source of truth for the persisted `_id` and cleaned up leftover debug/logging.
+
+| # | Category | Location | Fix applied |
+|---|---|---|---|
+| 43 | Critical | `insert()` | `_id` now decoded from `nve.getGUID()` (always populated) instead of the possibly-null `referenceID`. Previously an entity with a null `referenceID` got a Mongo-assigned `ObjectId` `_id` while GridFS keyed off `GUID` → `lookupByReferenceID` could never find it |
+| 44 | Correctness | `serNVEntity()`, `patch()`, `delete(V, boolean)` | All ID derivation (`_id` append, update filter, delete filter, patch reload) switched from `referenceID` to `GUID` for consistency with the new invariant |
+| 45 | Robustness | `updateDynamicEnumMap()` | Update filter changed from passing the entire original document to `Filters.eq(name, ...)` — DEMs are uniquely keyed by name |
+| 46 | Hygiene | `insert()` | Removed a debug `System.out.println(doc)` that printed every inserted document to stdout |
+| 47 | Robustness | `fromNVGenericMap()` | `ClassNotFoundException` on an embedded class now logs and `continue`s instead of falling through to an NPE on `subClass.isEnum()` |
+| 48 | Hygiene | throughout | Remaining `printStackTrace()` calls replaced with `log ... WARNING` (`toNVPair`, `fromNVGenericMap`, `userSearchByID`, `nextBatch`, `newConnection`, `userSearch(className)`, `XlogistxMongoDSCreator`). `newConnection` / `userSearch` now also chain the cause via `initCause` |
+| 49 | Hygiene | `XlogistxMongoDSCreator` | Deprecated `Class.forName(...).newInstance()` → `getDeclaredConstructor().newInstance()`; added a `LogWrapper` |
+| 50 | Hygiene | `XlogistxMongoDataStore` | Removed the dead `getDBAddress()` method (connection goes through the URI string) and its now-unused `ServerAddress` / `UnknownHostException` imports |
+| 51 | Critical | `insertDynamicEnumMap()` | Now writes `_id` as a native UUID (reusing the DEM's GUID or generating one via `genNativeID()`). The old code wrote to a `"guid"` field keyed off `referenceID`, leaving `_id` as a Mongo `ObjectId` — so the immediately-following `getRefIDAsUUID(doc)` (which reads `_id` as a `UUID`) threw for every fresh DEM |
+
 ### Verification
 
 `mvn -pl xlogistx-datastore -DskipTests compile` → `BUILD SUCCESS` at every checkpoint through the fix sequence.
@@ -136,8 +154,8 @@ Implications:
 
 | File | Lines |
 |---|---:|
-| `XlogistxMongoDataStore.java` | 2457 |
-| `MongoUtil.java` | 286 |
+| `XlogistxMongoDataStore.java` | ~2450 |
+| `XlogistxMongoUtil.java` | 300 |
 | `XlogistxMongoMetaManager.java` | 264 |
 | `XlogistxMongoDSCreator.java` | 139 |
 | `XlogistxMongoExceptionHandler.java` | 133 |
@@ -151,9 +169,10 @@ Implications:
 
 1. `mongo-sync` is immutable — never edit anything under the `mongo-sync/` directory.
 2. Do not add `mongo-sync` as a Maven dependency of `xlogistx-datastore`. Fixes belong in the ported copies.
-3. Preserve the package-private visibility of `XlogistxMongoDataStore` methods that `MongoUtil` calls (`fromDB`, `toNVPair`, `fromNVGenericMap`, `getAPIConfigInfo`) — they all live in the same package.
+3. Preserve the package-private visibility of `XlogistxMongoDataStore` methods that `XlogistxMongoUtil` calls (`fromDB`, `toNVPair`, `fromNVGenericMap`, `getAPIConfigInfo`) — they all live in the same package.
 4. Compile check: `mvn -pl xlogistx-datastore -DskipTests compile` from the repo root.
 5. When evaluating new `//`-comment lines, prefer Javadoc `/** */` for documentation so the dead-code-strip heuristic can stay simple.
 6. `XlogistxMongoMetaManager` is per-instance; use `datastore.getMetaManager()` rather than any global state.
 7. `operationTimeoutMS` and `maxSearchResults` on `XlogistxMongoDataStore` are tunable at runtime via setters — surface them via config if callers need non-default values.
-8. When adding support for a new NV type, update **all five serialization paths**: `insert()`, `serNVEntity()`, `patch()`, `serNVGenericMap()` (for NVGenericMap-embedded values), and the deserializer in `MongoUtil.init()` / `fromNVGenericMap()`.
+8. When adding support for a new NV type, update **all five serialization paths**: `insert()`, `serNVEntity()`, `patch()`, `serNVGenericMap()` (for NVGenericMap-embedded values), and the deserializer in `XlogistxMongoUtil.init()` / `fromNVGenericMap()`.
+9. **`_id` is keyed off `GUID`, not the deprecated `referenceID`.** All ID-bearing paths (`insert`, `serNVEntity`, `patch`, `delete`, GridFS helpers) decode `_id` from `nve.getGUID()`. `referenceID` is legacy — do not reintroduce it into the persisted `_id` / lookup logic.

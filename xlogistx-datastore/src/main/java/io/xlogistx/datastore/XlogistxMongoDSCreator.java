@@ -15,12 +15,15 @@
  */
 package io.xlogistx.datastore;
 
+import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.http.URLInfo;
 import org.zoxweb.shared.util.*;
 
 public class XlogistxMongoDSCreator
         implements APIServiceProviderCreator {
+
+    public static final LogWrapper log = new LogWrapper(XlogistxMongoDSCreator.class);
 
     public final static String API_NAME = "XlogistxMongoDS";
 
@@ -116,10 +119,10 @@ public class XlogistxMongoDSCreator
         if (dcParam != null && dcParam.getValue() != null && Boolean.parseBoolean(dcParam.getValue())) {
             NVPair dcClassNameParam = (NVPair) mongoDS.getAPIConfigInfo().getProperties().get(MongoParam.DATA_CACHE_CLASS_NAME.getName());
             try {
-                mongoDS.setDataCacheMonitor((NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).newInstance());
+                mongoDS.setDataCacheMonitor((NVECRUDMonitor) Class.forName(dcClassNameParam.getValue()).getDeclaredConstructor().newInstance());
                 //log.info("Data Cache monitor created " + dcClassNameParam);
             } catch (Exception e) {
-                e.printStackTrace();
+                if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "Failed to create data cache monitor", e);
             }
         }
         //log.info("Connect finished");

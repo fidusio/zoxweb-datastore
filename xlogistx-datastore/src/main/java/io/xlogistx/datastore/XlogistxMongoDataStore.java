@@ -16,7 +16,6 @@
 package io.xlogistx.datastore;
 
 import com.mongodb.MongoException;
-import com.mongodb.ServerAddress;
 import com.mongodb.client.*;
 import com.mongodb.client.gridfs.GridFSBucket;
 import com.mongodb.client.gridfs.GridFSBuckets;
@@ -54,7 +53,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
-import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -588,7 +586,7 @@ public class XlogistxMongoDataStore
                 try {
                     value = getAPIConfigInfo().getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (Document) value, EncryptedData.class), null);
                 } catch (InstantiationException | IllegalAccessException e) {
-                    e.printStackTrace();
+                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "toNVPair decrypt failed", e);
                 }
             }
         }
@@ -668,8 +666,8 @@ public class XlogistxMongoDataStore
                     try {
                         subClass = Class.forName(classType);
                     } catch (ClassNotFoundException e) {
-
-                        e.printStackTrace();
+                        if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "fromNVGenericMap: class not found " + classType, e);
+                        continue;
                     }
                     if (subClass.isEnum()) {
                         NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass, (String) ((Document) value).get(MetaToken.VALUE.getName())));
@@ -1065,16 +1063,18 @@ public class XlogistxMongoDataStore
             metaManager.addCollectionInfo(collection, nvce);
         }
 
-        if (SUS.isNotEmpty(nve.getReferenceID())) {
-            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
+        // _id is keyed off GUID (always populated above), not the deprecated referenceID —
+        // otherwise an entity with a null referenceID would get a Mongo-assigned ObjectId _id
+        // and could never be looked up by GUID.
+        if (SUS.isNotEmpty(nve.getGUID())) {
+            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getGUID()));
         }
 
 
         try {
-            System.out.println(doc);
             collection.insertOne(doc);
         } catch (MongoException e) {
-            e.printStackTrace();
+            if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "insert failed for " + nvce.toCanonicalID(), e);
             getAPIExceptionHandler().throwException(e);
         }
 
@@ -1169,8 +1169,8 @@ public class XlogistxMongoDataStore
         }
 
 
-        if (!SUS.isEmpty(nve.getReferenceID())) {
-            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getReferenceID()));
+        if (!SUS.isEmpty(nve.getGUID())) {
+            doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode(nve.getGUID()));
         }
 
 
@@ -1228,10 +1228,10 @@ public class XlogistxMongoDataStore
             NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
             MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
 
-            UUID refIdUUID = IDGs.UUIDV7.decode(nve.getReferenceID());
+            UUID refIdUUID = IDGs.UUIDV7.decode(nve.getGUID());
             Document originalDoc = lookupByReferenceID(nvce.toCanonicalID(), refIdUUID);
             if (originalDoc == null) {
-                throw new APIException("Can not update a missing object " + nve.getReferenceID());
+                throw new APIException("Can not update a missing object " + nve.getGUID());
             }
             Document updatedDoc = new Document();
 
@@ -1373,7 +1373,7 @@ public class XlogistxMongoDataStore
             }
 
             if (patchMode) {
-                nve = (V) searchByID((NVConfigEntity) nve.getNVConfig(), nve.getReferenceID()).get(0);
+                nve = (V) searchByID((NVConfigEntity) nve.getNVConfig(), nve.getGUID()).get(0);
             }
 
 
@@ -1402,8 +1402,8 @@ public class XlogistxMongoDataStore
         SUS.checkIfNulls("Null value", nve);
         boolean ret = false;
 
-        if (nve.getReferenceID() != null) {
-            UUID deleteKey = IDGs.UUIDV7.decode(nve.getReferenceID());
+        if (nve.getGUID() != null) {
+            UUID deleteKey = IDGs.UUIDV7.decode(nve.getGUID());
             Document filter = new Document(XlogistxMongoUtil.ReservedID.GUID.getValue(), deleteKey);
             MongoCollection<Document> collection = lookupCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
 
@@ -1765,10 +1765,13 @@ public class XlogistxMongoDataStore
         doc.append(MetaToken.VALUE.getName(), serArrayValuesNVPair(null, dynamicEnumMap, false));
         doc.append(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
 
-        if (!SUS.isEmpty(dynamicEnumMap.getReferenceID())) {
-            // Since we are referencing the object, we will use the reference_id NOT _id.
-            doc.append(MetaToken.GUID.getName(), IDGs.UUIDV7.decode(dynamicEnumMap.getReferenceID()));
-        }
+        // _id must be a native UUID like every other collection — so getRefIDAsUUID(doc) below
+        // reads it back. Reuse the DEM's existing GUID if present, else generate one. (The old
+        // code wrote to a "guid" field keyed off referenceID, leaving _id as a Mongo ObjectId,
+        // which made getRefIDAsUUID throw on the UUID cast.)
+        String existingID = !SUS.isEmpty(dynamicEnumMap.getGUID()) ? dynamicEnumMap.getGUID() : dynamicEnumMap.getReferenceID();
+        UUID idUUID = !SUS.isEmpty(existingID) ? IDGs.UUIDV7.decode(existingID) : IDGs.UUIDV7.genNativeID();
+        doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), idUUID);
 
         try {
             if (collection != null)
@@ -1805,7 +1808,7 @@ public class XlogistxMongoDataStore
 
             try {
                 if (collection != null)
-                    collection.updateOne(originalDoc, updatedObj);
+                    collection.updateOne(Filters.eq(MetaToken.NAME.getName(), dynamicEnumMap.getName()), updatedObj);
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             }
@@ -2064,19 +2067,15 @@ public class XlogistxMongoDataStore
                     if (mongoClient == null)
                         mongoClient = MongoClients.create(XlogistxMongoDSCreator.MongoParam.dataStoreURI(getAPIConfigInfo()));
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    throw new APIException(e.getMessage());
+                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "newConnection failed", e);
+                    APIException apiEx = new APIException(e.getMessage());
+                    apiEx.initCause(e);
+                    throw apiEx;
                 }
             }
 
         return mongoClient;
 
-    }
-
-    private static ServerAddress getDBAddress(APIConfigInfo aci) throws NumberFormatException, UnknownHostException {
-        return new ServerAddress((String) aci.getProperties().getValue(XlogistxMongoDSCreator.MongoParam.HOST),
-                aci.getProperties().getValue(XlogistxMongoDSCreator.MongoParam.PORT));
-        //SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName())));
     }
 
     @Override
@@ -2107,7 +2106,7 @@ public class XlogistxMongoDataStore
             try {
                 retNVEs.add(fromDB(userID, connect(), dbObject, (Class<? extends NVEntity>) nvce.getMetaType()));
             } catch (InstantiationException | IllegalAccessException e) {
-                e.printStackTrace();
+                if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "userSearchByID fromDB failed", e);
             }
         }
 
@@ -2170,9 +2169,10 @@ public class XlogistxMongoDataStore
         try {
             nvce = MetaUtil.fromClass(className);
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new APIException("Class name not found:" + className);
-
+            if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "userSearch: class not found " + className, e);
+            APIException apiEx = new APIException("Class name not found:" + className);
+            apiEx.initCause(e);
+            throw apiEx;
         }
 
         return userSearch(userID, nvce, fieldNames, queryCriteria);
@@ -2319,7 +2319,7 @@ public class XlogistxMongoDataStore
                 try {
                     nveList.add((V) fromDB(null, connect(), obj, (Class<? extends NVEntity>) reportResults.getNVConfigEntity().getMetaType()));
                 } catch (InstantiationException | IllegalAccessException e) {
-                    e.printStackTrace();
+                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "nextBatch fromDB failed", e);
                 }
             }
         }
