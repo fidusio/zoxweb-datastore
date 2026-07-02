@@ -30,10 +30,15 @@ import java.net.URL;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class XlogistxMongoDataStoreTest {
 
-    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test";
+    // replicaSet=rs0 targets the replica set (required for transactions).
+    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0";
 
     private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
@@ -367,5 +372,68 @@ public class XlogistxMongoDataStoreTest {
 
         assert result == null;
 
+    }
+
+    /**
+     * Ensures the PropertyDAO collection + indexes + nv_config_entities registry exist BEFORE a
+     * transaction opens — in-transaction DDL is illegal, so the first-ever insert of a type must
+     * happen outside the txn. Safe to call repeatedly (idempotent after the first time).
+     */
+    private static void prewarmPropertyDAO() {
+        mongoDataStore.insert(createPropertyDAO("tx-warm-" + UUID.randomUUID(), "warmup", 0));
+    }
+
+    @Test
+    public void testTransactionCommit() {
+        prewarmPropertyDAO();
+
+        PropertyDAO a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
+        PropertyDAO b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
+
+        mongoDataStore.beginTransaction();
+        try {
+            mongoDataStore.insert(a);
+            mongoDataStore.insert(b);
+            // Read-your-own-writes: uncommitted rows are visible within the same session/transaction.
+            assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+                    "insert should be visible inside the transaction");
+            mongoDataStore.endTransaction(); // commit
+        } catch (RuntimeException e) {
+            mongoDataStore.abortTransaction();
+            throw e;
+        }
+
+        // After commit both rows are persisted and visible outside the transaction.
+        assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+                "a should persist after commit");
+        assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+                "b should persist after commit");
+        System.out.println("tx commit OK: " + a.getGUID() + ", " + b.getGUID());
+    }
+
+    @Test
+    public void testTransactionRollback() {
+        prewarmPropertyDAO();
+
+        PropertyDAO a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
+        PropertyDAO b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
+
+        mongoDataStore.beginTransaction();
+        try {
+            mongoDataStore.insert(a);
+            mongoDataStore.insert(b);
+            // Visible inside the transaction before the rollback.
+            assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+                    "insert should be visible inside the transaction");
+        } finally {
+            mongoDataStore.abortTransaction(); // rollback
+        }
+
+        // After rollback neither row is persisted (fresh reads, no active session).
+        assertTrue(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+                "a must not persist after rollback");
+        assertTrue(mongoDataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+                "b must not persist after rollback");
+        System.out.println("tx rollback OK: neither " + a.getGUID() + " nor " + b.getGUID() + " persisted");
     }
 }

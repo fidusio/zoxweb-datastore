@@ -39,7 +39,10 @@ public class XlogistxMongoDSCreator
         //DB_URI("db_uri", null),
         DATA_CACHE("data_cache", "false"),
         DATA_CACHE_CLASS_NAME("data_cache_class_name", null),
-        GRIDFS_POSTFIX("gridfs_name", "_gridfs");;
+        GRIDFS_POSTFIX("gridfs_name", "_gridfs"),
+        // Extra connection-string options preserved from the input URL's query
+        // (e.g. replicaSet=rs0, directConnection=true) — needed for transaction-capable deployments.
+        OPTIONS("options", null);
 
         private final String name;
         private final String value;
@@ -63,7 +66,17 @@ public class XlogistxMongoDSCreator
         }
 
         public static String dataStoreURI(APIConfigInfo aci) {
-           return "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT) + "/"+ aci.getProperties().getValue(DB_NAME) + "?uuidRepresentation=standard";
+            String base = "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT)
+                    + "/" + aci.getProperties().getValue(DB_NAME);
+            // Always enforce standard UUID representation; merge any options carried from the input
+            // URL (replicaSet, directConnection, ...) so transaction-capable deployments can be targeted.
+            String query = "uuidRepresentation=standard";
+            Object optionsObj = aci.getProperties().getValue(OPTIONS);
+            String options = optionsObj != null ? optionsObj.toString() : null;
+            if (SUS.isNotEmpty(options)) {
+                query = options.contains("uuidRepresentation") ? options : query + "&" + options;
+            }
+            return base + "?" + query;
         }
 
         public static String gridFSDataStoreName(APIConfigInfo aci) {
@@ -79,6 +92,10 @@ public class XlogistxMongoDSCreator
         ret.getProperties().build(MongoParam.HOST, urlInfo.ipAddress.getInetAddress())
                 .build(new NVInt(MongoParam.PORT, urlInfo.ipAddress.getPort()))
                 .build(MongoParam.DB_NAME, urlInfo.justPath());
+        // Preserve the query string (replicaSet, directConnection, ...) so dataStoreURI can re-apply it.
+        if (SUS.isNotEmpty(urlInfo.query)) {
+            ret.getProperties().build(MongoParam.OPTIONS, urlInfo.query);
+        }
         return ret;
     }
 

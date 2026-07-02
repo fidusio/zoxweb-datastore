@@ -122,6 +122,134 @@ public class XlogistxMongoDataStore
         return it;
     }
 
+    // ------------------------------------------------------------------
+    // Transaction support (MongoDB multi-document transactions).
+    //
+    // A transaction is bound to the calling thread via a ThreadLocal ClientSession.
+    // Every data operation routes through the session-aware helpers below: when a session
+    // is active the op joins the transaction, otherwise it runs as a normal auto-committed
+    // operation — identical to the pre-transaction behavior (null session == no change).
+    //
+    // Requires a replica set / mongos; a standalone mongod cannot run transactions.
+    // Schema/metadata (collections, indexes, nv_config_entities) and LongSequence
+    // increments are intentionally NOT part of the transaction — see the note on the
+    // metaManager calls and localNextSequenceValue.
+    // ------------------------------------------------------------------
+
+    private final ThreadLocal<ClientSession> txSession = new ThreadLocal<>();
+
+    /** @return the ClientSession bound to the current thread, or null if no transaction is active. */
+    public ClientSession getTransactionSession() {
+        return txSession.get();
+    }
+
+    /**
+     * Starts a MongoDB transaction bound to the current thread and returns the underlying
+     * {@link ClientSession}. All subsequent data operations on this thread participate until
+     * {@link #endTransaction()} (commit) or {@link #abortTransaction()} (rollback).
+     *
+     * @throws IllegalStateException if a transaction is already active on this thread (no nesting).
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T beginTransaction() {
+        if (txSession.get() != null) {
+            throw new IllegalStateException("A transaction is already active on this thread");
+        }
+        ClientSession s = newConnection().startSession();
+        s.startTransaction();
+        txSession.set(s);
+        return (T) s;
+    }
+
+    /**
+     * Commits the transaction bound to the current thread and releases the session.
+     * No-op if no transaction is active. On commit failure the transaction is aborted and
+     * the original failure is rethrown.
+     */
+    @Override
+    public void endTransaction() {
+        ClientSession s = txSession.get();
+        if (s == null) {
+            return;
+        }
+        try {
+            if (s.hasActiveTransaction()) {
+                s.commitTransaction();
+            }
+        } catch (RuntimeException e) {
+            try {
+                if (s.hasActiveTransaction()) s.abortTransaction();
+            } catch (RuntimeException ignore) {
+                // best-effort abort; surface the original commit failure
+            }
+            throw e;
+        } finally {
+            s.close();
+            txSession.remove();
+        }
+    }
+
+    /**
+     * Rolls back the transaction bound to the current thread and releases the session.
+     * No-op if no transaction is active. Module-local because {@link APIDataStore} exposes
+     * only begin/end — call this from a catch block to discard a failed unit of work.
+     */
+    @Override
+    public void abortTransaction() {
+        ClientSession s = txSession.get();
+        if (s == null) {
+            return;
+        }
+        try {
+            if (s.hasActiveTransaction()) {
+                s.abortTransaction();
+            }
+        } finally {
+            s.close();
+            txSession.remove();
+        }
+    }
+
+    // Session-aware operation routing. Each branches on the ambient session: a null session
+    // must never be passed to a session-taking overload (the driver rejects it), so we branch.
+
+    private void sInsertOne(MongoCollection<Document> c, Document doc) {
+        ClientSession s = txSession.get();
+        if (s != null) c.insertOne(s, doc);
+        else c.insertOne(doc);
+    }
+
+    private com.mongodb.client.result.UpdateResult sUpdateOne(MongoCollection<Document> c, Bson filter, Bson update) {
+        ClientSession s = txSession.get();
+        return s != null ? c.updateOne(s, filter, update) : c.updateOne(filter, update);
+    }
+
+    private com.mongodb.client.result.DeleteResult sDeleteOne(MongoCollection<Document> c, Bson filter) {
+        ClientSession s = txSession.get();
+        return s != null ? c.deleteOne(s, filter) : c.deleteOne(filter);
+    }
+
+    private com.mongodb.client.result.DeleteResult sDeleteMany(MongoCollection<Document> c, Bson filter) {
+        ClientSession s = txSession.get();
+        return s != null ? c.deleteMany(s, filter) : c.deleteMany(filter);
+    }
+
+    private long sCountDocuments(MongoCollection<Document> c, Bson filter) {
+        ClientSession s = txSession.get();
+        return s != null ? c.countDocuments(s, filter) : c.countDocuments(filter);
+    }
+
+    private FindIterable<Document> sFind(MongoCollection<Document> c, Bson filter) {
+        ClientSession s = txSession.get();
+        return s != null ? c.find(s, filter) : c.find(filter);
+    }
+
+    private FindIterable<Document> sFind(MongoCollection<Document> c) {
+        ClientSession s = txSession.get();
+        return s != null ? c.find(s) : c.find();
+    }
+
     //private Set<String> sequenceSet = new HashSet<String>();
 
 
@@ -712,7 +840,7 @@ public class XlogistxMongoDataStore
 
 //        try {
         if (collection != null) {
-            cur = collection.find().iterator();
+            cur = sFind(collection).iterator();
         }
 
 
@@ -781,7 +909,7 @@ public class XlogistxMongoDataStore
 
         Document dbObj = null;
         try {
-            dbObj = withTimeout(collection.find(query).projection((Bson) projection)).first();
+            dbObj = withTimeout(sFind(collection, query).projection((Bson) projection)).first();
         } catch (MongoException e) {
             getAPIExceptionHandler().throwException(e);
         }
@@ -807,7 +935,7 @@ public class XlogistxMongoDataStore
         Bson inQuery = Filters.in(XlogistxMongoUtil.ReservedID.GUID.getValue(), listOfObjectId);
 
         List<Document> listOfDocuments = new ArrayList<>();
-        try (MongoCursor<Document> cur = withTimeout(collection.find(inQuery)).iterator()) {
+        try (MongoCursor<Document> cur = withTimeout(sFind(collection, inQuery)).iterator()) {
             while (cur.hasNext()) {
                 listOfDocuments.add(cur.next());
             }
@@ -857,7 +985,7 @@ public class XlogistxMongoDataStore
             // Single query with $in operator for all refs in this collection
             Document query = new Document(XlogistxMongoUtil.ReservedID.GUID.getValue(), new Document("$in", refIds));
 
-            try (MongoCursor<Document> cursor = collection.find(query).iterator()) {
+            try (MongoCursor<Document> cursor = sFind(collection, query).iterator()) {
                 while (cursor.hasNext()) {
                     Document dbObject = cursor.next();
                     XlogistxMongoDBObjectMeta toAdd = new XlogistxMongoDBObjectMeta(meta.getNVConfigEntity());
@@ -1072,7 +1200,7 @@ public class XlogistxMongoDataStore
 
 
         try {
-            collection.insertOne(doc);
+            sInsertOne(collection, doc);
         } catch (MongoException e) {
             if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "insert failed for " + nvce.toCanonicalID(), e);
             getAPIExceptionHandler().throwException(e);
@@ -1366,7 +1494,7 @@ public class XlogistxMongoDataStore
 
             try {
                 if (collection != null) {
-                    collection.updateOne(Filters.eq(XlogistxMongoUtil.ReservedID.GUID.getValue(), refIdUUID), updatedObj);
+                    sUpdateOne(collection, Filters.eq(XlogistxMongoUtil.ReservedID.GUID.getValue(), refIdUUID), updatedObj);
                 }
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
@@ -1409,7 +1537,7 @@ public class XlogistxMongoDataStore
 
 
             try {
-                ret = collection.deleteOne(filter).wasAcknowledged();
+                ret = sDeleteOne(collection, filter).wasAcknowledged();
                 if (ret && dataCacheMonitor != null) {
                     dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, nve));
                 }
@@ -1423,7 +1551,7 @@ public class XlogistxMongoDataStore
                 MongoCollection<Document> ekdCollection = lookupCollection(EncapsulatedKey.NVCE_ENCAPSULATED_KEY.getName());
                 //if(log.isEnabled()) log.getLogger().info("EncryptedKeyDAO:" + ekdCollection);
                 if (ekdCollection != null)
-                    ekdCollection.deleteOne(filter);
+                    sDeleteOne(ekdCollection, filter);
                 // end
 
                 NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
@@ -1472,7 +1600,7 @@ public class XlogistxMongoDataStore
             throw new IllegalArgumentException("delete(NVConfigEntity, QueryMarker...) refuses empty filter; use deleteAll for that.");
         }
         MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
-        return collection.deleteMany(query).wasAcknowledged();
+        return sDeleteMany(collection, query).wasAcknowledged();
     }
 
     /**
@@ -1491,7 +1619,7 @@ public class XlogistxMongoDataStore
         MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
 
         try {
-            collection.deleteMany(new Document());
+            sDeleteMany(collection, new Document());
         } catch (MongoException e) {
             getAPIExceptionHandler().throwException(e);
         }
@@ -1536,7 +1664,7 @@ public class XlogistxMongoDataStore
         Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
         MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
 
-        return collection.countDocuments(query);
+        return sCountDocuments(collection, query);
     }
 
     /**
@@ -1775,7 +1903,7 @@ public class XlogistxMongoDataStore
 
         try {
             if (collection != null)
-                collection.insertOne(doc);
+                sInsertOne(collection, doc);
         } catch (MongoException e) {
 
             getAPIExceptionHandler().throwException(e);
@@ -1808,7 +1936,7 @@ public class XlogistxMongoDataStore
 
             try {
                 if (collection != null)
-                    collection.updateOne(Filters.eq(MetaToken.NAME.getName(), dynamicEnumMap.getName()), updatedObj);
+                    sUpdateOne(collection, Filters.eq(MetaToken.NAME.getName(), dynamicEnumMap.getName()), updatedObj);
             } catch (MongoException e) {
                 getAPIExceptionHandler().throwException(e);
             }
@@ -1833,7 +1961,7 @@ public class XlogistxMongoDataStore
         Document dbObj = null;
 
         try {
-            dbObj = collection.find(query).first();
+            dbObj = sFind(collection, query).first();
         } catch (MongoException e) {
             getAPIExceptionHandler().throwException(e);
         }
@@ -2000,7 +2128,7 @@ public class XlogistxMongoDataStore
 
         if (doc != null) {
             if (collection != null)
-                collection.deleteOne(doc);
+                sDeleteOne(collection, doc);
         }
 
         DynamicEnumMapManager.SINGLETON.deleteDynamicEnumMap(name);
@@ -2045,7 +2173,7 @@ public class XlogistxMongoDataStore
             filter.append(MetaToken.SUBJECT_GUID.getName(), userID);
         }
 
-        try (MongoCursor<Document> cur = withTimeout(collection.find(filter)).cursor()) {
+        try (MongoCursor<Document> cur = withTimeout(sFind(collection, filter)).cursor()) {
             while (cur.hasNext()) {
                 list.add(fromDBtoDynamicEnumMap(cur.next()));
             }
@@ -2131,7 +2259,7 @@ public class XlogistxMongoDataStore
 
         try {
             if (collection != null) {
-                cur = withTimeout(collection.find(query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
+                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
 
                 while (cur.hasNext()) {
                     try {
@@ -2227,7 +2355,7 @@ public class XlogistxMongoDataStore
                 fieldNames.add(XlogistxMongoUtil.ReservedID.GUID.getValue());
                 fieldNames.add(MetaToken.GUID.getName());
                 fieldNames.add(MetaToken.SUBJECT_GUID.getName());
-                cur = withTimeout(collection.find(query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
+                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
 
                 SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
 

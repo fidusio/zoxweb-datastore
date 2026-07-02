@@ -20,12 +20,14 @@ import org.zoxweb.shared.security.PermissionInfo;
 import org.zoxweb.shared.security.RoleGrant;
 import org.zoxweb.shared.security.RoleInfo;
 import org.zoxweb.shared.security.SubjectIdentifier;
+import org.zoxweb.shared.util.NVGenericMap;
 
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -39,7 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * do not delete anything — all created data is left in the store for inspection.
  */
 public class DomainSecurityManagerDBTest {
-    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test";
+    // replicaSet=rs0 targets the replica set (required for transactions).
+    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0";
 
     private static final String PASSWORD = "Secret123!";
 
@@ -140,5 +143,40 @@ public class DomainSecurityManagerDBTest {
         RoleGrant[] grants = domainSecurityManager.getRoleGrants(subject.getGUID());
         assertEquals(1, grants.length);
         assertEquals(grant.getGUID(), grants[0].getGUID());
+    }
+
+    /**
+     * Atomicity: createSubjectID inserts the subject and its principal, then calls createCredential.
+     * A CredentialInfo that is NOT an NVEntity makes createCredential throw AFTER those two inserts,
+     * so the whole unit of work must roll back — no subject, principal, or credential may survive.
+     */
+    @Test
+    public void createSubject_partialFailure_rollsBackAtomically() {
+        String principal = uniquePrincipal();
+
+        // Non-NVEntity credential — rejected by createCredential mid-transaction.
+        CredentialInfo badCredential = new CredentialInfo() {
+            @Override
+            public Type getCredentialType() {
+                return Type.PASSWORD;
+            }
+
+            @Override
+            public NVGenericMap getProperties() {
+                return new NVGenericMap();
+            }
+        };
+
+        assertThrows(SecurityException.class,
+                () -> domainSecurityManager.createSubjectID(principal, badCredential),
+                "createSubjectID must fail when the credential cannot be persisted");
+
+        // Nothing from the failed, rolled-back transaction persisted.
+        assertNull(domainSecurityManager.lookupSubjectID(principal),
+                "subject must be rolled back");
+        assertNull(domainSecurityManager.lookupPrincipalID(principal),
+                "principal must be rolled back");
+        assertEquals(0, domainSecurityManager.lookupAllPrincipalCredentials(principal).length,
+                "no credential must persist");
     }
 }

@@ -165,6 +165,41 @@ Implications:
 | **Total (main)** | **3558** |
 | `XlogistxMongoDataStoreTest.java` | 330 |
 
+### MongoDB transaction support
+
+`APIDataStore` gained two `default` hooks — `<T> T beginTransaction()` and `void endTransaction()` — implemented in `XlogistxMongoDataStore`.
+
+Design (matches the "ambient session" approach):
+- A `ThreadLocal<ClientSession> txSession` binds the active transaction to the calling thread.
+- `beginTransaction()` starts a `ClientSession` + `startTransaction()`, stores it, and returns the session as `T`. Rejects nesting (`IllegalStateException` if one is already active).
+- `endTransaction()` commits (aborts + rethrows on commit failure); always closes the session and clears the ThreadLocal.
+- `abortTransaction()` (module-local — the interface has no rollback) rolls back. Usage: `begin` → work in `try` → `endTransaction()` to commit / `abortTransaction()` in `catch`.
+- Every data op routes through null-safe helpers (`sInsertOne`, `sUpdateOne`, `sDeleteOne`, `sDeleteMany`, `sCountDocuments`, `sFind`): **session active → op joins the txn; session null → normal auto-committed op (no behavior change).** Never pass a null session to a session overload — always branch.
+
+Intentionally **outside** any transaction:
+- **Schema/metadata** — `XlogistxMongoMetaManager` (collection registration, `createIndex`, `nv_config_entities`) is left non-transactional. Avoids illegal in-transaction DDL and is idempotent. First-ever use of an entity type still triggers index creation, so **pre-warm each type outside a txn** (insert one instance) before relying on transactions for it.
+- **`LongSequence`** (`localNextSequenceValue` / `findOneAndUpdate`) — stays outside the ambient txn so a rollback doesn't un-consume a sequence value.
+- **GridFS** (`createFile`/`readFile`/`deleteFile`) — out of scope for v1; still non-transactional.
+
+Caveats:
+- Requires a **replica set / mongos** — a standalone `mongod` cannot run transactions (commit throws). Enable it via the connection URL: `XlogistxMongoDSCreator` now preserves the URL query string into a new `MongoParam.OPTIONS` and `dataStoreURI()` re-applies it (merged with the forced `uuidRepresentation=standard`). Tests use `?replicaSet=rs0`. Previously the query was silently dropped because `dataStoreURI()` rebuilt the URI from `HOST`/`PORT`/`DB_NAME` only.
+- `dataCacheMonitor` CRUD notifications currently fire before commit; on rollback the cache can be stale (buffering-until-commit is a possible follow-up).
+- A `ClientSession` is not thread-safe — do not cross threads inside a transaction (note `lookupProperty(ASYNC_CREATE)` returns TRUE).
+
+Caller-driven usage: `begin` … work … `end` (commit) or `abort` (rollback), on the **same thread**, always paired (`try`/`finally`). The datastore's CRUD methods never begin/end a transaction themselves — they just join the ambient one if present. `endTransaction()` commits once and, on commit failure, aborts and rethrows (no retry — atomic all-or-nothing by design).
+
+#### Transaction test coverage
+
+Tests require a replica set; the test URLs use `?replicaSet=rs0`.
+
+| Test | File | What it covers |
+|---|---|---|
+| `testTransactionCommit()` | `XlogistxMongoDataStoreTest` | Pre-warm → `begin` → two inserts → read-your-own-writes visible inside the txn → `endTransaction()` (commit) → both rows persist |
+| `testTransactionRollback()` | `XlogistxMongoDataStoreTest` | `begin` → two inserts (visible inside) → `abortTransaction()` → neither row persists |
+| `createSubject_partialFailure_rollsBackAtomically()` | `DomainSecurityManagerDBTest` | `createSubjectID` inserts subject + principal, then `createCredential` throws (non-`NVEntity` credential); asserts the whole unit of work rolled back — no subject, principal, or credential survives |
+
+`DomainSecurityManagerDBTest` also covers subject create/lookup, login success/failure, credential lookup, and permission/role grant round-trips (mirrors the mock-backed `DomainSecurityManagerDefaultTest`, but against live Mongo). All tests use unique UUID-suffixed principals/names and delete nothing, so they are safe to re-run against a persistent DB.
+
 ## Ground rules for future sessions on this module
 
 1. `mongo-sync` is immutable — never edit anything under the `mongo-sync/` directory.
@@ -176,3 +211,4 @@ Implications:
 7. `operationTimeoutMS` and `maxSearchResults` on `XlogistxMongoDataStore` are tunable at runtime via setters — surface them via config if callers need non-default values.
 8. When adding support for a new NV type, update **all five serialization paths**: `insert()`, `serNVEntity()`, `patch()`, `serNVGenericMap()` (for NVGenericMap-embedded values), and the deserializer in `XlogistxMongoUtil.init()` / `fromNVGenericMap()`.
 9. **`_id` is keyed off `GUID`, not the deprecated `referenceID`.** All ID-bearing paths (`insert`, `serNVEntity`, `patch`, `delete`, GridFS helpers) decode `_id` from `nve.getGUID()`. `referenceID` is legacy — do not reintroduce it into the persisted `_id` / lookup logic.
+10. **Transactions route through the ambient `ThreadLocal<ClientSession>` — never call the Mongo driver's `insertOne`/`find`/etc. directly.** Use the `s*` helpers (`sInsertOne`, `sFind`, …) so new call sites join an active transaction; a direct driver call silently runs outside the txn. Schema/metadata (`XlogistxMongoMetaManager` DDL, `nv_config_entities`), `LongSequence` (`findOneAndUpdate`), and GridFS are intentionally non-transactional — keep them that way. No commit retry (atomic all-or-nothing).
