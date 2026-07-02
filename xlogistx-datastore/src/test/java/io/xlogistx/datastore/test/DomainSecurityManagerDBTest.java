@@ -63,7 +63,7 @@ public class DomainSecurityManagerDBTest {
         mongoDataStore.setAPIConfigInfo(configInfo);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
-        domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(mongoDataStore);
+        domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(mongoDataStore).addCredentialType(CIPassword.class);
     }
 
     /** A unique principal per invocation so reruns never collide on the unique index. */
