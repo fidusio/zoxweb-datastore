@@ -623,6 +623,19 @@ public class XlogistxMongoDataStore
             return;
         }
 
+        // Non-reserved reference-ID fields are persisted as native UUIDs under the
+        // "_"-prefixed key produced by ReservedID.map() — read them back symmetrically,
+        // re-encoding the UUID to its string form on the java side.
+        if (nvc.isTypeReferenceID() && clazz == String.class) {
+            Object value = doc.get(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()));
+            if (value instanceof UUID)
+                ((NVPair) nvb).setValue(IDGs.UUIDV7.encode((UUID) value));
+            else if (value instanceof String)
+                ((NVPair) nvb).setValue((String) value);
+
+            return;
+        }
+
 
         if (doc.get(nvc.getName()) == null)
             return;
@@ -744,8 +757,9 @@ public class XlogistxMongoDataStore
             if (valueFilterValue instanceof Document) {
                 Document demRefObject = (Document) valueFilterValue;
 
-
-                UUID demRefID = XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(demRefObject);
+                // DEM reference sub-documents (serNVPair) key the target id under "guid",
+                // not "_id" — getRefIDAsUUID only applies to top-level documents.
+                UUID demRefID = (UUID) demRefObject.get(MetaToken.GUID.getName());
                 String collectionName = demRefObject.getString(MetaToken.COLLECTION_NAME.getName());
 
                 return searchDynamicEnumMapByReferenceID(demRefID, collectionName);
@@ -960,7 +974,9 @@ public class XlogistxMongoDataStore
 
         for (Document toFind : listOfObjectRefID) {
             UUID canonicalId = (UUID) toFind.get(MetaToken.CANONICAL_ID.getName());
-            UUID refId = (UUID) toFind.get(XlogistxMongoUtil.ReservedID.GUID.getValue());
+            // Reference sub-documents (serNVEntityReference) key the target id under "guid",
+            // NOT "_id" — that mapping only applies to top-level documents.
+            UUID refId = (UUID) toFind.get(MetaToken.GUID.getName());
 
             if (canonicalId != null && refId != null) {
                 refsByCollection.computeIfAbsent(canonicalId, k -> new ArrayList<>()).add(refId);
@@ -1003,7 +1019,8 @@ public class XlogistxMongoDataStore
         if (toFind != null) {
             XlogistxMongoDBObjectMeta ret = metaManager.lookupCollectionName(this, (UUID) toFind.get(MetaToken.CANONICAL_ID.getName()));
             if (ret != null) {
-                UUID refID = (UUID) toFind.get(XlogistxMongoUtil.ReservedID.GUID.getValue());
+                // Reference sub-documents key the target id under "guid", not "_id".
+                UUID refID = (UUID) toFind.get(MetaToken.GUID.getName());
                 Document dbObject = lookupByReferenceID(ret.getNVConfigEntity().toCanonicalID(), refID);
                 if (dbObject != null) {
                     ret.setContent(dbObject);
@@ -1169,7 +1186,7 @@ public class XlogistxMongoDataStore
             } /*else if (MetaToken.GUID.getName().equals(nvc.getName())) {
                 // set the GUID ass uuid in the database
                 doc.append(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) nvb.getValue()));
-            }*/ else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
+            }*/ else if (XlogistxMongoUtil.ReservedID.isUUIDField(nvc) && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
                 if (value != null) {
                     doc.append(XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName()), IDGs.UUIDV7.decode(value));
@@ -1283,7 +1300,7 @@ public class XlogistxMongoDataStore
                 doc.append(nvc.getName(), nvb.getValue());
             } else if (nvc.isArray()) {
                 doc.append(nvc.getName(), nvb.getValue());
-            } else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
+            } else if (XlogistxMongoUtil.ReservedID.isUUIDField(nvc) && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                 String value = (String) nvb.getValue();
 
                 if (value != null) {
@@ -1470,7 +1487,7 @@ public class XlogistxMongoDataStore
                     updatedDoc.put(nvc.getName(), nvb.getValue());
                 } else if (nvc.isArray()) {
                     updatedDoc.put(nvc.getName(), nvb.getValue());
-                } else if (nvc.isTypeReferenceID() && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
+                } else if (XlogistxMongoUtil.ReservedID.isUUIDField(nvc) && !XlogistxMongoUtil.ReservedID.GUID.getName().equals(nvc.getName())) {
                     String value = (String) nvb.getValue();
 
                     if (value != null) {

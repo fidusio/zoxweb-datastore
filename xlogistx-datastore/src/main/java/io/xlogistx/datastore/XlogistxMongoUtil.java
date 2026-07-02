@@ -18,9 +18,13 @@ public class XlogistxMongoUtil {
      */
     public enum ReservedID
             implements GetNameValue<String>, DataDecoder<Document, String> {
-        //REFERENCE_ID(MetaToken.REFERENCE_ID.getName(), "_id"),
+        BROKER_GUID(MetaToken.BROKER_GUID),
+        GUID(MetaToken.GUID.getName(), "_id"),
+        PERMISSION_GUID(MetaToken.PERMISSION_GUID),
+        ROLE_GROUP_GUID(MetaToken.ROLE_GROUP_GUID),
+        ROLE_GUID(MetaToken.ROLE_GUID),
         SUBJECT_GUID(MetaToken.SUBJECT_GUID),
-        GUID(MetaToken.GUID.getName(), "_id");
+        ;
 
         private final String name;
         private final String value;
@@ -79,6 +83,16 @@ public class XlogistxMongoUtil {
             }
 
             return name;
+        }
+
+        /**
+         * True if this attribute must be persisted as a native UUID: either a member of
+         * this enum or an attribute flagged as a reference-ID type. The reserved names are
+         * included explicitly because their NVConfigs in zoxweb-core are not flagged
+         * {@code isTypeReferenceID} — membership in this enum is what makes them UUID-stored.
+         */
+        public static boolean isUUIDField(NVConfig nvc) {
+            return nvc != null && (lookupByName(nvc.getName()) != null || nvc.isTypeReferenceID());
         }
     }
 

@@ -119,11 +119,14 @@ public class MongoQueryFormatter {
             return TimestampFilter.SINGLETON.validate((String) queryMatch.getValue());
         }
 
-        if (nvc != null && nvc.isTypeReferenceID() && queryMatch.getValue() instanceof String) {
+        // Reserved ID fields (guid/subject_guid/broker_guid) and reference-ID-typed fields
+        // are stored as native UUIDs — string query values must be decoded to match.
+        if (nvc != null && XlogistxMongoUtil.ReservedID.isUUIDField(nvc) && queryMatch.getValue() instanceof String) {
             return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }
 
-        if (nvc == null && XlogistxMongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == XlogistxMongoUtil.ReservedID.GUID
+        // Dotted names (nested sub-documents): any reserved ID leaf is stored as a UUID.
+        if (nvc == null && XlogistxMongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) != null
                 && queryMatch.getValue() instanceof String) {
             return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }

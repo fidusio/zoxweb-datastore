@@ -23,6 +23,7 @@ import com.mongodb.client.model.IndexOptions;
 import org.bson.Document;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.IDGs;
+import org.zoxweb.server.util.UUID7;
 import org.zoxweb.shared.util.*;
 
 import java.util.ArrayList;
@@ -157,7 +158,7 @@ public class XlogistxMongoMetaManager {
             nvConfigEntities.insertOne(nvceDBO);
         }
 
-        nvce.setGUID(XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(nvceDBO).toString());
+        nvce.setGUID(IDGs.UUIDV7.encode(XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(nvceDBO)));
         nvConfigEntityCache.putIfAbsent(canonicalId, nvce);
         return nvce;
     }

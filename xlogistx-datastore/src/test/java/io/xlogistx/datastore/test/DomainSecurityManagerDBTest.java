@@ -18,6 +18,8 @@ import org.zoxweb.shared.security.DomainSecurityManager;
 import org.zoxweb.shared.security.PermissionGrant;
 import org.zoxweb.shared.security.PermissionInfo;
 import org.zoxweb.shared.security.RoleGrant;
+import org.zoxweb.shared.security.RoleGroupGrant;
+import org.zoxweb.shared.security.RoleGroupInfo;
 import org.zoxweb.shared.security.RoleInfo;
 import org.zoxweb.shared.security.SubjectIdentifier;
 import org.zoxweb.shared.util.NVGenericMap;
@@ -30,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Integration tests for {@link DomainSecurityManager} backed by the real
@@ -124,6 +127,15 @@ public class DomainSecurityManagerDBTest {
         assertEquals(grant.getGUID(), grants[0].getGUID());
     }
 
+
+    @Test void createFullRole()
+    {
+        PermissionInfo perm = domainSecurityManager.createPermission(new PermissionInfo(UUID.randomUUID() + ".perm", "read:batata"));
+        RoleInfo role  = new RoleInfo(perm);
+        role.setName(UUID.randomUUID() + ".role");
+        domainSecurityManager.createRole(role);
+    }
+
     @Test
     public void roleGrant_roundTripsThroughDataStore() {
         String principal = uniquePrincipal();
@@ -143,6 +155,58 @@ public class DomainSecurityManagerDBTest {
         RoleGrant[] grants = domainSecurityManager.getRoleGrants(subject.getGUID());
         assertEquals(1, grants.length);
         assertEquals(grant.getGUID(), grants[0].getGUID());
+    }
+
+    /**
+     * createRoleGroup + addRoleGroupGrant round-trip. The group's roles field is a
+     * GET_NAME_MAP of non-embedded RoleInfo references, so reading the group back also
+     * exercises the reference sub-document resolution path (lookupByReferenceIDsMaybe).
+     */
+    @Test
+    public void roleGroupGrant_roundTripsThroughDataStore() {
+        String principal = uniquePrincipal();
+        String suffix = UUID.randomUUID().toString();
+        SubjectIdentifier subject = domainSecurityManager.createSubjectID(principal, HashUtil.toBCryptPassword(PASSWORD));
+
+        // Two persisted roles bundled into one role group.
+        RoleInfo roleA = new RoleInfo();
+        roleA.setName("role.group-member.a." + suffix);
+        roleA = domainSecurityManager.createRole(roleA);
+        RoleInfo roleB = new RoleInfo();
+        roleB.setName("role.group-member.b." + suffix);
+        roleB = domainSecurityManager.createRole(roleB);
+
+        String groupName = "rolegroup.admins." + suffix;
+        RoleGroupInfo group = new RoleGroupInfo(roleA, roleB);
+        group.setName(groupName);
+        group = domainSecurityManager.createRoleGroup(group);
+        assertNotNull(group.getGUID());
+
+        // Lookup by name — both role references must resolve on read-back.
+        RoleGroupInfo looked = domainSecurityManager.lookupRoleGroup(null, groupName);
+        assertNotNull(looked);
+        assertEquals(group.getGUID(), looked.getGUID());
+        RoleInfo[] roles = looked.getRoles();
+        assertEquals(2, roles.length, "both role references must resolve on read");
+        for (RoleInfo expected : new RoleInfo[]{roleA, roleB}) {
+            boolean matched = false;
+            for (RoleInfo r : roles) {
+                if (expected.getGUID().equals(r.getGUID())) {
+                    matched = true;
+                    break;
+                }
+            }
+            assertTrue(matched, "role " + expected.getName() + " must be resolved in the group");
+        }
+
+        // Grant the role group to the subject; the grant is searchable by subject GUID.
+        RoleGroupGrant grant = domainSecurityManager.addRoleGroupGrant(subject, group);
+        assertEquals(group.getGUID(), grant.getRoleGroupGUID());
+
+        RoleGroupGrant[] grants = domainSecurityManager.getRoleGroupGrants(subject.getGUID());
+        assertEquals(1, grants.length);
+        assertEquals(grant.getGUID(), grants[0].getGUID());
+        assertEquals(group.getGUID(), grants[0].getRoleGroupGUID());
     }
 
     /**

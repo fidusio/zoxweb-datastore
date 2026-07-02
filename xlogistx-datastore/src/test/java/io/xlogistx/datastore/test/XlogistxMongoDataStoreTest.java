@@ -6,15 +6,24 @@ import io.xlogistx.datastore.XlogistxMongoDataStore;
 import io.xlogistx.datastore.XlogistxMongoDSCreator;
 import io.xlogistx.datastore.XlogistxMongoDSCreator.MongoParam;
 import io.xlogistx.opsec.OPSecUtil;
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
+import org.zoxweb.datastore.test.DSConst;
 import org.zoxweb.server.util.GSONUtil;
+import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
+import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.URLInfo;
+import org.zoxweb.shared.util.Const.RelationalOperator;
+import org.zoxweb.shared.util.MetaToken;
+import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVDouble;
+import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.NVEntityReferenceList;
 import org.zoxweb.shared.util.NVFloat;
 import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.NVGenericMapList;
@@ -32,7 +41,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class XlogistxMongoDataStoreTest {
@@ -435,5 +446,77 @@ public class XlogistxMongoDataStoreTest {
         assertTrue(mongoDataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
                 "b must not persist after rollback");
         System.out.println("tx rollback OK: neither " + a.getGUID() + " nor " + b.getGUID() + " persisted");
+    }
+
+    /**
+     * ReservedID storage invariant: every reserved ID field (guid via _id, subject_guid,
+     * broker_guid) must be persisted in Mongo as a native UUID and surfaced on the java
+     * side as its IDGs.UUIDV7 string encoding — on insert, entity read-back, and query.
+     */
+    @Test
+    public void testReservedIDUUIDInvariant() {
+        String subjectGUID = IDGs.UUIDV7.genID();
+        PropertyDAO pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
+        pd.setSubjectGUID(subjectGUID);
+        mongoDataStore.insert(pd);
+
+        // Raw document: _id and subject_guid must be native UUIDs.
+        Document raw = mongoDataStore.lookupByReferenceID(
+                ((NVConfigEntity) pd.getNVConfig()).toCanonicalID(), pd.getGUID());
+        assertNotNull(raw, "inserted document must be found by GUID");
+        assertTrue(raw.get("_id") instanceof UUID, "_id must be a native UUID");
+        Object rawSubjectGUID = raw.get(MetaToken.SUBJECT_GUID.getName());
+        assertTrue(rawSubjectGUID instanceof UUID,
+                "subject_guid must be stored as a native UUID, was: "
+                        + (rawSubjectGUID == null ? "null" : rawSubjectGUID.getClass().getName()));
+        assertEquals(subjectGUID, IDGs.UUIDV7.encode((UUID) rawSubjectGUID));
+
+        // Entity round-trip: the java side must carry the UUIDV7 string encoding.
+        PropertyDAO read = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        assertEquals(pd.getGUID(), read.getGUID());
+        assertEquals(subjectGUID, read.getSubjectGUID());
+
+        // Query round-trip: a string subject_guid criterion must decode to UUID and match.
+        List<PropertyDAO> found = mongoDataStore.search(PropertyDAO.class.getName(), null,
+                new QueryMatchString(MetaToken.SUBJECT_GUID, subjectGUID, RelationalOperator.EQUAL));
+        assertFalse(found.isEmpty(), "query by subject_guid must match the UUID-stored field");
+        assertEquals(pd.getGUID(), found.get(0).getGUID());
+        System.out.println("reserved-id UUID invariant OK: " + pd.getGUID() + " / " + subjectGUID);
+    }
+
+    /**
+     * Reference sub-documents store the target id under the "guid" key. This covers both
+     * readers of that key: lookupByReferenceID(Document) for a single non-embedded
+     * NVEntityReference, and lookupByReferenceIDsMaybe for an NVEntityReferenceList.
+     */
+    @Test
+    public void testEntityReferenceRoundTrip() {
+        DSConst.ComplexTypes ct = DSConst.ComplexTypes.buildComplex("ref-round-trip-" + UUID.randomUUID());
+        ct.setAllTypes(DSConst.AllTypes.autoBuilder());
+        mongoDataStore.insert(ct);
+
+        DSConst.ComplexTypes read = (DSConst.ComplexTypes) mongoDataStore
+                .searchByID(DSConst.ComplexTypes.class.getName(), ct.getGUID()).get(0);
+
+        // Single non-embedded NVEntityReference — resolved via lookupByReferenceID(Document).
+        assertNotNull(read.getAllTypes(), "non-embedded NVEntityReference must resolve on read");
+        assertEquals(ct.getAllTypes().getGUID(), read.getAllTypes().getGUID());
+
+        // NVEntityReferenceList — resolved via the batched lookupByReferenceIDsMaybe.
+        NVEntity[] originalRefs = ((NVEntityReferenceList) ct.lookup("array_of_all_types")).values();
+        NVEntity[] readRefs = ((NVEntityReferenceList) read.lookup("array_of_all_types")).values();
+        assertEquals(originalRefs.length, readRefs.length, "every referenced entity must resolve on read");
+        for (NVEntity original : originalRefs) {
+            boolean matched = false;
+            for (NVEntity r : readRefs) {
+                if (original.getGUID().equals(r.getGUID())) {
+                    matched = true;
+                    break;
+                }
+            }
+            assertTrue(matched, "referenced entity " + original.getGUID() + " must be resolved");
+        }
+        System.out.println("entity reference round-trip OK: " + ct.getGUID()
+                + " single=" + read.getAllTypes().getGUID() + " list=" + readRefs.length);
     }
 }

@@ -146,6 +146,39 @@ Implications:
 | 50 | Hygiene | `XlogistxMongoDataStore` | Removed the dead `getDBAddress()` method (connection goes through the URI string) and its now-unused `ServerAddress` / `UnknownHostException` imports |
 | 51 | Critical | `insertDynamicEnumMap()` | Now writes `_id` as a native UUID (reusing the DEM's GUID or generating one via `genNativeID()`). The old code wrote to a `"guid"` field keyed off `referenceID`, leaving `_id` as a Mongo `ObjectId` — so the immediately-following `getRefIDAsUUID(doc)` (which reads `_id` as a `UUID`) threw for every fresh DEM |
 
+### Reserved-ID UUID storage invariant (2026-07-02)
+
+Invariant: **every `ReservedID` field and every `isTypeReferenceID` attribute is persisted in Mongo as a native UUID and surfaced on the java side as its `IDGs.UUIDV7` string encoding.** Audit found this was not implemented — zoxweb-core's `ReferenceIDDAO` NVConfigs (`NVC_SUBJECT_GUID`, `NVC_GUID`) are NOT flagged `isRefID`, so `subject_guid`/`broker_guid` were silently stored as raw Strings, and truly-flagged ref-ID fields were written under `"_" + name` but read from `name` (data loss on read).
+
+| # | Category | Location | Fix applied |
+|---|---|---|---|
+| 52 | Critical | `XlogistxMongoUtil.ReservedID` | Added `isUUIDField(NVConfig)` — true when the attribute is a ReservedID member OR `isTypeReferenceID`. Membership in the enum is what makes reserved names UUID-stored (their zoxweb-core NVConfigs are not ref-ID-flagged) |
+| 53 | Critical | `insert()`, `serNVEntity()`, `patch()` | Write gate widened from `nvc.isTypeReferenceID()` to `ReservedID.isUUIDField(nvc)` — `subject_guid`/`broker_guid`/etc. now persist as native UUIDs |
+| 54 | Critical | `updateMappedValue()` | New branch for non-reserved ref-ID fields: reads via `ReservedID.map()` (the `"_"`-prefixed key the writers use) and re-encodes UUID→String. Previously these fields were never read back |
+| 55 | Correctness | `MongoQueryFormatter.map()` | String query values decode to UUID for any `isUUIDField` attribute (was: only `isTypeReferenceID`); dotted-name decode extended from `== ReservedID.GUID` to any ReservedID leaf |
+
+The read path tolerates legacy String-stored values (`instanceof UUID` / `instanceof String` branches), so pre-fix documents still load. **Caveat: pre-fix documents with String `subject_guid` will NOT match post-fix UUID queries** — needs a one-off migration if querying legacy data by reserved IDs.
+
+`ReservedID` was also extended with `PERMISSION_GUID`, `ROLE_GROUP_GUID`, `ROLE_GUID` (and `BROCKER_GUID` typo fixed to `BROKER_GUID`); `isUUIDField` covers new members automatically.
+
+Test: `testReservedIDUUIDInvariant()` in `XlogistxMongoDataStoreTest` — asserts the raw Mongo document stores `_id` and `subject_guid` as native `java.util.UUID`, the entity round-trip returns the UUIDV7 string, and a String `subject_guid` query criterion matches.
+
+### Reference sub-document guid read fix (2026-07-02)
+
+Reference *sub-documents* (`serNVEntityReference`, `serNVPair` DEM branch) store the target id under the `"guid"` key, but three readers extracted it via `ReservedID.GUID.getValue()` (`"_id"`) — a port artifact of GUID's remap from `"guid"` to `"_id"`, which is only correct for top-level documents. Result: `NVEntityReferenceList`/`GetNameMap`/`ReferenceIDMap` read back empty (silently), and non-embedded `NVEntityReference` / NVGenericMap-embedded entities / DEM value filters NPE'd on read.
+
+| # | Category | Location | Fix applied |
+|---|---|---|---|
+| 56 | Critical | `lookupByReferenceIDsMaybe`, `lookupByReferenceID(Document)`, `getValueFilter` | Read the ref UUID from `MetaToken.GUID.getName()` (`"guid"`) instead of `ReservedID.GUID.getValue()` (`"_id"`). No data migration needed — writers always emitted `"guid"` |
+
+**Rule of thumb:** `ReservedID.GUID.getValue()` / `getRefIDAsUUID()` are for **top-level** documents only; reference **sub-documents** key the target id under `MetaToken.GUID.getName()`.
+
+Test: `testEntityReferenceRoundTrip()` in `XlogistxMongoDataStoreTest` — `DSConst.ComplexTypes` with a non-embedded `NVEntityReference` (single, via `lookupByReferenceID(Document)`) and an `NVEntityReferenceList` of 3 (batched, via `lookupByReferenceIDsMaybe`); asserts every reference resolves with matching GUIDs after read-back.
+
+### Running tests in this environment
+
+`mvn test` silently skips: surefire can't download its JUnit provider (PKIX/TLS failure to Maven Central; local repo is `D:/dev/data/java/.m2/repository`). Workaround: compile with `mvn -o test-compile`, then run via `junit-platform-launcher-6.0.1` (present in the local repo) with the classpath from `mvn -o dependency:build-classpath`. Tests need the live replica set `mongodb://localhost:27017/?replicaSet=rs0`.
+
 ### Verification
 
 `mvn -pl xlogistx-datastore -DskipTests compile` → `BUILD SUCCESS` at every checkpoint through the fix sequence.
@@ -198,7 +231,7 @@ Tests require a replica set; the test URLs use `?replicaSet=rs0`.
 | `testTransactionRollback()` | `XlogistxMongoDataStoreTest` | `begin` → two inserts (visible inside) → `abortTransaction()` → neither row persists |
 | `createSubject_partialFailure_rollsBackAtomically()` | `DomainSecurityManagerDBTest` | `createSubjectID` inserts subject + principal, then `createCredential` throws (non-`NVEntity` credential); asserts the whole unit of work rolled back — no subject, principal, or credential survives |
 
-`DomainSecurityManagerDBTest` also covers subject create/lookup, login success/failure, credential lookup, and permission/role grant round-trips (mirrors the mock-backed `DomainSecurityManagerDefaultTest`, but against live Mongo). All tests use unique UUID-suffixed principals/names and delete nothing, so they are safe to re-run against a persistent DB.
+`DomainSecurityManagerDBTest` also covers subject create/lookup, login success/failure, credential lookup, and permission/role/role-group grant round-trips (mirrors the mock-backed `DomainSecurityManagerDefaultTest`, but against live Mongo). `roleGroupGrant_roundTripsThroughDataStore` additionally exercises the reference sub-document resolution path (fix #56): `RoleGroupInfo.roles` is a GET_NAME_MAP of non-embedded `RoleInfo` references resolved via `lookupByReferenceIDsMaybe` on read-back. All tests use unique UUID-suffixed principals/names and delete nothing, so they are safe to re-run against a persistent DB.
 
 ## Ground rules for future sessions on this module
 
