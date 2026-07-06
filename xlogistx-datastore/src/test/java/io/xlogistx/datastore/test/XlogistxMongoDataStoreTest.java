@@ -485,6 +485,52 @@ public class XlogistxMongoDataStoreTest {
     }
 
     /**
+     * First-use of a collection INSIDE a transaction on a fresh database. Reproduces the
+     * DMTool/createSubjectID failure: a read pins the transaction snapshot before any
+     * collection exists, then the first insert of a type used to trigger out-of-band
+     * index DDL that raced the transaction's implicit namespace creation — commit failed
+     * with WriteConflict 112 "Collection namespace ... is already in use". The DDL is now
+     * deferred until after commit.
+     */
+    @Test
+    public void testTransactionFirstUseCollection() {
+        String freshDB = "tx_fresh_" + UUID.randomUUID().toString().substring(0, 8);
+        XlogistxMongoDSCreator creator = new XlogistxMongoDSCreator();
+        APIConfigInfo configInfo = creator.toAPIConfigInfo(
+                "mongodb://localhost:27017/" + freshDB + "?replicaSet=rs0");
+        XlogistxMongoDataStore ds = new XlogistxMongoDataStore();
+        ds.setAPIConfigInfo(configInfo);
+
+        try {
+            PropertyDAO pd = createPropertyDAO("tx-first-use-" + UUID.randomUUID(), "fresh-db first-use in txn", 1);
+
+            ds.beginTransaction();
+            try {
+                // Pin the snapshot with a read BEFORE any collection exists (mirrors createSubjectID).
+                assertTrue(ds.searchByID(PropertyDAO.class.getName(), IDGs.UUIDV7.genID()).isEmpty());
+                ds.insert(pd);
+                ds.endTransaction(); // used to throw WriteConflict 112 here
+            } catch (RuntimeException e) {
+                ds.abortTransaction();
+                throw e;
+            }
+
+            // Committed and readable.
+            assertFalse(ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).isEmpty(),
+                    "first-use insert must survive the commit");
+            // The deferred DDL ran post-commit: collection is registered/indexed.
+            assertTrue(ds.getMetaManager().isIndexed(
+                            ds.connect().getCollection(PropertyDAO.NVC_PROPERTY_DAO.toCanonicalID())),
+                    "deferred first-use DDL must run after commit");
+            System.out.println("fresh-db first-use txn OK: " + freshDB + " / " + pd.getGUID());
+        } finally {
+            // Throwaway database created by this test only.
+            ds.connect().drop();
+            ds.close();
+        }
+    }
+
+    /**
      * Reference sub-documents store the target id under the "guid" key. This covers both
      * readers of that key: lookupByReferenceID(Document) for a single non-embedded
      * NVEntityReference, and lookupByReferenceIDsMaybe for an NVEntityReferenceList.

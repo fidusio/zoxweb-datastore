@@ -10,20 +10,16 @@ import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.security.DomainSecurityManagerDefault;
 import org.zoxweb.server.security.HashUtil;
+import org.zoxweb.server.security.SecUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.crypto.CIPassword;
-import org.zoxweb.shared.security.CredentialInfo;
-import org.zoxweb.shared.security.DomainSecurityManager;
-import org.zoxweb.shared.security.PermissionGrant;
-import org.zoxweb.shared.security.PermissionInfo;
-import org.zoxweb.shared.security.RoleGrant;
-import org.zoxweb.shared.security.RoleGroupGrant;
-import org.zoxweb.shared.security.RoleGroupInfo;
-import org.zoxweb.shared.security.RoleInfo;
-import org.zoxweb.shared.security.SubjectIdentifier;
+import org.zoxweb.shared.crypto.CredentialHasher;
+import org.zoxweb.shared.crypto.CryptoConst;
+import org.zoxweb.shared.security.*;
 import org.zoxweb.shared.util.NVGenericMap;
 
+import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,6 +44,7 @@ public class DomainSecurityManagerDBTest {
     public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0";
 
     private static final String PASSWORD = "Secret123!";
+    private static final String NEW_PASSWORD = "N3wSecret456$";
 
     private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
@@ -107,6 +104,38 @@ public class DomainSecurityManagerDBTest {
         CredentialInfo ci = domainSecurityManager.lookupCredential(principal, CredentialInfo.Type.PASSWORD);
         assertInstanceOf(CIPassword.class, ci);
         assertEquals(1, domainSecurityManager.lookupAllPrincipalCredentials(principal).length);
+    }
+
+    /**
+     * Password update through the security-manager API: the stored CIPassword is re-hashed
+     * with the new password (same credential row — GUID preserved), persisted via
+     * updateCredential, and login flips from the old password to the new one.
+     */
+    @Test
+    public void updatePassword_changesLoginCredential() throws NoSuchAlgorithmException {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = domainSecurityManager.createSubjectID(principal, HashUtil.toBCryptPassword(PASSWORD));
+        assertEquals(subject.getGUID(), domainSecurityManager.login(principal, PASSWORD).getGUID());
+
+        CIPassword current = (CIPassword) domainSecurityManager.lookupCredential(principal, CredentialInfo.Type.PASSWORD);
+        assertNotNull(current);
+
+        // Re-hash with the new password; update() validates the old password and keeps identity.
+        CredentialHasher<CIPassword> hasher = SecUtil.lookupCredentialHasher(CryptoConst.HashType.ARGON2.getName());
+        CIPassword updated = hasher.update(current, PASSWORD, NEW_PASSWORD);
+        domainSecurityManager.updateCredential(subject, updated);
+
+        // Old password rejected, new password accepted.
+        assertThrows(SecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD),
+                "old password must no longer authenticate");
+        assertEquals(subject.getGUID(), domainSecurityManager.login(principal, NEW_PASSWORD).getGUID(),
+                "new password must authenticate");
+
+        // Updated in place: still exactly one credential, same GUID as before.
+        assertEquals(1, domainSecurityManager.lookupAllPrincipalCredentials(principal).length);
+        CIPassword reloaded = (CIPassword) domainSecurityManager.lookupCredential(principal, CredentialInfo.Type.PASSWORD);
+        assertNotNull(reloaded);
+        assertEquals(current.getGUID(), reloaded.getGUID(), "credential must be updated in place, not replaced");
     }
 
     @Test
@@ -223,6 +252,16 @@ public class DomainSecurityManagerDBTest {
             @Override
             public Type getCredentialType() {
                 return Type.PASSWORD;
+            }
+
+            @Override
+            public SecConst.SecStatus getCredentialStatus() {
+                return SecConst.SecStatus.ACTIVE;
+            }
+
+            @Override
+            public void setCredentialStatus(SecConst.SecStatus status) {
+
             }
 
             @Override

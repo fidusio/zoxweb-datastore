@@ -129,7 +129,7 @@ public class XlogistxMongoMetaManager {
      * Cached version — reuses already-resolved NVConfigEntities by canonical id
      * instead of re-querying Mongo on every call.
      */
-    public NVConfigEntity addNVConfigEntity(MongoDatabase mongo, NVConfigEntity nvce) {
+    public synchronized NVConfigEntity addNVConfigEntity(MongoDatabase mongo, NVConfigEntity nvce) {
         if (nvce.getReferenceID() != null) {
             return nvce;
         }

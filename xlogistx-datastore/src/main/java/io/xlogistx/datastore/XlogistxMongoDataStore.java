@@ -138,9 +138,61 @@ public class XlogistxMongoDataStore
 
     private final ThreadLocal<ClientSession> txSession = new ThreadLocal<>();
 
+    /**
+     * First-use collection DDL deferred while a transaction is active, keyed by collection
+     * name; value is the NVConfigEntity, or DynamicEnumMap.class for DEM collections.
+     * Flushed after a successful commit, discarded on abort.
+     */
+    private final ThreadLocal<LinkedHashMap<String, Object>> txDeferredDDL = new ThreadLocal<>();
+
     /** @return the ClientSession bound to the current thread, or null if no transaction is active. */
     public ClientSession getTransactionSession() {
         return txSession.get();
+    }
+
+    /**
+     * Ensure a collection's registration + unique indexes exist. Outside a transaction the
+     * DDL runs immediately. Inside a transaction it is deferred until after commit: on first
+     * use the collection does not exist yet, so creating it out-of-band here would race the
+     * transaction's own implicit namespace creation and fail the commit with a transient
+     * WriteConflict (error 112, "Collection namespace ... is already in use").
+     *
+     * @param nvce the entity meta, or null for DynamicEnumMap collections (name-unique index)
+     */
+    private void ensureCollectionDDL(MongoCollection<Document> collection, String collectionName, NVConfigEntity nvce) {
+        if (metaManager.isIndexed(collection))
+            return;
+
+        if (txSession.get() != null) {
+            LinkedHashMap<String, Object> pending = txDeferredDDL.get();
+            if (pending == null) {
+                pending = new LinkedHashMap<>();
+                txDeferredDDL.set(pending);
+            }
+            pending.putIfAbsent(collectionName, nvce != null ? (Object) nvce : DynamicEnumMap.class);
+            return;
+        }
+
+        if (nvce != null)
+            metaManager.addCollectionInfo(collection, nvce);
+        else
+            metaManager.addUniqueIndexesForDynamicEnumMap(collection);
+    }
+
+    /** Run the DDL deferred during the just-committed transaction; failures log, never throw. */
+    private void flushDeferredDDL(LinkedHashMap<String, Object> pending) {
+        for (Map.Entry<String, Object> entry : pending.entrySet()) {
+            try {
+                MongoCollection<Document> collection = lookupCollection(entry.getKey());
+                if (entry.getValue() instanceof NVConfigEntity)
+                    metaManager.addCollectionInfo(collection, (NVConfigEntity) entry.getValue());
+                else
+                    metaManager.addUniqueIndexesForDynamicEnumMap(collection);
+            } catch (RuntimeException e) {
+                if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING,
+                        "post-commit DDL failed for " + entry.getKey(), e);
+            }
+        }
     }
 
     /**
@@ -173,10 +225,13 @@ public class XlogistxMongoDataStore
         if (s == null) {
             return;
         }
+        LinkedHashMap<String, Object> pendingDDL = txDeferredDDL.get();
+        boolean committed = false;
         try {
             if (s.hasActiveTransaction()) {
                 s.commitTransaction();
             }
+            committed = true;
         } catch (RuntimeException e) {
             try {
                 if (s.hasActiveTransaction()) s.abortTransaction();
@@ -187,6 +242,12 @@ public class XlogistxMongoDataStore
         } finally {
             s.close();
             txSession.remove();
+            txDeferredDDL.remove();
+            // First-use index/registration work deferred during the transaction runs now,
+            // after the commit made the implicitly-created collections durable.
+            if (committed && pendingDDL != null) {
+                flushDeferredDDL(pendingDDL);
+            }
         }
     }
 
@@ -208,6 +269,9 @@ public class XlogistxMongoDataStore
         } finally {
             s.close();
             txSession.remove();
+            // Rolled back — the implicitly-created collections are gone; the next
+            // non-transactional first use will run the DDL normally.
+            txDeferredDDL.remove();
         }
     }
 
@@ -727,7 +791,8 @@ public class XlogistxMongoDataStore
                 try {
                     value = getAPIConfigInfo().getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (Document) value, EncryptedData.class), null);
                 } catch (InstantiationException | IllegalAccessException e) {
-                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "toNVPair decrypt failed", e);
+                    if (log.isEnabled())
+                        log.getLogger().log(java.util.logging.Level.WARNING, "toNVPair decrypt failed", e);
                 }
             }
         }
@@ -808,7 +873,8 @@ public class XlogistxMongoDataStore
                     try {
                         subClass = Class.forName(classType);
                     } catch (ClassNotFoundException e) {
-                        if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "fromNVGenericMap: class not found " + classType, e);
+                        if (log.isEnabled())
+                            log.getLogger().log(java.util.logging.Level.WARNING, "fromNVGenericMap: class not found " + classType, e);
                         continue;
                     }
                     if (subClass.isEnum()) {
@@ -912,7 +978,7 @@ public class XlogistxMongoDataStore
 
         Document query = new Document();
 
-        if(refID instanceof UUID)
+        if (refID instanceof UUID)
             query.put(XlogistxMongoUtil.ReservedID.GUID.getValue(), refID);
         else if (refID instanceof String)
             query.put(XlogistxMongoUtil.ReservedID.GUID.getValue(), IDGs.UUIDV7.decode((String) refID));
@@ -1203,10 +1269,8 @@ public class XlogistxMongoDataStore
             }
         } // end of for loop of the attributes
 
-        //////We might need to put before the insert, need to test to conclude.
-        if (!metaManager.isIndexed(collection)) {
-            metaManager.addCollectionInfo(collection, nvce);
-        }
+        // First-use registration + unique indexes; deferred to post-commit inside a transaction.
+        ensureCollectionDDL(collection, nvce.toCanonicalID(), nvce);
 
         // _id is keyed off GUID (always populated above), not the deprecated referenceID —
         // otherwise an entity with a null referenceID would get a Mongo-assigned ObjectId _id
@@ -1219,7 +1283,8 @@ public class XlogistxMongoDataStore
         try {
             sInsertOne(collection, doc);
         } catch (MongoException e) {
-            if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "insert failed for " + nvce.toCanonicalID(), e);
+            if (log.isEnabled())
+                log.getLogger().log(java.util.logging.Level.WARNING, "insert failed for " + nvce.toCanonicalID(), e);
             getAPIExceptionHandler().throwException(e);
         }
 
@@ -1321,10 +1386,8 @@ public class XlogistxMongoDataStore
 
         if (!embed) {
             MongoCollection<Document> collection = lookupCollection(((NVConfigEntity) nve.getNVConfig()).toCanonicalID());
-            //////We might need to put before the insert, need to test to conclude.
-            if (!metaManager.isIndexed(collection)) {
-                metaManager.addCollectionInfo(collection, nvce);
-            }
+            // First-use registration + unique indexes; deferred to post-commit inside a transaction.
+            ensureCollectionDDL(collection, nvce.toCanonicalID(), nvce);
         }
 
         return doc;
@@ -1903,7 +1966,8 @@ public class XlogistxMongoDataStore
         DynamicEnumMapManager.validateDynamicEnumMap(dynamicEnumMap);
 
         MongoCollection<Document> collection = lookupCollection(dynamicEnumMap.getClass().getName());
-        metaManager.addUniqueIndexesForDynamicEnumMap(collection);
+        // First-use name-unique index; deferred to post-commit inside a transaction.
+        ensureCollectionDDL(collection, dynamicEnumMap.getClass().getName(), null);
 
         Document doc = new Document();
         doc.append(MetaToken.NAME.getName(), dynamicEnumMap.getName());
@@ -2212,7 +2276,8 @@ public class XlogistxMongoDataStore
                     if (mongoClient == null)
                         mongoClient = MongoClients.create(XlogistxMongoDSCreator.MongoParam.dataStoreURI(getAPIConfigInfo()));
                 } catch (Exception e) {
-                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "newConnection failed", e);
+                    if (log.isEnabled())
+                        log.getLogger().log(java.util.logging.Level.WARNING, "newConnection failed", e);
                     APIException apiEx = new APIException(e.getMessage());
                     apiEx.initCause(e);
                     throw apiEx;
@@ -2251,7 +2316,8 @@ public class XlogistxMongoDataStore
             try {
                 retNVEs.add(fromDB(userID, connect(), dbObject, (Class<? extends NVEntity>) nvce.getMetaType()));
             } catch (InstantiationException | IllegalAccessException e) {
-                if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "userSearchByID fromDB failed", e);
+                if (log.isEnabled())
+                    log.getLogger().log(java.util.logging.Level.WARNING, "userSearchByID fromDB failed", e);
             }
         }
 
@@ -2314,7 +2380,8 @@ public class XlogistxMongoDataStore
         try {
             nvce = MetaUtil.fromClass(className);
         } catch (Exception e) {
-            if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "userSearch: class not found " + className, e);
+            if (log.isEnabled())
+                log.getLogger().log(java.util.logging.Level.WARNING, "userSearch: class not found " + className, e);
             APIException apiEx = new APIException("Class name not found:" + className);
             apiEx.initCause(e);
             throw apiEx;
@@ -2464,7 +2531,8 @@ public class XlogistxMongoDataStore
                 try {
                     nveList.add((V) fromDB(null, connect(), obj, (Class<? extends NVEntity>) reportResults.getNVConfigEntity().getMetaType()));
                 } catch (InstantiationException | IllegalAccessException e) {
-                    if (log.isEnabled()) log.getLogger().log(java.util.logging.Level.WARNING, "nextBatch fromDB failed", e);
+                    if (log.isEnabled())
+                        log.getLogger().log(java.util.logging.Level.WARNING, "nextBatch fromDB failed", e);
                 }
             }
         }
