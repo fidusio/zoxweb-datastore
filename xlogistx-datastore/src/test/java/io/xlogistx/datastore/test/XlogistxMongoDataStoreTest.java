@@ -17,20 +17,10 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatchString;
+import org.zoxweb.shared.http.HTTPAuthorization;
 import org.zoxweb.shared.http.URLInfo;
+import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVDouble;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVEntityReferenceList;
-import org.zoxweb.shared.util.NVFloat;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.NVGenericMapList;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.NVLong;
-import org.zoxweb.shared.util.NVStringList;
-import org.zoxweb.shared.util.SUS;
 
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -564,5 +554,21 @@ public class XlogistxMongoDataStoreTest {
         }
         System.out.println("entity reference round-trip OK: " + ct.getGUID()
                 + " single=" + read.getAllTypes().getGUID() + " list=" + readRefs.length);
+    }
+
+    @Test
+    public void testHTTPAuthorization() {
+        HTTPAuthorization authorization = HTTPAuthorization.createGeneric("batata-auth", "no-bearer", UUID.randomUUID().toString() );
+        authorization =  mongoDataStore.insert(authorization);
+        System.out.println("authentication " + GSONUtil.toJSONDefault(authorization, true));
+        authorization = (HTTPAuthorization) mongoDataStore.searchByID(HTTPAuthorization.NVC_HTTP_AUTHORIZATION, authorization.getGUID()).get(0);
+        System.out.println("authentication " + GSONUtil.toJSONDefault(authorization, true));
+
+
+        authorization = HTTPAuthorization.createBasic("mario", "password");
+        authorization =  mongoDataStore.insert(authorization);
+        System.out.println("authentication " + GSONUtil.toJSONDefault(authorization, true));
+        authorization = (HTTPAuthorization) mongoDataStore.searchByID(HTTPAuthorization.NVC_HTTP_AUTHORIZATION, authorization.getGUID()).get(0);
+        System.out.println("authentication " + GSONUtil.toJSONDefault(authorization, true));
     }
 }
