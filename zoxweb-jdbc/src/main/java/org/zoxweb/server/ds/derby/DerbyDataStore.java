@@ -589,6 +589,11 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     }
 
+    @Override
+    public DSType getDSType() {
+        return DSType.DERBY_DB;
+    }
+
     private <V extends NVEntity> V innerInsert(Connection con, V nve)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
 

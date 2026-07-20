@@ -174,6 +174,12 @@ public class SyncMongoDS
 
     }
 
+
+    @Override
+    public DSType getDSType() {
+        return DSType.MONGODB;
+    }
+
     private Document serNamedValue(NamedValue<?> namedValue) {
         Document bsonDoc = new Document();
         bsonDoc.append(MetaToken.VALUE.getName(), namedValue.getValue())

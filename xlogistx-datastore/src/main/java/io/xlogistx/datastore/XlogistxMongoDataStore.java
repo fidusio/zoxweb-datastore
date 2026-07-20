@@ -1935,6 +1935,11 @@ public class XlogistxMongoDataStore
         return XlogistxMongoDSCreator.API_NAME + ":" + (name != null ? name : "unnamed");
     }
 
+    @Override
+    public DSType getDSType() {
+        return DSType.MONGODB;
+    }
+
     /**
      * Searches by ID.
      *

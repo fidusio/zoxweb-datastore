@@ -22,7 +22,8 @@
         <module>mongo-sync</module>
         <module>zoxweb-jdbc</module>
         <module>xlogistx-datastore</module>
-        <module>xlogistx-postgres</module>
+<!--        <module>xlogistx-postgres</module>-->
+        <module>h2p-datastore</module>
         <!--        <module>common</module>-->
     </modules>
 

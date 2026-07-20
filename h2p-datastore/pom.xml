@@ -9,22 +9,35 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>xlogistx-postgres</artifactId>
+    <artifactId>h2p-datastore</artifactId>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <h2.version>2.4.240</h2.version>
+        <postgres.version>42.7.13</postgres.version>
+        <hikaricp.version>5.1.0</hikaricp.version>
+        <jdk.version>11</jdk.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <postgres.version>42.7.11</postgres.version>
     </properties>
-
-
     <dependencies>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+        </dependency>
         <!-- Source: https://mvnrepository.com/artifact/org.postgresql/postgresql -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <version>${postgres.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <!-- Connection pool for native PostgreSQL (not used for H2). Source:
+             https://mvnrepository.com/artifact/com.zaxxer/HikariCP -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
