@@ -9,13 +9,9 @@
  */
 package io.xlogistx.datastore.h2p;
 
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.NVInt;
+import org.zoxweb.shared.util.*;
 
+import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -43,6 +39,13 @@ public final class H2PUtil {
     private H2PUtil() {
     }
 
+
+
+    /** Substitution token for the file location (dir/dbName) in {@link #DEFAULT_H2_URL}. */
+    public static final String LOCATION_TOK  = "$$LOCATION$$";
+    /** Default encrypted H2 file-DB URL template; see {@link #defaultH2JdbcURL(String, String)}. */
+    public static final String DEFAULT_H2_URL = "jdbc:h2:file:" + LOCATION_TOK + ";MODE=PostgreSQL;CIPHER=AES";
+
     /** Storage kind of an entity attribute. */
     public enum AttrKind {
         PK,               // the guid primary key
@@ -53,6 +56,7 @@ public final class H2PUtil {
         ENTITY_COLLECTION,// join table
         SCHEMALESS        // json (varchar) column
     }
+
 
     public static final Set<String> META_INSERT_EXCLUSION = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(MetaToken.REFERENCE_ID.getName())));
@@ -296,4 +300,36 @@ public final class H2PUtil {
             }
         }
     }
+
+
+    /**
+     * Build the default <b>encrypted</b> H2 file-DB URL from a directory and a database name:
+     * {@code jdbc:h2:file:<location>/<dbName>;MODE=PostgreSQL;CIPHER=AES} (the {@link #DEFAULT_H2_URL}
+     * template with {@link #LOCATION_TOK} replaced by {@code <location>/<dbName>}).
+     *
+     * <p>Because the URL ships {@code ;CIPHER=AES}, the resulting DB is encrypted — the caller must
+     * supply a file password when opening it (e.g. via
+     * {@code H2PDSCreator.toAPIConfigInfo(url, user, password, filePassword)}). {@code MODE=PostgreSQL}
+     * keeps H2 speaking the same SQL dialect as the Postgres target.
+     *
+     * <p>Both arguments are trimmed ({@link SUS#trimOrNull}); {@code location} must be an <b>existing
+     * directory</b> (the DB file is created inside it on first connection).
+     *
+     * @param location an existing directory that will hold the DB file (trimmed)
+     * @param dbName   the database file base name, appended under {@code location} (trimmed)
+     * @return the composed encrypted H2 file URL
+     * @throws NullPointerException     if {@code location} or {@code dbName} is null or blank
+     * @throws IllegalArgumentException if {@code location} is not an existing directory
+     */
+    public static String defaultH2JdbcURL(String location, String dbName) {
+        location = SUS.trimOrNull(location);
+        dbName = SUS.trimOrNull(dbName);
+        SUS.checkIfNulls("location or db name can't be null", location, dbName);
+        File file = new File(location);
+        if (!file.isDirectory())
+            throw new IllegalArgumentException(location + " is not a directory");
+        String combo = location + "/" + dbName;
+        return SharedStringUtil.embedText(DEFAULT_H2_URL, LOCATION_TOK, combo);
+    }
+
 }

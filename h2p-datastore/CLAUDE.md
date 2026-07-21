@@ -119,6 +119,12 @@ map of the `;`- or `?&`-delimited settings (keys verbatim, e.g. `CIPHER`, `MODE`
 Throws `IllegalArgumentException` for null / non-`jdbc:` input. Key names are the `H2PUtil.JDBC_*`
 constants.
 
+`H2PUtil.defaultH2JdbcURL(location, dbName)` builds the default **encrypted** H2 file-DB URL —
+`jdbc:h2:file:<location>/<dbName>;MODE=PostgreSQL;CIPHER=AES` (the `DEFAULT_H2_URL` template). Both
+args are trimmed; `location` must be an existing directory (else `IllegalArgumentException`), and
+null/blank args throw `NullPointerException`. Because the URL carries `;CIPHER=AES`, opening it needs a
+file password (e.g. `toAPIConfigInfo(url, user, password, filePassword)`).
+
 ### Encrypted H2 (CIPHER)
 The **cipher is not a secret** and lives in the URL (`;CIPHER=AES`); only the passwords are supplied
 separately (typically from a different source — GUI/web/CLI). Use
@@ -183,6 +189,8 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   `toAPIConfigInfo`): asserts `dataStorePassword` → `"<filePwd> <userPwd>"`, CRUD over the encrypted
   file, persistence across a fresh-store reopen, and rejection of a wrong file password. It omits
   `DB_CLOSE_DELAY=-1` on purpose so the DB closes between stores and the password is re-validated.
+  Also `testParseJdbcURL` (H2 mem/file/tcp/bare + Postgres host/opts/multi-host/db-only + guards) and
+  `testDefaultH2JdbcURL` (composed URL, parse-back, trimming, null/non-directory guards).
 - `H2PPostgresDataStoreTest` — **live PostgreSQL**; auto-skipped unless configured. `h2p.pg.url` is the
   **base endpoint** (no db); the test connects to the `postgres` maintenance db, **creates the target
   database if missing** (default `testpostgres`, override `-Dh2p.pg.db`), then runs the same scenarios

@@ -672,6 +672,45 @@ public class H2PDataStoreTest {
         System.out.println("parseJdbcURL OK: mem/file/tcp/bare + postgres host+opts+multihost+db-only + guards");
     }
 
+    /**
+     * {@link H2PUtil#defaultH2JdbcURL} — builds the default encrypted H2 file-DB URL
+     * ({@code jdbc:h2:file:<location>/<dbName>;MODE=PostgreSQL;CIPHER=AES}) from a directory + db name.
+     * Verifies the composed URL, that it parses back to an encrypted H2 file DB, whitespace trimming,
+     * and the null/blank ({@code NullPointerException}) and non-directory ({@code IllegalArgumentException}) guards.
+     */
+    @Test
+    public void testDefaultH2JdbcURL() {
+        File dir = new File(System.getProperty("java.io.tmpdir"), "h2p_defdir_" + UUID.randomUUID());
+        assertTrue(dir.mkdirs(), "temp directory must be creatable");
+        try {
+            String loc = dir.getAbsolutePath();
+            String url = H2PUtil.defaultH2JdbcURL(loc, "mydb");
+            assertEquals("jdbc:h2:file:" + loc + "/mydb;MODE=PostgreSQL;CIPHER=AES", url);
+
+            // Parses back to an encrypted H2 file DB in PostgreSQL mode, with the combined <location>/<dbName> path.
+            NVGenericMap p = H2PUtil.parseJdbcURL(url);
+            assertEquals("h2", p.getValue(H2PUtil.JDBC_SUBPROTOCOL));
+            assertEquals("file", p.getValue(H2PUtil.JDBC_TYPE));
+            assertEquals(loc + "/mydb", p.getValue(H2PUtil.JDBC_PATH));
+            NVGenericMap params = p.getNV(H2PUtil.JDBC_PARAMS);
+            assertEquals("PostgreSQL", params.getValue("MODE"));
+            assertEquals("AES", params.getValue("CIPHER"));
+
+            // location and dbName are trimmed before combining.
+            assertEquals(url, H2PUtil.defaultH2JdbcURL("  " + loc + "  ", "  mydb  "));
+
+            // Guards: null / blank args -> NPE (checkIfNulls after trimOrNull); non-directory -> IllegalArgumentException.
+            assertThrows(NullPointerException.class, () -> H2PUtil.defaultH2JdbcURL(null, "db"));
+            assertThrows(NullPointerException.class, () -> H2PUtil.defaultH2JdbcURL(loc, null));
+            assertThrows(NullPointerException.class, () -> H2PUtil.defaultH2JdbcURL("   ", "db"));
+            assertThrows(IllegalArgumentException.class,
+                    () -> H2PUtil.defaultH2JdbcURL(loc + "/does-not-exist", "db"));
+            System.out.println("defaultH2JdbcURL OK: " + url);
+        } finally {
+            dir.delete();
+        }
+    }
+
     private static H2PDataStore newStore(APIConfigInfo cfg) {
         H2PDataStore ds = new H2PDataStore();
         ds.setAPIConfigInfo(cfg);
