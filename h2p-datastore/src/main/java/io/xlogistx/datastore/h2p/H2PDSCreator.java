@@ -25,7 +25,9 @@ import org.zoxweb.shared.api.APIServiceProviderCreator;
 import org.zoxweb.shared.api.APIServiceType;
 import org.zoxweb.shared.api.APITokenManager;
 import org.zoxweb.shared.util.GetNameValue;
+import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.NVInt;
+import org.zoxweb.shared.util.SUS;
 
 public class H2PDSCreator
         implements APIServiceProviderCreator {
@@ -98,10 +100,28 @@ public class H2PDSCreator
             return aci.getProperties().getValue(DB_NAME);
         }
 
-        /** True when this config targets a native PostgreSQL server (by URL prefix or driver class). */
-        static boolean isPostgres(APIConfigInfo aci) {
+        /** Structured parse of the URL param, or {@code null} when there is no (valid) JDBC URL. */
+        static NVGenericMap parsedURL(APIConfigInfo aci) {
             String url = aci.getProperties().getValue(URL);
-            if (url != null && url.toLowerCase().startsWith("jdbc:postgresql")) {
+            if (SUS.isEmpty(url)) {
+                return null;
+            }
+            try {
+                return H2PUtil.parseJdbcURL(url);
+            } catch (IllegalArgumentException e) {
+                return null; // not a jdbc: URL — fall back to driver-based detection
+            }
+        }
+
+        /** The lowercased JDBC subprotocol of the config's URL (e.g. {@code h2}, {@code postgresql}), or null. */
+        static String urlSubprotocol(APIConfigInfo aci) {
+            NVGenericMap p = parsedURL(aci);
+            return p != null ? p.getValue(H2PUtil.JDBC_SUBPROTOCOL) : null;
+        }
+
+        /** True when this config targets a native PostgreSQL server (by URL subprotocol or driver class). */
+        static boolean isPostgres(APIConfigInfo aci) {
+            if ("postgresql".equals(urlSubprotocol(aci))) {
                 return true;
             }
             String driver = aci.getProperties().getValue(DRIVER);
@@ -109,24 +129,60 @@ public class H2PDSCreator
         }
 
         /**
-         * The connection password. On an <b>encrypted</b> H2 file DB (i.e. {@link #CIPHER} is set),
-         * H2 expects the file-encryption password and the user password in a single space-separated
-         * value — {@code "<filePwd> <userPwd>"} — so the {@link #FILE_PASSWORD} is prefixed onto the
-         * user {@link #PASSWORD}. Without {@code CIPHER} the DB is not encrypted and the plain user
-         * password is returned (prefixing a file password there would make H2 reject the login).
-         * Native PostgreSQL has no such convention.
+         * True when the H2 DB is encrypted — the cipher may be given as the {@link #CIPHER} param or,
+         * more commonly, embedded in the {@link #URL} (e.g. {@code ;CIPHER=AES}). The cipher is a
+         * non-secret part of the connection shape and travels with the URL; only the passwords are
+         * supplied separately. Detected structurally via {@link H2PUtil#parseJdbcURL} — a {@code CIPHER}
+         * key in the parsed settings, not a substring match — so a path that merely contains
+         * {@code "CIPHER="} can't false-positive.
+         */
+        static boolean isEncrypted(APIConfigInfo aci) {
+            String cipher = aci.getProperties().getValue(CIPHER);
+            if (cipher != null && !cipher.isEmpty()) {
+                return true;
+            }
+            return hasCipher(aci.getProperties().getValue(URL));
+        }
+
+        /** True when a JDBC URL string carries a {@code CIPHER} setting (structural, case-insensitive). */
+        static boolean hasCipher(String jdbcURL) {
+            if (jdbcURL == null) {
+                return false;
+            }
+            try {
+                NVGenericMap params = H2PUtil.parseJdbcURL(jdbcURL).getNV(H2PUtil.JDBC_PARAMS);
+                if (params != null) {
+                    for (GetNameValue<?> nv : params.values()) {
+                        if (CIPHER.getName().equalsIgnoreCase(nv.getName())) {
+                            return true;
+                        }
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                // not a jdbc: URL
+            }
+            return false;
+        }
+
+        /**
+         * The connection password. On an <b>encrypted</b> H2 DB (see {@link #isEncrypted}), H2 expects
+         * the file-encryption password and the user password in a single space-separated value —
+         * {@code "<filePwd> <userPwd>"} — so the {@link #FILE_PASSWORD} is prefixed onto the user
+         * {@link #PASSWORD}. When not encrypted the plain user password is returned (prefixing a file
+         * password there would make H2 reject the login). Native PostgreSQL has no such convention.
          */
         public static String dataStorePassword(APIConfigInfo aci) {
             String pwd = aci.getProperties().getValue(PASSWORD);
             if (isPostgres(aci)) {
                 return pwd;
             }
-            // Only an encrypted DB (CIPHER set) takes the "<filePwd> <userPwd>" form.
-            String cipher = aci.getProperties().getValue(CIPHER);
-            if (cipher != null && !cipher.isEmpty()) {
+            // Only an encrypted DB takes the "<filePwd> <userPwd>" form.
+            if (isEncrypted(aci)) {
                 String filePwd = aci.getProperties().getValue(FILE_PASSWORD);
-                return (filePwd != null ? filePwd : "") + " " + (pwd != null ? pwd : "");
+                pwd = (filePwd != null ? filePwd : "") + " " + (pwd != null ? pwd : "");
+
             }
+            System.out.println("dataStorePassword: " + pwd);
             return pwd;
         }
 
@@ -202,8 +258,7 @@ public class H2PDSCreator
         if (H2PParam.isPostgres(aci)) {
             return DSType.POSTGRES;
         }
-        String url = aci.getProperties().getValue(H2PParam.URL);
-        if (url != null && url.toLowerCase().startsWith("jdbc:h2")) {
+        if ("h2".equals(H2PParam.urlSubprotocol(aci))) {
             return DSType.H2;
         }
         String driver = aci.getProperties().getValue(H2PParam.DRIVER);
@@ -213,21 +268,66 @@ public class H2PDSCreator
         return DSType.UNKNOWN;
     }
 
+    /** True when a JDBC URL string's subprotocol is {@code postgresql} (structural, not prefix-match). */
+    private static boolean isPostgresURL(String jdbcURL) {
+        try {
+            return "postgresql".equals(H2PUtil.parseJdbcURL(jdbcURL).getValue(H2PUtil.JDBC_SUBPROTOCOL));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     /**
      * Convenience: build a config from a single full JDBC URL (with default user/password).
      * e.g. {@code toAPIConfigInfo("jdbc:h2:mem:mydb;DB_CLOSE_DELAY=-1")}.
+     *
+     * <p>Supports both engines: a {@code jdbc:postgresql} URL auto-selects the Postgres driver so the
+     * config connects as-is; any other URL keeps the default H2 driver from {@link #createEmptyConfigInfo()}.
      */
     public APIConfigInfo toAPIConfigInfo(String jdbcURL) {
         APIConfigInfo ret = createEmptyConfigInfo();
         ret.getProperties().build(H2PParam.URL, jdbcURL);
+        // A postgres URL needs the postgres driver; the default config ships the H2 driver.
+        if (isPostgresURL(jdbcURL)) {
+            ret.getProperties().build(H2PParam.DRIVER.getName(), "org.postgresql.Driver");
+        }
         return ret;
     }
 
     /** Convenience: build a config from a full JDBC URL plus explicit credentials. */
     public APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password) {
+        return toAPIConfigInfo(jdbcURL, user, password, null);
+    }
+
+    /**
+     * Convenience: build a config from a full JDBC URL plus the confidential values that typically
+     * arrive from a different source than the URL (GUI / web / command line) — user, password, and
+     * the H2 file-encryption password.
+     *
+     * <p>The cipher itself is <b>not</b> a secret and normally belongs in the URL (e.g. {@code ;CIPHER=AES}).
+     * A supplied {@code filePassword} only makes sense for an <b>encrypted</b> H2 DB, so if one is given and
+     * the (H2) URL has no cipher, H2's default {@code ;CIPHER=AES} is appended automatically — otherwise the
+     * file password would be silently dropped (H2 needs a cipher to treat the file as encrypted). When the URL
+     * is encrypted, {@link H2PParam#dataStorePassword} combines {@code filePassword} and {@code password} into
+     * H2's {@code "<filePwd> <userPwd>"} form. {@code filePassword} is ignored on PostgreSQL.
+     */
+    public APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password, String filePassword) {
+        // A file password implies encryption: ensure the H2 URL carries a cipher so it isn't dropped.
+        if (SUS.isNotEmpty(filePassword) && jdbcURL != null
+                && !isPostgresURL(jdbcURL) && !H2PParam.hasCipher(jdbcURL)) {
+            jdbcURL = jdbcURL + ";CIPHER=AES";
+        }
         APIConfigInfo ret = toAPIConfigInfo(jdbcURL);
-        ret.getProperties().build(H2PParam.USER.getName(), user);
-        ret.getProperties().build(H2PParam.PASSWORD.getName(), password);
+        // empty/null = keep the seeded default (createEmptyConfigInfo: user=sa, password=""); a value overrides.
+        if (SUS.isNotEmpty(user)) {
+            ret.getProperties().build(H2PParam.USER, user);
+        }
+        if (SUS.isNotEmpty(password)) {
+            ret.getProperties().build(H2PParam.PASSWORD, password);
+        }
+        if (SUS.isNotEmpty(filePassword)) {
+            ret.getProperties().build(H2PParam.FILE_PASSWORD, filePassword);
+        }
         return ret;
     }
 
@@ -236,8 +336,9 @@ public class H2PDSCreator
         APIConfigInfo configInfo = new APIConfigInfoDAO();
 
         for (H2PParam hp : H2PParam.values()) {
+            // PORT is stored as a typed integer; every other param is a plain string value.
             if (hp == H2PParam.PORT) {
-                configInfo.getProperties().build(new NVInt(hp.getName(), Integer.parseInt(hp.getValue())));
+                configInfo.getProperties().build(new NVInt(hp, Integer.parseInt(hp.getValue())));
             } else {
                 configInfo.getProperties().build(hp.getName(), hp.getValue());
             }

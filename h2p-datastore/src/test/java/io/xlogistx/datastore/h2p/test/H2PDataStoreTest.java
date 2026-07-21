@@ -4,6 +4,7 @@ import io.xlogistx.datastore.h2p.H2PDataStore;
 import io.xlogistx.datastore.h2p.H2PDSCreator;
 import io.xlogistx.datastore.h2p.H2PDialect;
 import io.xlogistx.datastore.h2p.H2PExceptionHandler;
+import io.xlogistx.datastore.h2p.H2PUtil;
 import io.xlogistx.opsec.OPSecUtil;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIDataStore.DSType;
@@ -21,6 +22,7 @@ import org.zoxweb.shared.http.HTTPAuthorization;
 import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 
+import java.io.File;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.util.ArrayList;
@@ -32,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -536,6 +539,154 @@ public class H2PDataStoreTest {
 
         assertArrayEquals(original, read.getBytes(), "NVBlob bytes must round-trip exactly");
         System.out.println("NVBlob round-trip OK: " + original.length + " bytes");
+    }
+
+    /**
+     * Encrypted H2 <b>file</b> DB round-trip: the cipher lives in the URL ({@code ;CIPHER=AES}) while
+     * the secrets (user / password / file-password) are supplied separately through the 4-arg factory.
+     * Verifies (1) {@code dataStorePassword} emits H2's {@code "<filePwd> <userPwd>"} form, (2) CRUD
+     * works over the encrypted file, (3) the data persists and re-decrypts when the DB is reopened by a
+     * fresh store, and (4) a wrong file password is rejected — proving the file is genuinely encrypted.
+     *
+     * <p>Note: this URL intentionally omits {@code DB_CLOSE_DELAY=-1} so the file DB actually closes
+     * between store instances and the file password is re-validated on reopen.
+     */
+    @Test
+    public void testEncryptedH2FileRoundTrip() {
+        String dbPath = new File(System.getProperty("java.io.tmpdir"), "h2p_enc_" + UUID.randomUUID())
+                .getAbsolutePath().replace('\\', '/');
+        String url = "jdbc:h2:file:" + dbPath + ";CIPHER=AES;MODE=PostgreSQL";
+        String user = "sa", pwd = "userPass", filePwd = "encPass";
+
+        H2PDSCreator creator = new H2PDSCreator();
+        try {
+            // Cipher in the URL, secrets passed separately -> "<filePwd> <userPwd>" connection password.
+            APIConfigInfo cfg = creator.toAPIConfigInfo(url, user, pwd, filePwd);
+            assertEquals("encPass userPass", H2PDSCreator.H2PParam.dataStorePassword(cfg),
+                    "encrypted H2 must combine file + user password");
+            assertEquals(DSType.H2, H2PDSCreator.resolveDSType(cfg));
+
+            // Phase 1: create the encrypted file, insert, read back within the same store.
+            String guid;
+            H2PDataStore ds1 = newStore(cfg);
+            try {
+                PropertyDAO pd = createPropertyDAO("enc-" + UUID.randomUUID(), "encrypted file db", 11);
+                pd.getProperties().build("secret", "classified");
+                ds1.insert(pd);
+                guid = pd.getGUID();
+                PropertyDAO read = (PropertyDAO) ds1.searchByID(PropertyDAO.class.getName(), guid).get(0);
+                assertEquals(guid, read.getGUID());
+                assertEquals("classified", read.getProperties().getValue("secret"));
+            } finally {
+                ds1.close();
+            }
+
+            // Phase 2: reopen with the same credentials -> the persisted, encrypted row re-decrypts.
+            H2PDataStore ds2 = newStore(creator.toAPIConfigInfo(url, user, pwd, filePwd));
+            try {
+                PropertyDAO read = (PropertyDAO) ds2.searchByID(PropertyDAO.class.getName(), guid).get(0);
+                assertEquals(guid, read.getGUID(), "encrypted file DB must persist across reopen");
+                assertEquals("classified", read.getProperties().getValue("secret"));
+            } finally {
+                ds2.close();
+            }
+
+            // Phase 3: wrong file password must be rejected -> the file is genuinely encrypted.
+            H2PDataStore ds3 = newStore(creator.toAPIConfigInfo(url, user, pwd, "wrongEnc"));
+            try {
+                assertThrows(Exception.class, ds3::connect,
+                        "a wrong file password must fail to open the encrypted DB");
+            } finally {
+                ds3.close();
+            }
+            System.out.println("encrypted H2 file round-trip OK: " + dbPath);
+            System.out.println(GSONUtil.toJSONDefault(cfg, true));
+        } finally {
+            deleteH2Files(dbPath);
+        }
+    }
+
+    /**
+     * {@link H2PUtil#parseJdbcURL} across the shapes this datastore uses: H2 mem/file/tcp and a bare
+     * H2 path, PostgreSQL host/port/db (+ query options and multi-host), and the invalid-input guard.
+     * Structural fields land at the top level; {@code ;}- or {@code ?&}-delimited settings go into a
+     * nested {@code params} map, with {@code port} typed as an integer.
+     */
+    @Test
+    public void testParseJdbcURL() {
+        // H2 in-memory: type + database + ';' settings; no host/port.
+        NVGenericMap mem = H2PUtil.parseJdbcURL("jdbc:h2:mem:h2_datastore_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        assertEquals("h2", mem.getValue(H2PUtil.JDBC_SUBPROTOCOL));
+        assertEquals("mem", mem.getValue(H2PUtil.JDBC_TYPE));
+        assertEquals("h2_datastore_test", mem.getValue(H2PUtil.JDBC_DATABASE));
+        assertNull(mem.getValue(H2PUtil.JDBC_HOST), "mem URL has no host");
+        NVGenericMap memParams = mem.getNV(H2PUtil.JDBC_PARAMS);
+        assertNotNull(memParams);
+        assertEquals("-1", memParams.getValue("DB_CLOSE_DELAY"));
+        assertEquals("PostgreSQL", memParams.getValue("MODE"));
+
+        // H2 file (encrypted): the file path is preserved verbatim (Windows drive-letter and all).
+        NVGenericMap file = H2PUtil.parseJdbcURL("jdbc:h2:file:C:/data/secure;CIPHER=AES;MODE=PostgreSQL");
+        assertEquals("file", file.getValue(H2PUtil.JDBC_TYPE));
+        assertEquals("C:/data/secure", file.getValue(H2PUtil.JDBC_PATH));
+        assertEquals("AES", ((NVGenericMap) file.getNV(H2PUtil.JDBC_PARAMS)).getValue("CIPHER"));
+
+        // H2 tcp: network authority -> host + integer port + database.
+        NVGenericMap tcp = H2PUtil.parseJdbcURL("jdbc:h2:tcp://localhost:9092/mydb;MODE=PostgreSQL");
+        assertEquals("tcp", tcp.getValue(H2PUtil.JDBC_TYPE));
+        assertEquals("localhost", tcp.getValue(H2PUtil.JDBC_HOST));
+        assertEquals(Integer.valueOf(9092), tcp.getValue(H2PUtil.JDBC_PORT));
+        assertEquals("mydb", tcp.getValue(H2PUtil.JDBC_DATABASE));
+
+        // Bare H2 path form: just a path, no type/host/db.
+        NVGenericMap bare = H2PUtil.parseJdbcURL("jdbc:h2:~/test");
+        assertEquals("~/test", bare.getValue(H2PUtil.JDBC_PATH));
+        assertNull(bare.getValue(H2PUtil.JDBC_TYPE));
+
+        // PostgreSQL host/port/db, no settings.
+        NVGenericMap pg = H2PUtil.parseJdbcURL("jdbc:postgresql://db.example.com:5432/app");
+        assertEquals("postgresql", pg.getValue(H2PUtil.JDBC_SUBPROTOCOL));
+        assertEquals("db.example.com", pg.getValue(H2PUtil.JDBC_HOST));
+        assertEquals(Integer.valueOf(5432), pg.getValue(H2PUtil.JDBC_PORT));
+        assertEquals("app", pg.getValue(H2PUtil.JDBC_DATABASE));
+        assertNull(pg.getNV(H2PUtil.JDBC_PARAMS), "no '?' options -> no params map");
+
+        // PostgreSQL query-style options + multi-host authority (kept raw, no single port split).
+        NVGenericMap pgOpts = H2PUtil.parseJdbcURL("jdbc:postgresql://h1:5432,h2:5433/app?ssl=true&applicationName=x");
+        assertEquals("h1:5432,h2:5433", pgOpts.getValue(H2PUtil.JDBC_HOST));
+        assertNull(pgOpts.getValue(H2PUtil.JDBC_PORT), "multi-host authority must not split a single port");
+        NVGenericMap pgParams = pgOpts.getNV(H2PUtil.JDBC_PARAMS);
+        assertEquals("true", pgParams.getValue("ssl"));
+        assertEquals("x", pgParams.getValue("applicationName"));
+
+        // db-only PostgreSQL form.
+        NVGenericMap pgDbOnly = H2PUtil.parseJdbcURL("jdbc:postgresql:mydb");
+        assertEquals("mydb", pgDbOnly.getValue(H2PUtil.JDBC_DATABASE));
+        assertNull(pgDbOnly.getValue(H2PUtil.JDBC_HOST));
+
+        // Invalid input: null and non-jdbc URLs are rejected.
+        assertThrows(IllegalArgumentException.class, () -> H2PUtil.parseJdbcURL(null));
+        assertThrows(IllegalArgumentException.class, () -> H2PUtil.parseJdbcURL("h2:mem:x"));
+        System.out.println(GSONUtil.toJSONDefault(file, true));
+        System.out.println(GSONUtil.toJSONDefault(tcp, true));
+        System.out.println("parseJdbcURL OK: mem/file/tcp/bare + postgres host+opts+multihost+db-only + guards");
+    }
+
+    private static H2PDataStore newStore(APIConfigInfo cfg) {
+        H2PDataStore ds = new H2PDataStore();
+        ds.setAPIConfigInfo(cfg);
+        ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+        return ds;
+    }
+
+    /** Remove the on-disk artifacts H2 creates for a file DB (mv/trace/lock). */
+    private static void deleteH2Files(String dbPath) {
+        for (String suffix : new String[]{".mv.db", ".trace.db", ".lock.db"}) {
+            File f = new File(dbPath + suffix);
+            if (f.exists() && !f.delete()) {
+                f.deleteOnExit();
+            }
+        }
     }
 
     @Test

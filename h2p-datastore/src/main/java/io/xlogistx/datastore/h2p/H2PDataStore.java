@@ -119,6 +119,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     private volatile H2PDialect dialect = H2PDialect.H2;
     // HikariCP connection pool — built lazily for native PostgreSQL only; null for H2.
     private volatile HikariDataSource pool = null;
+    // General-purpose per-instance cache (resolved-once connection params + other reuse). Cleared on
+    // reconfigure in setAPIConfigInfo so cached values can't go stale across a new config.
+    private volatile ConcurrentHashMap<Object, String> cache = new ConcurrentHashMap<>();
 
     /**
      * A JDBC transaction is bound to the calling thread via this ThreadLocal connection
@@ -155,6 +158,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         // Resolve the target engine once, at creation, and pick the matching schemaless dialect codec.
         this.currentDSType = H2PDSCreator.resolveDSType(configInfo);
         this.dialect = H2PDialect.forDSType(currentDSType);
+        // New config -> drop any cached connection params (jdbc-url / user / password) so they
+        // can't go stale; they are recomputed lazily on the next newConnection().
+        cache.clear();
     }
 
     @Override
@@ -183,12 +189,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     public Connection newConnection() throws APIException {
         try {
             // Native PostgreSQL is pooled (HikariCP); H2 opens a fresh connection per op (mem is ~free).
+            // The H2 URL/user/password are computed once and cached (the cache is cleared on reconfigure).
             Connection conn = (currentDSType == DSType.POSTGRES)
                     ? pool().getConnection()
                     : DriverManager.getConnection(
-                            H2PParam.dataStoreURI(getAPIConfigInfo()),
-                            getAPIConfigInfo().getProperties().getValue(H2PParam.USER),
-                            H2PParam.dataStorePassword(getAPIConfigInfo()));
+                    cache.computeIfAbsent("jdbc-url", k -> H2PParam.dataStoreURI(getAPIConfigInfo())),
+                    cache.computeIfAbsent(H2PParam.USER.getName(), k -> getAPIConfigInfo().getProperties().getValue(H2PParam.USER)),
+                    cache.computeIfAbsent("file-user-password", k -> H2PParam.dataStorePassword(getAPIConfigInfo())));
             synchronized (connections) {
                 connections.add(conn);
             }
@@ -472,11 +479,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         final NVConfig nvc;
         final String name;
         final H2PUtil.AttrKind kind;
+
         AttrInfo(NVConfig nvc) {
             this.nvc = nvc;
             this.name = nvc.getName();
             this.kind = H2PUtil.classify(nvc);
         }
+
         boolean isColumn() {
             return kind == H2PUtil.AttrKind.SCALAR || kind == H2PUtil.AttrKind.BLOB
                     || kind == H2PUtil.AttrKind.ENTITY_REF || kind == H2PUtil.AttrKind.SCHEMALESS;
@@ -811,12 +820,18 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         if (i < 0) return null;
         String t = s.substring(0, i), v = s.substring(i + 1);
         switch (t) {
-            case "int": return Integer.valueOf(v);
-            case "long": return Long.valueOf(v);
-            case "float": return Float.valueOf(v);
-            case "double": return Double.valueOf(v);
-            case "bigdec": return new java.math.BigDecimal(v);
-            default: return Double.valueOf(v);
+            case "int":
+                return Integer.valueOf(v);
+            case "long":
+                return Long.valueOf(v);
+            case "float":
+                return Float.valueOf(v);
+            case "double":
+                return Double.valueOf(v);
+            case "bigdec":
+                return new java.math.BigDecimal(v);
+            default:
+                return Double.valueOf(v);
         }
     }
 
@@ -964,7 +979,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             return;
         }
         if (nvb instanceof NVNumber) ((NVNumber) nvb).setValue(decodeNumber(col.toString()));
-        else if (nvb instanceof NVEnum) ((NVEnum) nvb).setValue(SharedUtil.enumValue(ai.nvc.getMetaType(), col.toString()));
+        else if (nvb instanceof NVEnum)
+            ((NVEnum) nvb).setValue(SharedUtil.enumValue(ai.nvc.getMetaType(), col.toString()));
         else if (nvb instanceof NVBoolean) ((NVBoolean) nvb).setValue((Boolean) col);
         else if (nvb instanceof NVInt) ((NVInt) nvb).setValue(((Number) col).intValue());
         else if (nvb instanceof NVLong) ((NVLong) nvb).setValue(((Number) col).longValue());

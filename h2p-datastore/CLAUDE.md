@@ -11,7 +11,7 @@ JDBC driver + URL.
 |---|---|
 | `H2PDataStore.java` | The datastore — DDL, CRUD, search, references, transactions, sequences, DEM |
 | `H2PDSCreator.java` | Factory + `H2PParam` config enum + URL/DSType resolution |
-| `H2PUtil.java` | Attribute classification (`AttrKind`) + column-type mapping + identifier quoting |
+| `H2PUtil.java` | Attribute classification (`AttrKind`) + column-type mapping + identifier quoting + `parseJdbcURL` |
 | `H2PQueryFormatter.java` | `QueryMarker` → `WHERE` clause + parameter binding |
 | `H2PExceptionHandler.java` | SQLState → `APIException` mapping |
 | `H2PMetaManager.java` | Per-instance table registry |
@@ -97,12 +97,43 @@ H2PDSCreator creator = new H2PDSCreator();
 // H2 (in-memory, PostgreSQL dialect)
 APIConfigInfo h2 = creator.toAPIConfigInfo("jdbc:h2:mem:mydb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
 
-// Native PostgreSQL — set the driver, pass a jdbc:postgresql URL (or host/port/db components)
+// Native PostgreSQL — a jdbc:postgresql URL auto-selects org.postgresql.Driver (both toAPIConfigInfo overloads)
 APIConfigInfo pg = creator.toAPIConfigInfo("jdbc:postgresql://host:5432/db", "user", "pass");
-pg.getProperties().build(H2PDSCreator.H2PParam.DRIVER.getName(), "org.postgresql.Driver");
 
 H2PDataStore ds = new H2PDataStore();
 ds.setAPIConfigInfo(pg);            // getDSType() -> POSTGRES, schemaless columns -> jsonb
+```
+
+The single-URL factories (`toAPIConfigInfo(url)` / `toAPIConfigInfo(url,user,pwd)`) support **both**
+engines: a `jdbc:postgresql` URL auto-sets `DRIVER=org.postgresql.Driver`; any other URL keeps the
+default H2 driver. When building a config by components instead (no `URL`), set `DRIVER` yourself for
+Postgres. Detection is **parser-backed** (`isPostgres`/`resolveDSType` → `H2PUtil.parseJdbcURL`,
+matching the `subprotocol`, not a prefix substring), with a driver-class fallback for the no-URL path.
+The Hikari pool connects with whatever `DRIVER` is set — so the driver must match the URL.
+
+### JDBC URL parser
+`H2PUtil.parseJdbcURL(String) -> NVGenericMap` is the structured parser the creator uses internally
+(instead of ad-hoc `startsWith`/`contains`). It returns `url` + `subprotocol` always, plus (when
+present) `type` (H2 mem/file/tcp), `host`, `port` (NVInt), `database`, `path`, and a nested `params`
+map of the `;`- or `?&`-delimited settings (keys verbatim, e.g. `CIPHER`, `MODE`, `DB_CLOSE_DELAY`).
+Throws `IllegalArgumentException` for null / non-`jdbc:` input. Key names are the `H2PUtil.JDBC_*`
+constants.
+
+### Encrypted H2 (CIPHER)
+The **cipher is not a secret** and lives in the URL (`;CIPHER=AES`); only the passwords are supplied
+separately (typically from a different source — GUI/web/CLI). Use
+`toAPIConfigInfo(url, user, password, filePassword)` — it sets `USER`/`PASSWORD`/`FILE_PASSWORD` and
+leaves the cipher in the URL. **A supplied `filePassword` implies encryption:** if the H2 URL has no
+cipher, the factory appends H2's default `;CIPHER=AES` automatically (otherwise `dataStorePassword`
+would silently drop the file password — H2 needs a cipher to treat the file as encrypted).
+`H2PParam.isEncrypted` (via `hasCipher`) treats the DB as encrypted when `CIPHER` is a param **or** a
+parsed URL setting, and `dataStorePassword` then emits H2's `"<filePwd> <userPwd>"` form (plain user
+password when not encrypted; always plain for Postgres). Example:
+```java
+APIConfigInfo enc = creator.toAPIConfigInfo(
+    "jdbc:h2:file:./data/secure;CIPHER=AES", "sa", "userPass", "encPass");
+// dataStorePassword() -> "encPass userPass"
+// (same result even if ";CIPHER=AES" is omitted from the URL — a file password auto-adds it)
 ```
 
 ## Connections / pooling
@@ -110,7 +141,10 @@ ds.setAPIConfigInfo(pg);            // getDSType() -> POSTGRES, schemaless colum
   `pool().getConnection()` when `currentDSType == POSTGRES`. The `HikariDataSource` is built lazily
   from the resolved URL/user/password/driver, sized by `POOL_MAX_SIZE` (default 10) / `POOL_MIN_IDLE`
   (default 2), and closed by the datastore's `close()`.
-- **H2 is not pooled** — it opens a fresh `DriverManager` connection per op (in-mem is ~free).
+- **H2 is not pooled** — it opens a fresh `DriverManager` connection per op (in-mem is ~free). The
+  per-op URL/user/password are computed once and held in a per-instance `cache`
+  (`ConcurrentHashMap`), which `setAPIConfigInfo` **clears** on reconfigure so cached values can't go
+  stale. (`computeIfAbsent` won't store a `null`, so a null-valued key just recomputes each op.)
 - A pooled `connection.close()` returns the connection to the pool, so `acquire()`, the per-op
   `close(...)`, `execDDL` (its own connection), and the ThreadLocal transaction machinery are all
   unchanged — only the physical connection *source* differs between engines. HikariCP is a compile
@@ -144,13 +178,27 @@ Compile with `mvn -o -pl h2p-datastore -DskipTests test-compile`, then run the l
 module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath` + the
 `junit-platform-*` jars) selecting package `io.xlogistx.datastore.h2p.test`, with `-ea`.
 
-- `H2PDataStoreTest` — full suite on in-memory H2 (`MODE=PostgreSQL`). All green.
+- `H2PDataStoreTest` — full suite on in-memory H2 (`MODE=PostgreSQL`). All green. Includes
+  `testEncryptedH2FileRoundTrip` — a temp **file** DB with `;CIPHER=AES` (secrets passed via the 4-arg
+  `toAPIConfigInfo`): asserts `dataStorePassword` → `"<filePwd> <userPwd>"`, CRUD over the encrypted
+  file, persistence across a fresh-store reopen, and rejection of a wrong file password. It omits
+  `DB_CLOSE_DELAY=-1` on purpose so the DB closes between stores and the password is re-validated.
 - `H2PPostgresDataStoreTest` — **live PostgreSQL**; auto-skipped unless configured. `h2p.pg.url` is the
   **base endpoint** (no db); the test connects to the `postgres` maintenance db, **creates the target
   database if missing** (default `testpostgres`, override `-Dh2p.pg.db`), then runs the same scenarios
   (jsonb NVGenericMap/NamedValue, bytea, FK references, transactions) and asserts `getDSType()==POSTGRES`:
   ```
   -Dh2p.pg.url=jdbc:postgresql://host:5432 -Dh2p.pg.user=… -Dh2p.pg.password=…
+  ```
+- `H2PDomainSecurityManagerDBTest` — `DomainSecurityManager` integration (subjects/credentials/
+  permissions/roles/role-groups), **engine-agnostic via one JDBC URL**. Auto-skipped unless `-Dds.url`
+  is set; the setup parses it with `H2PUtil.parseJdbcURL` and branches: **H2** (mem/file, cipher in the
+  URL) uses the 4-arg factory; **Postgres** auto-creates the target db (like above). Standard `ds.*`
+  **system properties** for both engines:
+  ```
+  -Dds.url=jdbc:h2:mem:dsm;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+  -Dds.url=jdbc:h2:file:./data/dsm;CIPHER=AES;MODE=PostgreSQL -Dds.file_password=encPass -Dds.user=sa -Dds.password=userPass
+  -Dds.url=jdbc:postgresql://host:5432 -Dds.user=… -Dds.password=…   # -Dds.db optional
   ```
 
 ## Ground rules for future sessions

@@ -13,6 +13,8 @@ import org.zoxweb.shared.util.GetName;
 import org.zoxweb.shared.util.MetaToken;
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVEntity;
+import org.zoxweb.shared.util.NVGenericMap;
+import org.zoxweb.shared.util.NVInt;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -144,5 +146,154 @@ public final class H2PUtil {
     @SuppressWarnings("unchecked")
     public static Class<? extends NVEntity> childEntityClass(NVConfig nvc) {
         return (Class<? extends NVEntity>) nvc.getMetaTypeBase();
+    }
+
+    // ---------- JDBC URL parsing ----------
+
+    /** Keys used by {@link #parseJdbcURL(String)} in the returned {@link NVGenericMap}. */
+    public static final String JDBC_PREFIX      = "jdbc:";
+    public static final String JDBC_URL         = "url";          // the original URL, verbatim
+    public static final String JDBC_SUBPROTOCOL = "subprotocol";  // e.g. "h2", "postgresql", "mysql" (lowercased)
+    public static final String JDBC_TYPE        = "type";         // H2 sub-type: mem | file | tcp | ssl | zip | nio
+    public static final String JDBC_HOST        = "host";         // hostname (or raw multi-host authority)
+    public static final String JDBC_PORT        = "port";         // NVInt when numeric, else the raw string
+    public static final String JDBC_DATABASE    = "database";     // database / schema name
+    public static final String JDBC_PATH        = "path";         // filesystem path (H2 file/embedded forms)
+    public static final String JDBC_PARAMS      = "params";       // nested map of driver settings/options
+
+    /**
+     * Parse a JDBC URL into an {@link NVGenericMap}. The JDBC spec only fixes the
+     * {@code jdbc:<subprotocol>:<subname>} prefix; the subname is vendor-specific, so this parser
+     * understands the two shapes this datastore targets (and most others that follow them):
+     * <ul>
+     *   <li><b>H2</b> — {@code jdbc:h2:mem:<db>}, {@code jdbc:h2:file:<path>}, {@code jdbc:h2:tcp://<host>:<port>/<db>},
+     *       or a bare {@code jdbc:h2:<path>}, with {@code ;KEY=VALUE} settings.</li>
+     *   <li><b>PostgreSQL / MySQL</b> — {@code jdbc:postgresql://<host>:<port>/<db>} with {@code ?opt=val&opt2=val2}
+     *       options (also a db-only {@code jdbc:postgresql:<db>}).</li>
+     * </ul>
+     * The returned map always carries {@link #JDBC_URL} and {@link #JDBC_SUBPROTOCOL}; the remaining
+     * structural keys ({@link #JDBC_TYPE}/{@link #JDBC_HOST}/{@link #JDBC_PORT}/{@link #JDBC_DATABASE}/
+     * {@link #JDBC_PATH}) are present only when applicable. All {@code ;}- or {@code ?&}-delimited
+     * settings go into a nested {@link #JDBC_PARAMS} map, keys verbatim (e.g. {@code CIPHER}, {@code MODE},
+     * {@code DB_CLOSE_DELAY}, {@code ssl}).
+     *
+     * @throws IllegalArgumentException if {@code jdbcURL} is null or does not start with {@code jdbc:}.
+     */
+    public static NVGenericMap parseJdbcURL(String jdbcURL) {
+        if (jdbcURL == null || !jdbcURL.regionMatches(true, 0, JDBC_PREFIX, 0, JDBC_PREFIX.length())) {
+            throw new IllegalArgumentException("Not a JDBC URL: " + jdbcURL);
+        }
+        NVGenericMap ret = new NVGenericMap("jdbc-url");
+        ret.build(JDBC_URL, jdbcURL);
+
+        // subprotocol = the token between the first two ':' (jdbc:<subprotocol>:<subname>)
+        String rest = jdbcURL.substring(JDBC_PREFIX.length());
+        int c = rest.indexOf(':');
+        String subprotocol = c >= 0 ? rest.substring(0, c) : rest;
+        ret.build(JDBC_SUBPROTOCOL, subprotocol.toLowerCase());
+        String subname = c >= 0 ? rest.substring(c + 1) : "";
+
+        // Split off the settings section: ';' (H2 style) or '?...&' (query style), whichever comes first.
+        int semi = subname.indexOf(';');
+        int q = subname.indexOf('?');
+        int cut = -1;
+        boolean queryStyle = false;
+        if (semi >= 0 && (q < 0 || semi < q)) {
+            cut = semi;
+        } else if (q >= 0) {
+            cut = q;
+            queryStyle = true;
+        }
+        String base = cut >= 0 ? subname.substring(0, cut) : subname;
+        String paramPart = cut >= 0 ? subname.substring(cut + 1) : null;
+
+        if ("h2".equalsIgnoreCase(subprotocol)) {
+            parseH2Base(ret, base);
+        } else {
+            parseNetworkOrDbBase(ret, base);
+        }
+
+        if (paramPart != null && !paramPart.isEmpty()) {
+            NVGenericMap params = new NVGenericMap(JDBC_PARAMS);
+            for (String tok : paramPart.split(queryStyle ? "&" : ";", -1)) {
+                if (tok.isEmpty()) {
+                    continue;
+                }
+                int eq = tok.indexOf('=');
+                if (eq >= 0) {
+                    params.build(tok.substring(0, eq), tok.substring(eq + 1));
+                } else {
+                    params.build(tok, "");
+                }
+            }
+            ret.build(params);
+        }
+        return ret;
+    }
+
+    /** H2 subname: {@code mem:<db>} | {@code file:<path>} | {@code tcp://<host>:<port>/<db>} | bare {@code <path>}. */
+    private static void parseH2Base(NVGenericMap ret, String base) {
+        int c = base.indexOf(':');
+        String subtype = c >= 0 ? base.substring(0, c) : null;
+        if (subtype != null && (subtype.equalsIgnoreCase("mem") || subtype.equalsIgnoreCase("file")
+                || subtype.equalsIgnoreCase("tcp") || subtype.equalsIgnoreCase("ssl")
+                || subtype.equalsIgnoreCase("zip") || subtype.equalsIgnoreCase("nio")
+                || subtype.equalsIgnoreCase("nioMapped"))) {
+            ret.build(JDBC_TYPE, subtype.toLowerCase());
+            String remainder = base.substring(c + 1);
+            if (subtype.equalsIgnoreCase("tcp") || subtype.equalsIgnoreCase("ssl")) {
+                parseNetworkOrDbBase(ret, remainder); // remainder is //host:port/db
+            } else if (subtype.equalsIgnoreCase("mem")) {
+                if (!remainder.isEmpty()) ret.build(JDBC_DATABASE, remainder);
+            } else if (!remainder.isEmpty()) {
+                ret.build(JDBC_PATH, remainder); // file / zip / nio -> a filesystem path
+            }
+        } else if (!base.isEmpty()) {
+            ret.build(JDBC_PATH, base); // bare path form: jdbc:h2:~/test or jdbc:h2:./data/db
+        }
+    }
+
+    /** Network authority ({@code //host[:port][,host2:port2]/db}) or a db-only subname. */
+    private static void parseNetworkOrDbBase(NVGenericMap ret, String base) {
+        if (!base.startsWith("//")) {
+            if (!base.isEmpty()) ret.build(JDBC_DATABASE, base); // e.g. jdbc:postgresql:mydb
+            return;
+        }
+        String s = base.substring(2);
+        int slash = s.indexOf('/');
+        String authority = slash >= 0 ? s.substring(0, slash) : s;
+        String db = slash >= 0 ? s.substring(slash + 1) : "";
+        if (!db.isEmpty()) ret.build(JDBC_DATABASE, db);
+        if (authority.isEmpty()) {
+            return;
+        }
+        if (authority.indexOf(',') >= 0) {
+            ret.build(JDBC_HOST, authority); // multi-host: keep raw, don't split a single port
+            return;
+        }
+        String host = authority;
+        String port = null;
+        if (authority.startsWith("[")) {                 // IPv6 literal: [::1]:5432
+            int close = authority.indexOf(']');
+            if (close > 0) {
+                host = authority.substring(0, close + 1);
+                int colon = authority.indexOf(':', close);
+                if (colon >= 0) port = authority.substring(colon + 1);
+            }
+        } else {
+            int colon = authority.lastIndexOf(':');
+            if (colon >= 0) {
+                host = authority.substring(0, colon);
+                port = authority.substring(colon + 1);
+            }
+        }
+        ret.build(JDBC_HOST, host);
+        if (port != null && !port.isEmpty()) {
+            try {
+                ret.build(new NVInt(JDBC_PORT, Integer.parseInt(port.trim())));
+            } catch (NumberFormatException e) {
+                ret.build(JDBC_PORT, port);
+            }
+        }
     }
 }

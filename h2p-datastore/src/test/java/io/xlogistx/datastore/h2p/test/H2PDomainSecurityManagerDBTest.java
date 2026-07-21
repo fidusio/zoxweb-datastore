@@ -4,16 +4,15 @@ package io.xlogistx.datastore.h2p.test;
 import io.xlogistx.datastore.h2p.H2PDSCreator;
 import io.xlogistx.datastore.h2p.H2PDataStore;
 import io.xlogistx.datastore.h2p.H2PExceptionHandler;
+import io.xlogistx.datastore.h2p.H2PUtil;
 import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.security.DomainSecurityManagerDefault;
 import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.security.SecUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
@@ -34,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * name (UUID-suffixed) so the suite is safe to re-run against a persistent database. The tests
  * do not delete anything — all created data is left in the store for inspection.
  */
-public class DomainSecurityManagerDBTest {
+public class H2PDomainSecurityManagerDBTest {
     // replicaSet=rs0 targets the replica set (required for transactions).
 
 
@@ -46,45 +45,66 @@ public class DomainSecurityManagerDBTest {
     private static DomainSecurityManager domainSecurityManager;
     private static H2PDataStore ds;
 
-    /** Target database name; auto-created if missing. Override with -Dh2p.pg.db. */
-    private static final String DB_NAME = System.getenv("h2p.pg.db");
+    /** Target Postgres database name; auto-created if missing. Override with -Dds.db. */
+    private static final String DB_NAME = System.getProperty("ds.db");
 
     @BeforeAll
     @SuppressWarnings("unused")
     public static void setup() throws Exception {
-        // h2p.pg.url is the BASE endpoint, e.g. jdbc:postgresql://lax2.xlogistx.io:5432 (db optional).
+        // One JDBC URL drives both engines (set via -Dds.url). Examples:
+        //   H2 file (encrypted):  -Dds.url=jdbc:h2:file:./data/dsm;CIPHER=AES;MODE=PostgreSQL  (+ -Dds.file_password=...)
+        //   H2 in-memory:         -Dds.url=jdbc:h2:mem:dsm;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+        //   PostgreSQL:           -Dds.url=jdbc:postgresql://host:5432  (db optional; auto-created)
+        String url = System.getProperty("ds.url");
+        Assumptions.assumeTrue(url != null && !url.isEmpty(),
+                "set -Dds.url=jdbc:h2:... or jdbc:postgresql://host:port (+ -Dds.user / -Dds.password, and -Dds.file_password for an encrypted H2 DB) to run this test");
 
-        String raw = System.getenv("h2p.pg.url");
-        System.out.println(raw + " " + DB_NAME);
-        Assumptions.assumeTrue(raw != null && !raw.isEmpty(),
-                "set -Dh2p.pg.url=jdbc:postgresql://host:port (+ h2p.pg.user / h2p.pg.password) to run the live PostgreSQL test");
-        String user = System.getenv("h2p.pg.user");
-        String password = System.getenv("h2p.pg.password");
-        System.out.println(raw + " " + DB_NAME + " " + user + " " + password);
+        String user = System.getProperty("ds.user");
+        String password = System.getProperty("ds.password");
+        String filePassword = System.getProperty("ds.file_password"); // H2 encrypted (CIPHER) DB only
 
-        Class.forName("org.postgresql.Driver");
-
-        // Split off any db path to derive a maintenance URL (postgres) and the target DB URL.
-        int schemeEnd = raw.indexOf("://");
-        int pathStart = schemeEnd >= 0 ? raw.indexOf('/', schemeEnd + 3) : -1;
-        String base = pathStart >= 0 ? raw.substring(0, pathStart) : raw;
-        String maintenanceUrl = base + "/postgres";
-        String targetUrl = base + "/" + DB_NAME;
-
-        ensureDatabase(maintenanceUrl, user, password, DB_NAME);
+        // Structured parse -> branch on the engine.
+        NVGenericMap parsed = H2PUtil.parseJdbcURL(url);
+        String subprotocol = parsed.getValue(H2PUtil.JDBC_SUBPROTOCOL);
 
         H2PDSCreator creator = new H2PDSCreator();
-        APIConfigInfo cfg = creator.toAPIConfigInfo(targetUrl, user, password);
-        cfg.getProperties().build(H2PDSCreator.H2PParam.DRIVER.getName(), "org.postgresql.Driver");
+        APIConfigInfo cfg;
+
+        if ("postgresql".equals(subprotocol)) {
+            Class.forName("org.postgresql.Driver");
+            // Rebuild the base endpoint (host[:port]) from the parsed URL, then create the target DB if missing.
+            String host = parsed.getValue(H2PUtil.JDBC_HOST);
+            Object port = parsed.getValue(H2PUtil.JDBC_PORT);
+            String base = "jdbc:postgresql://" + host + (port != null ? ":" + port : "");
+            String targetDb = firstNonEmpty(parsed.getValue(H2PUtil.JDBC_DATABASE), DB_NAME, "testpostgres");
+            ensureDatabase(base + "/postgres", user, password, targetDb);
+            String targetUrl = base + "/" + targetDb;
+            cfg = creator.toAPIConfigInfo(targetUrl, user, password); // auto-selects the postgres driver
+            System.out.println("Live PostgreSQL target: " + targetUrl);
+        } else {
+            // H2 (mem/file/tcp). CIPHER, if any, is in the URL; the file password is passed separately.
+            cfg = creator.toAPIConfigInfo(url, user, password, filePassword);
+            System.out.println("H2 target: " + url);
+        }
 
         ds = new H2PDataStore();
         ds.setAPIConfigInfo(cfg);
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
 
         OPSecUtil.singleton();
-        System.out.println("Live PostgreSQL target: " + targetUrl);
-        //cdst = new CommonDataStoreTest<>(h2pDataStore);
         domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(ds).addCredentialType(CIPassword.class);
+    }
+
+    /** First non-null, non-empty value (env-var fallback chains). */
+    private static String firstNonEmpty(String... values) {
+        if (values != null) {
+            for (String v : values) {
+                if (v != null && !v.isEmpty()) {
+                    return v;
+                }
+            }
+        }
+        return null;
     }
 
     /** Create the test database if it does not already exist (CREATE DATABASE cannot run in a txn). */
