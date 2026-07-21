@@ -182,7 +182,6 @@ public class H2PDSCreator
                 pwd = (filePwd != null ? filePwd : "") + " " + (pwd != null ? pwd : "");
 
             }
-            System.out.println("dataStorePassword: " + pwd);
             return pwd;
         }
 
