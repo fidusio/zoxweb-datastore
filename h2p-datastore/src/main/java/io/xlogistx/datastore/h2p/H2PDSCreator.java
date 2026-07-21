@@ -15,15 +15,8 @@
  */
 package io.xlogistx.datastore.h2p;
 
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.api.APIDataStore;
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.api.APIDataStore.DSType;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIExceptionHandler;
-import org.zoxweb.shared.api.APIServiceProviderCreator;
-import org.zoxweb.shared.api.APIServiceType;
-import org.zoxweb.shared.api.APITokenManager;
 import org.zoxweb.shared.util.GetNameValue;
 import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.NVInt;
@@ -278,6 +271,15 @@ public class H2PDSCreator
         }
     }
 
+//    @Override
+//    public APIServiceProvider<?, ?> createAPI(APIDataStore<?, ?> dataStore, String urlConfig)
+//            throws APIException{
+//        APIConfigInfo aci = ;
+//        H2PDataStore ds = new H2PDataStore();
+//        ds.setAPIConfigInfo(aci);
+//        ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+//    }
+
     /**
      * Convenience: build a config from a single full JDBC URL (with default user/password).
      * e.g. {@code toAPIConfigInfo("jdbc:h2:mem:mydb;DB_CLOSE_DELAY=-1")}.
@@ -285,8 +287,8 @@ public class H2PDSCreator
      * <p>Supports both engines: a {@code jdbc:postgresql} URL auto-selects the Postgres driver so the
      * config connects as-is; any other URL keeps the default H2 driver from {@link #createEmptyConfigInfo()}.
      */
-    public APIConfigInfo toAPIConfigInfo(String jdbcURL) {
-        APIConfigInfo ret = createEmptyConfigInfo();
+    public static APIConfigInfo toAPIConfigInfo(String jdbcURL) {
+        APIConfigInfo ret = new H2PDSCreator().createEmptyConfigInfo();
         ret.getProperties().build(H2PParam.URL, jdbcURL);
         // A postgres URL needs the postgres driver; the default config ships the H2 driver.
         if (isPostgresURL(jdbcURL)) {
@@ -296,7 +298,7 @@ public class H2PDSCreator
     }
 
     /** Convenience: build a config from a full JDBC URL plus explicit credentials. */
-    public APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password) {
+    public static APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password) {
         return toAPIConfigInfo(jdbcURL, user, password, null);
     }
 
@@ -312,7 +314,7 @@ public class H2PDSCreator
      * is encrypted, {@link H2PParam#dataStorePassword} combines {@code filePassword} and {@code password} into
      * H2's {@code "<filePwd> <userPwd>"} form. {@code filePassword} is ignored on PostgreSQL.
      */
-    public APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password, String filePassword) {
+    public static APIConfigInfo toAPIConfigInfo(String jdbcURL, String user, String password, String filePassword) {
         // A file password implies encryption: ensure the H2 URL carries a cipher so it isn't dropped.
         if (SUS.isNotEmpty(filePassword) && jdbcURL != null
                 && !isPostgresURL(jdbcURL) && !H2PParam.hasCipher(jdbcURL)) {

@@ -56,12 +56,12 @@ public class H2PDataStoreTest {
     @BeforeAll
     public static void setup() {
         H2PDSCreator creator = new H2PDSCreator();
-        APIConfigInfo configInfo = creator.toAPIConfigInfo(DB_URL);
-        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
+//        APIConfigInfo configInfo = H2PDSCreator.toAPIConfigInfo(DB_URL);
+//        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
 
-        h2DataStore = new H2PDataStore();
-        h2DataStore.setAPIConfigInfo(configInfo);
-        h2DataStore.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+        h2DataStore = creator.createAPI(null, H2PDSCreator.toAPIConfigInfo(DB_URL));
+//        h2DataStore.setAPIConfigInfo(configInfo);
+//        h2DataStore.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(h2DataStore);
     }
@@ -711,7 +711,7 @@ public class H2PDataStoreTest {
         }
     }
 
-    private static H2PDataStore newStore(APIConfigInfo cfg) {
+    public  static H2PDataStore newStore(APIConfigInfo cfg) {
         H2PDataStore ds = new H2PDataStore();
         ds.setAPIConfigInfo(cfg);
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);

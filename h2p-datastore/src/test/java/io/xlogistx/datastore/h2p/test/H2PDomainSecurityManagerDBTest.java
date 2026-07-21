@@ -79,17 +79,15 @@ public class H2PDomainSecurityManagerDBTest {
             String targetDb = firstNonEmpty(parsed.getValue(H2PUtil.JDBC_DATABASE), DB_NAME, "testpostgres");
             ensureDatabase(base + "/postgres", user, password, targetDb);
             String targetUrl = base + "/" + targetDb;
-            cfg = creator.toAPIConfigInfo(targetUrl, user, password); // auto-selects the postgres driver
+            cfg = H2PDSCreator.toAPIConfigInfo(targetUrl, user, password); // auto-selects the postgres driver
             System.out.println("Live PostgreSQL target: " + targetUrl);
         } else {
             // H2 (mem/file/tcp). CIPHER, if any, is in the URL; the file password is passed separately.
-            cfg = creator.toAPIConfigInfo(url, user, password, filePassword);
+            cfg = H2PDSCreator.toAPIConfigInfo(url, user, password, filePassword);
             System.out.println("H2 target: " + url);
         }
 
-        ds = new H2PDataStore();
-        ds.setAPIConfigInfo(cfg);
-        ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+        ds = creator.createAPI(null, H2PDSCreator.toAPIConfigInfo(url, user, password, filePassword));
 
         OPSecUtil.singleton();
         domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(ds).addCredentialType(CIPassword.class);
