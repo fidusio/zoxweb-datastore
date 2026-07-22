@@ -142,6 +142,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         cache.clear(false);
         // A new config may point at a different database, where none of these tables exist yet.
         createdTables.clear();
+        metaManager.clear();
     }
 
     @Override

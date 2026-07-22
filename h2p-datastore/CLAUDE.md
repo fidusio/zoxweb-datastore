@@ -14,7 +14,7 @@ JDBC driver + URL.
 | `H2PUtil.java` | Attribute classification (`AttrKind`) + column-type mapping + identifier quoting + `parseJdbcURL` |
 | `H2PQueryFormatter.java` | `QueryMarker` → `WHERE` clause + parameter binding |
 | `H2PExceptionHandler.java` | SQLState → `APIException` mapping |
-| `H2PMetaManager.java` | Per-instance table registry |
+| `H2PMetaManager.java` | Per-instance table registry (case-insensitive; backs `getStoreTables()`; cleared on reconfigure) |
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
 
 ## Storage model (fully normalized — no binary blobs)
@@ -155,8 +155,9 @@ APIConfigInfo enc = creator.toAPIConfigInfo(
   (default 2), and closed by the datastore's `close()`.
 - **H2 is not pooled** — it opens a fresh `DriverManager` connection per op (in-mem is ~free). The
   per-op URL/user/password are computed once and held in a per-instance `cache`
-  (`ConcurrentHashMap`), which `setAPIConfigInfo` **clears** on reconfigure so cached values can't go
-  stale. (`computeIfAbsent` won't store a `null`, so a null-valued key just recomputes each op.)
+  (`RegistrarMapDefault`, fully synchronized), which `setAPIConfigInfo` **clears** on reconfigure so
+  cached values can't go stale. (`lookup(key, fn)` won't store a `null`, so a null-valued key just
+  recomputes each op — same contract as `computeIfAbsent`.)
 - A pooled `connection.close()` returns the connection to the pool, so `acquire()`, the per-op
   `close(...)`, `execDDL` (its own connection), and the ThreadLocal transaction machinery are all
   unchanged — only the physical connection *source* differs between engines. HikariCP is a compile
@@ -173,7 +174,8 @@ APIConfigInfo enc = creator.toAPIConfigInfo(
   memoizes by the name it was given (`nvceByTypeName`).
 - **`tableExists` caches positives** into `createdTables`. A JVM reading a pre-existing DB never runs
   `ensureTable`, so without this every select paid an `INFORMATION_SCHEMA` round trip.
-  `setAPIConfigInfo` clears `createdTables` (a new config may point at a different database).
+  `setAPIConfigInfo` clears `createdTables` **and** `metaManager` (a new config may point at a
+  different database, and `getStoreTables()` must not report the old one's tables).
 - **Per-type INSERT/UPDATE SQL is cached** (`insertSQLCache`/`updateSQLCache`); `syncJoins` prepares
   once and uses `addBatch`/`executeBatch`; `materialize` resolves column labels once per result set;
   `AttrInfo.lowerName` is precomputed; `delete(nve, true)` recurses through `innerDelete(con, …)` so
