@@ -35,6 +35,12 @@ children first so FK targets exist; read resolves single refs via `searchByID` a
 the join table). Referential integrity is DB-enforced. There is **no binary serialization** of
 entities.
 
+`ensureTable` also emits `CREATE INDEX IF NOT EXISTS` (portable to both engines) via `createIndex`:
+join tables get `(parent_guid, ord)` + `(child_guid)`, `ENTITY_REF` columns get one, and non-unique
+uuid scalars (`subject_guid`, reference ids) get one. **A FOREIGN KEY indexes only the referenced
+side** — on PostgreSQL *and* H2 the referencing column needs its own index or every collection read
+and cascade delete is a full scan. Index names are truncated to 63 chars (PostgreSQL's limit).
+
 ### Schemaless JSON
 
 Produced uniformly by `GSONUtil.toJSONDefault(nvb)` / `fromJSONDefault(json, targetClass)` — the
@@ -155,6 +161,30 @@ APIConfigInfo enc = creator.toAPIConfigInfo(
   `close(...)`, `execDDL` (its own connection), and the ThreadLocal transaction machinery are all
   unchanged — only the physical connection *source* differs between engines. HikariCP is a compile
   dependency (`com.zaxxer:HikariCP:5.1.0`), only exercised on the Postgres path.
+
+## Read/write path costs (things already fixed — don't regress them)
+- **Collection reads are batched.** `buildEntity` fetches a whole entity collection with one
+  `IN (…)` query and re-orders in memory by the join table's `ord`. Measured on 100 entities × a
+  3-element collection: **404 → 204 statements**. (Single `ENTITY_REF`s are still one query each —
+  batching those across rows would need `select()` restructured; open opportunity.)
+- **`childNVCE(ai)` memoizes on `AttrInfo`.** It looks up a *Java class name* while `H2PMetaManager`
+  is keyed by *meta-type name* (`address_dao`), so the registry can never hit — unmemoized this cost
+  a `Class.forName` + reflective `newInstance()` per reference attribute per row. `resolveNVCE` also
+  memoizes by the name it was given (`nvceByTypeName`).
+- **`tableExists` caches positives** into `createdTables`. A JVM reading a pre-existing DB never runs
+  `ensureTable`, so without this every select paid an `INFORMATION_SCHEMA` round trip.
+  `setAPIConfigInfo` clears `createdTables` (a new config may point at a different database).
+- **Per-type INSERT/UPDATE SQL is cached** (`insertSQLCache`/`updateSQLCache`); `syncJoins` prepares
+  once and uses `addBatch`/`executeBatch`; `materialize` resolves column labels once per result set;
+  `AttrInfo.lowerName` is precomputed; `delete(nve, true)` recurses through `innerDelete(con, …)` so
+  the cascade doesn't re-`acquire()` a connection per referenced entity.
+
+Note in-memory H2 will *not* show these as wall-clock wins — a query there costs microseconds.
+Benchmark statement **counts** (H2 `SET QUERY_STATISTICS TRUE` + `INFORMATION_SCHEMA.QUERY_STATISTICS`),
+not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
+
+Still open: no `LIMIT`/pagination — `search` materializes the whole matching table; H2 is unpooled
+(fine for `mem`, a real cost for `file`); `insert`/`update` each do an `existsByGuid` probe first.
 
 ## Transactions / sequences / DEM
 - Transactions: ambient `ThreadLocal<Connection>` (`autoCommit=false`), `begin/end/abort`. Data ops

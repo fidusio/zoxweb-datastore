@@ -33,28 +33,7 @@ import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.SecurityController;
-import org.zoxweb.shared.util.ArrayValues;
-import org.zoxweb.shared.util.DynamicEnumMap;
-import org.zoxweb.shared.util.GetName;
-import org.zoxweb.shared.util.IDGenerator;
-import org.zoxweb.shared.util.MetaToken;
-import org.zoxweb.shared.util.NVBase;
-import org.zoxweb.shared.util.NVBlob;
-import org.zoxweb.shared.util.NVBoolean;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.NVDouble;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVEntityReference;
-import org.zoxweb.shared.util.NVEnum;
-import org.zoxweb.shared.util.NVEnumList;
-import org.zoxweb.shared.util.NVFloat;
-import org.zoxweb.shared.util.NVInt;
-import org.zoxweb.shared.util.NVLong;
-import org.zoxweb.shared.util.NVNumber;
-import org.zoxweb.shared.util.NamedValue;
-import org.zoxweb.shared.util.SUS;
-import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.*;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -121,7 +100,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     private volatile HikariDataSource pool = null;
     // General-purpose per-instance cache (resolved-once connection params + other reuse). Cleared on
     // reconfigure in setAPIConfigInfo so cached values can't go stale across a new config.
-    private volatile ConcurrentHashMap<Object, String> cache = new ConcurrentHashMap<>();
+    private final RegistrarMapDefault<Object, Object> cache = new RegistrarMapDefault<>();
 
     /**
      * A JDBC transaction is bound to the calling thread via this ThreadLocal connection
@@ -160,7 +139,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         this.dialect = H2PDialect.forDSType(currentDSType);
         // New config -> drop any cached connection params (jdbc-url / user / password) so they
         // can't go stale; they are recomputed lazily on the next newConnection().
-        cache.clear();
+        cache.clear(false);
+        // A new config may point at a different database, where none of these tables exist yet.
+        createdTables.clear();
     }
 
     @Override
@@ -193,9 +174,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             Connection conn = (currentDSType == DSType.POSTGRES)
                     ? pool().getConnection()
                     : DriverManager.getConnection(
-                    cache.computeIfAbsent("jdbc-url", k -> H2PParam.dataStoreURI(getAPIConfigInfo())),
-                    cache.computeIfAbsent(H2PParam.USER.getName(), k -> getAPIConfigInfo().getProperties().getValue(H2PParam.USER)),
-                    cache.computeIfAbsent("file-user-password", k -> H2PParam.dataStorePassword(getAPIConfigInfo())));
+                    cache.lookup("jdbc-url", k -> H2PParam.dataStoreURI(getAPIConfigInfo())),
+                    cache.lookup(H2PParam.USER.getName(), k -> getAPIConfigInfo().getProperties().getValue(H2PParam.USER)),
+                    cache.lookup("file-user-password", k -> H2PParam.dataStorePassword(getAPIConfigInfo())));
             synchronized (connections) {
                 connections.add(conn);
             }
@@ -478,11 +459,17 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     private static final class AttrInfo {
         final NVConfig nvc;
         final String name;
+        /** {@code name.toLowerCase()} — the key rows are materialized under; precomputed (hot read path). */
+        final String lowerName;
         final H2PUtil.AttrKind kind;
+        /** Referenced type for ENTITY_REF / ENTITY_COLLECTION, resolved once — see {@link #childNVCE}. */
+        volatile NVConfigEntity child;
+        volatile boolean childUnresolvable;
 
         AttrInfo(NVConfig nvc) {
             this.nvc = nvc;
             this.name = nvc.getName();
+            this.lowerName = this.name.toLowerCase();
             this.kind = H2PUtil.classify(nvc);
         }
 
@@ -493,6 +480,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     }
 
     private final Map<String, List<AttrInfo>> attrCache = new ConcurrentHashMap<>();
+    // Per-type SQL, built once — a type's column list never changes.
+    private final Map<String, String> insertSQLCache = new ConcurrentHashMap<>();
+    private final Map<String, String> updateSQLCache = new ConcurrentHashMap<>();
 
     private List<AttrInfo> attrInfos(NVConfigEntity nvce) {
         return attrCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
@@ -512,8 +502,21 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         return nvce.getName() + "__" + ai.name;
     }
 
+    /**
+     * The referenced type of an ENTITY_REF / ENTITY_COLLECTION attribute, memoized per attribute.
+     * The lookup key is a Java class name while {@link H2PMetaManager} is keyed by meta-type name
+     * ({@code nvce.getName()}, e.g. {@code address_dao}), so the registry can never hit — without this
+     * memo every row read would pay a {@code Class.forName} + reflective {@code newInstance()} per
+     * reference attribute.
+     */
     private NVConfigEntity childNVCE(AttrInfo ai) {
-        return resolveNVCE(H2PUtil.childEntityClass(ai.nvc).getName());
+        NVConfigEntity c = ai.child;
+        if (c == null && !ai.childUnresolvable) {
+            c = resolveNVCE(H2PUtil.childEntityClass(ai.nvc).getName());
+            if (c != null) ai.child = c;
+            else ai.childUnresolvable = true;
+        }
+        return c;
     }
 
     /**
@@ -568,6 +571,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                             + H2PUtil.q("fk_" + nvce.getName() + "_" + ai.name)
                             + " FOREIGN KEY (" + H2PUtil.q(ai.name) + ") REFERENCES "
                             + H2PUtil.q(tableName(child)) + "(" + H2PUtil.q(MetaToken.GUID.getName()) + ")");
+                    // A FOREIGN KEY indexes the referenced side only; the referencing column needs its own
+                    // index or every join/cascade over it is a full scan (true on both H2 and PostgreSQL).
+                    createIndex(tableName(nvce), ai.name);
                 } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
                     NVConfigEntity child = childNVCE(ai);
                     if (child == null) continue;
@@ -581,11 +587,39 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                             + H2PUtil.q(tableName(nvce)) + "(" + H2PUtil.q(MetaToken.GUID.getName()) + ") ON DELETE CASCADE, "
                             + "FOREIGN KEY (" + H2PUtil.q("child_guid") + ") REFERENCES "
                             + H2PUtil.q(tableName(child)) + "(" + H2PUtil.q(MetaToken.GUID.getName()) + "))");
+                    // parent_guid: every collection read filters+orders on it. child_guid: cascade / child delete.
+                    createIndex(jt, "parent_guid", "ord");
+                    createIndex(jt, "child_guid");
+                }
+            }
+
+            // UUID scalars (subject_guid, reference ids) are lookup keys — UNIQUE already carries an index.
+            for (AttrInfo ai : infos) {
+                if (ai.kind == H2PUtil.AttrKind.SCALAR && H2PUtil.isUUIDField(ai.nvc) && !ai.nvc.isUnique()) {
+                    createIndex(tableName(nvce), ai.name);
                 }
             }
         } finally {
             ddlLock.unlock();
         }
+    }
+
+    /**
+     * {@code CREATE INDEX IF NOT EXISTS} (supported by H2 and PostgreSQL 9.5+) over the given columns.
+     * The name is truncated to 63 chars so long table/attribute names stay within PostgreSQL's
+     * identifier limit instead of being silently truncated by the server.
+     */
+    private void createIndex(String table, String... columns) {
+        StringBuilder name = new StringBuilder("idx_").append(table);
+        StringBuilder cols = new StringBuilder();
+        for (String c : columns) {
+            name.append('_').append(c);
+            if (cols.length() > 0) cols.append(", ");
+            cols.append(H2PUtil.q(c));
+        }
+        String idx = name.length() > 63 ? name.substring(0, 63) : name.toString();
+        execDDLQuiet("CREATE INDEX IF NOT EXISTS " + H2PUtil.q(idx)
+                + " ON " + H2PUtil.q(table) + " (" + cols + ")");
     }
 
 
@@ -604,7 +638,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     }
 
     private boolean tableExists(Connection con, NVConfigEntity nvce) throws SQLException {
-        if (createdTables.contains(nvce.getName().toLowerCase())) return true;
+        String key = nvce.getName().toLowerCase();
+        if (createdTables.contains(key)) return true;
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
@@ -614,27 +649,42 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                             + " AND LOWER(TABLE_SCHEMA) NOT IN ('pg_catalog','information_schema')");
             ps.setString(1, nvce.getName());
             rs = ps.executeQuery();
-            return rs.next();
+            boolean exists = rs.next();
+            if (exists) {
+                // Remember it: a JVM reading a pre-existing DB never runs ensureTable, so without this
+                // every single select would pay an INFORMATION_SCHEMA round trip.
+                metaManager.register(nvce);
+                createdTables.add(key);
+            }
+            return exists;
         } finally {
             close(rs, ps);
         }
     }
 
+    // Class-name / meta-type-name -> NVConfigEntity, including the reflective (Class.forName) resolutions,
+    // which H2PMetaManager can't serve because it is keyed by meta-type name only.
+    private final Map<String, NVConfigEntity> nvceByTypeName = new ConcurrentHashMap<>();
+
     /** Resolve an NVConfigEntity from either a Java class name or a registered meta-type name. */
     private NVConfigEntity resolveNVCE(String typeName) {
         if (typeName == null) return null;
+        NVConfigEntity cached = nvceByTypeName.get(typeName);
+        if (cached != null) return cached;
         NVConfigEntity nvce = metaManager.lookup(typeName);
-        if (nvce != null) return nvce;
-        try {
-            Class<?> c = Class.forName(typeName);
-            NVEntity e = (NVEntity) c.getDeclaredConstructor().newInstance();
-            nvce = (NVConfigEntity) e.getNVConfig();
-            metaManager.register(nvce);
-            return nvce;
-        } catch (Throwable t) {
-            if (log.isEnabled()) log.getLogger().log(Level.WARNING, "resolveNVCE failed: " + typeName, t);
-            return null;
+        if (nvce == null) {
+            try {
+                Class<?> c = Class.forName(typeName);
+                NVEntity e = (NVEntity) c.getDeclaredConstructor().newInstance();
+                nvce = (NVConfigEntity) e.getNVConfig();
+                metaManager.register(nvce);
+            } catch (Throwable t) {
+                if (log.isEnabled()) log.getLogger().log(Level.WARNING, "resolveNVCE failed: " + typeName, t);
+                return null;
+            }
         }
+        nvceByTypeName.put(typeName, nvce);
+        return nvce;
     }
 
     private boolean existsByGuid(Connection con, NVConfigEntity nvce, String guid) throws SQLException {
@@ -711,16 +761,18 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         insertChildren(con, nve, infos); // referenced entities first (FK targets must exist)
 
         List<AttrInfo> cols = columnAttrs(infos);
-        StringBuilder sql = new StringBuilder("INSERT INTO ").append(H2PUtil.q(tableName(nvce)))
-                .append(" (").append(H2PUtil.q(MetaToken.GUID.getName()));
-        for (AttrInfo ai : cols) sql.append(", ").append(H2PUtil.q(ai.name));
-        sql.append(") VALUES (?");
-        for (int i = 0; i < cols.size(); i++) sql.append(", ?");
-        sql.append(')');
+        String sql = insertSQLCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
+            StringBuilder sb = new StringBuilder("INSERT INTO ").append(H2PUtil.q(tableName(nvce)))
+                    .append(" (").append(H2PUtil.q(MetaToken.GUID.getName()));
+            for (AttrInfo ai : cols) sb.append(", ").append(H2PUtil.q(ai.name));
+            sb.append(") VALUES (?");
+            for (int i = 0; i < cols.size(); i++) sb.append(", ?");
+            return sb.append(')').toString();
+        });
 
         PreparedStatement ps = null;
         try {
-            ps = con.prepareStatement(sql.toString());
+            ps = con.prepareStatement(sql);
             int idx = 1;
             ps.setObject(idx++, IDGs.UUIDV7.decode(nve.getGUID()));
             for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve);
@@ -856,21 +908,25 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             }
             ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
             if (av == null) continue;
-            int ord = 0;
-            for (NVEntity child : av.values()) {
-                if (child == null || SUS.isEmpty(child.getGUID())) continue;
-                PreparedStatement ins = null;
-                try {
-                    ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(jt) + " ("
-                            + H2PUtil.q("parent_guid") + ", " + H2PUtil.q("child_guid") + ", " + H2PUtil.q("ord")
-                            + ") VALUES (?, ?, ?)");
+            // One statement for the whole collection, sent as a single batch (was: prepare + round trip per child).
+            PreparedStatement ins = null;
+            try {
+                int ord = 0;
+                for (NVEntity child : av.values()) {
+                    if (child == null || SUS.isEmpty(child.getGUID())) continue;
+                    if (ins == null) {
+                        ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(jt) + " ("
+                                + H2PUtil.q("parent_guid") + ", " + H2PUtil.q("child_guid") + ", " + H2PUtil.q("ord")
+                                + ") VALUES (?, ?, ?)");
+                    }
                     ins.setObject(1, parent);
                     ins.setObject(2, IDGs.UUIDV7.decode(child.getGUID()));
                     ins.setInt(3, ord++);
-                    ins.executeUpdate();
-                } finally {
-                    close(ins);
+                    ins.addBatch();
                 }
+                if (ins != null) ins.executeBatch();
+            } finally {
+                close(ins);
             }
         }
     }
@@ -908,9 +964,12 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         List<Map<String, Object>> rows = new ArrayList<>();
         ResultSetMetaData md = rs.getMetaData();
         int n = md.getColumnCount();
+        // Labels are fixed for the whole result set — resolve+lowercase once, not once per cell.
+        String[] labels = new String[n];
+        for (int i = 0; i < n; i++) labels[i] = md.getColumnLabel(i + 1).toLowerCase();
         while (rs.next()) {
             Map<String, Object> row = new LinkedHashMap<>();
-            for (int i = 1; i <= n; i++) row.put(md.getColumnLabel(i).toLowerCase(), rs.getObject(i));
+            for (int i = 0; i < n; i++) row.put(labels[i], rs.getObject(i + 1));
             rows.add(row);
         }
         return rows;
@@ -927,8 +986,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Object g = row.get(MetaToken.GUID.getName());
         if (g instanceof UUID) nve.setGUID(IDGs.UUIDV7.encode((UUID) g));
 
-        for (AttrInfo ai : attrInfos(nvce)) {
-            String col = ai.name.toLowerCase();
+        List<AttrInfo> infos = attrInfos(nvce);
+        for (AttrInfo ai : infos) {
+            String col = ai.lowerName;
             switch (ai.kind) {
                 case SCALAR:
                     setScalar(nve, ai, row.get(col));
@@ -956,14 +1016,20 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             }
         }
 
-        // entity collections resolved via join tables
-        for (AttrInfo ai : attrInfos(nvce)) {
+        // Entity collections resolved via join tables: the whole collection is fetched with a single
+        // IN (...) query, then re-ordered to the join table's "ord" (was one SELECT per child).
+        for (AttrInfo ai : infos) {
             if (ai.kind != H2PUtil.AttrKind.ENTITY_COLLECTION) continue;
+            List<UUID> childGuids = selectJoinChildren(con, nvce, ai, (UUID) g);
+            if (childGuids.isEmpty()) continue;
             ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
-            NVConfigEntity cn = childNVCE(ai);
-            for (UUID cg : selectJoinChildren(con, nvce, ai, (UUID) g)) {
-                List<NVEntity> child = innerSearchByIDs(con, cn, IDGs.UUIDV7.encode(cg));
-                if (!child.isEmpty()) av.add(child.get(0));
+            String[] ids = new String[childGuids.size()];
+            for (int i = 0; i < ids.length; i++) ids[i] = IDGs.UUIDV7.encode(childGuids.get(i));
+            Map<String, NVEntity> byGUID = new LinkedHashMap<>();
+            for (NVEntity child : innerSearchByIDs(con, childNVCE(ai), ids)) byGUID.put(child.getGUID(), child);
+            for (String id : ids) {
+                NVEntity child = byGUID.get(id);
+                if (child != null) av.add(child);
             }
         }
         return nve;
@@ -1059,18 +1125,20 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         insertChildren(con, nve, infos); // new/changed referenced entities
 
         List<AttrInfo> cols = columnAttrs(infos);
-        StringBuilder sql = new StringBuilder("UPDATE ").append(H2PUtil.q(tableName(nvce))).append(" SET ");
-        boolean first = true;
-        for (AttrInfo ai : cols) {
-            if (!first) sql.append(", ");
-            sql.append(H2PUtil.q(ai.name)).append(" = ?");
-            first = false;
-        }
-        sql.append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?");
+        String sql = updateSQLCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
+            StringBuilder sb = new StringBuilder("UPDATE ").append(H2PUtil.q(tableName(nvce))).append(" SET ");
+            boolean first = true;
+            for (AttrInfo ai : cols) {
+                if (!first) sb.append(", ");
+                sb.append(H2PUtil.q(ai.name)).append(" = ?");
+                first = false;
+            }
+            return sb.append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?").toString();
+        });
 
         PreparedStatement ps = null;
         try {
-            ps = con.prepareStatement(sql.toString());
+            ps = con.prepareStatement(sql);
             int idx = 1;
             for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve);
             ps.setObject(idx, IDGs.UUIDV7.decode(nve.getGUID()));
@@ -1097,40 +1165,52 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     public <V extends NVEntity> boolean delete(V nve, boolean withReference)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         if (nve == null) return false;
-        NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         Connection con = null;
-        PreparedStatement ps = null;
         try {
             con = acquire();
-            if (!tableExists(con, nvce)) return false;
+            return innerDelete(con, nve, withReference);
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(con);
+        }
+    }
+
+    /** Cascade delete on one connection — the recursion must not re-acquire per referenced entity. */
+    @SuppressWarnings("unchecked")
+    private boolean innerDelete(Connection con, NVEntity nve, boolean withReference) throws SQLException {
+        if (nve == null) return false;
+        NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+        if (!tableExists(con, nvce)) return false;
+        PreparedStatement ps = null;
+        boolean deleted;
+        try {
             // Delete the parent row first; ON DELETE CASCADE clears its collection join rows.
             ps = con.prepareStatement("DELETE FROM " + H2PUtil.q(tableName(nvce))
                     + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
             ps.setObject(1, IDGs.UUIDV7.decode(nve.getGUID()));
-            boolean deleted = ps.executeUpdate() > 0;
+            deleted = ps.executeUpdate() > 0;
+        } finally {
+            close(ps);
+        }
 
-            if (deleted && withReference) {
-                // Now that the parent no longer references them, delete the referenced entities.
-                for (AttrInfo ai : attrInfos(nvce)) {
-                    if (ai.kind == H2PUtil.AttrKind.ENTITY_REF) {
-                        NVEntity child = (NVEntity) valueOf(nve, ai.nvc);
-                        if (child != null) delete(child, true);
-                    } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
-                        ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
-                        if (av != null) {
-                            for (NVEntity child : av.values()) {
-                                if (child != null) delete(child, true);
-                            }
+        if (deleted && withReference) {
+            // Now that the parent no longer references them, delete the referenced entities.
+            for (AttrInfo ai : attrInfos(nvce)) {
+                if (ai.kind == H2PUtil.AttrKind.ENTITY_REF) {
+                    NVEntity child = (NVEntity) valueOf(nve, ai.nvc);
+                    if (child != null) innerDelete(con, child, true);
+                } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
+                    ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
+                    if (av != null) {
+                        for (NVEntity child : av.values()) {
+                            if (child != null) innerDelete(con, child, true);
                         }
                     }
                 }
             }
-            return deleted;
-        } catch (SQLException e) {
-            throw mapOrWrap(e);
-        } finally {
-            close(ps, con);
         }
+        return deleted;
     }
 
     @Override
