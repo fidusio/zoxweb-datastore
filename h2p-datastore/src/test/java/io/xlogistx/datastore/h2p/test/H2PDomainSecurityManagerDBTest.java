@@ -87,7 +87,7 @@ public class H2PDomainSecurityManagerDBTest {
             System.out.println("H2 target: " + url);
         }
 
-        ds = creator.createAPI(null, H2PDSCreator.toAPIConfigInfo(url, user, password, filePassword));
+        ds = creator.createAPI(null, cfg);
 
         OPSecUtil.singleton();
         domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(ds).addCredentialType(CIPassword.class);

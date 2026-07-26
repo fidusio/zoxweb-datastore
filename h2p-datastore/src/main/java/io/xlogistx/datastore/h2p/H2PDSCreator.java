@@ -69,8 +69,15 @@ public class H2PDSCreator
         IF_EXISTS("ifexists", null),          // ;IFEXISTS=TRUE — fail if the DB does not already exist
         AUTO_SERVER("auto_server", null),    // ;AUTO_SERVER=TRUE — automatic mixed mode
         OPTIONS("options", null),            // any additional raw ;KEY=VALUE settings
-        POOL_MAX_SIZE("pool_max_size", "10"),// HikariCP max pool size (native PostgreSQL only)
-        POOL_MIN_IDLE("pool_min_idle", "2"), // HikariCP min idle connections (native PostgreSQL only)
+        POOL_MAX_SIZE("pool_max_size", "10"),// HikariCP max pool size
+        POOL_MIN_IDLE("pool_min_idle", "2"), // HikariCP min idle connections
+        // Safety valve: when set (> 0), every entity SELECT is capped with LIMIT n — an explicit
+        // opt-in guard against unbounded search materialization. Default: unlimited.
+        MAX_SELECT_RESULTS("max_select_results", null),
+        // Opt-in ("true"): update() deletes referenced entities it detaches (replaced single refs,
+        // children removed from collections) unless they are still referenced elsewhere (shared).
+        // Default off: detached children remain as rows (caller manages their lifecycle).
+        ORPHAN_CLEANUP("orphan_cleanup", null),
         ;
 
         private final String name;

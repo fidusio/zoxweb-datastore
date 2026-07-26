@@ -91,6 +91,26 @@ public final class H2PUtil {
         return "\"" + ident.replace("\"", "\"\"") + "\"";
     }
 
+    /** PostgreSQL's identifier limit (bytes); longer names are silently truncated by the server. */
+    public static final int MAX_IDENTIFIER_LENGTH = 63;
+
+    /**
+     * Make an identifier safe for PostgreSQL's 63-byte limit: names within the limit pass through
+     * unchanged; longer ones are truncated and suffixed with a hash of the <b>full</b> name
+     * ({@code <54 chars>_<8-hex-crc32>}), so two long names that differ only past the cut can't
+     * silently collide the way server-side truncation would. Deterministic — the same long name
+     * always maps to the same identifier (DDL and DML stay consistent).
+     */
+    public static String sqlName(String name) {
+        if (name == null || name.length() <= MAX_IDENTIFIER_LENGTH) {
+            return name;
+        }
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(name.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String hash = String.format("%08x", crc.getValue());
+        return name.substring(0, MAX_IDENTIFIER_LENGTH - hash.length() - 1) + "_" + hash;
+    }
+
     /** Classify how an attribute is stored. */
     public static AttrKind classify(NVConfig nvc) {
         if (nvc == null) {
@@ -150,6 +170,41 @@ public final class H2PUtil {
     @SuppressWarnings("unchecked")
     public static Class<? extends NVEntity> childEntityClass(NVConfig nvc) {
         return (Class<? extends NVEntity>) nvc.getMetaTypeBase();
+    }
+
+    /**
+     * Type-tagged encoding for {@code NVNumber} columns ({@code varchar}): the runtime numeric type
+     * survives the round trip ({@code int:5}, {@code long:9000000000}, …). Query criteria against
+     * Number-typed attributes must use the same encoding ({@link H2PQueryFormatter#normalize}).
+     */
+    public static String encodeNumber(Number n) {
+        if (n instanceof Integer) return "int:" + n.intValue();
+        if (n instanceof Long) return "long:" + n.longValue();
+        if (n instanceof Float) return "float:" + n.floatValue();
+        if (n instanceof Double) return "double:" + n.doubleValue();
+        if (n instanceof java.math.BigDecimal) return "bigdec:" + n;
+        return "double:" + n.doubleValue();
+    }
+
+    /** Inverse of {@link #encodeNumber}; null when the tag is missing. */
+    public static Number decodeNumber(String s) {
+        int i = s.indexOf(':');
+        if (i < 0) return null;
+        String t = s.substring(0, i), v = s.substring(i + 1);
+        switch (t) {
+            case "int":
+                return Integer.valueOf(v);
+            case "long":
+                return Long.valueOf(v);
+            case "float":
+                return Float.valueOf(v);
+            case "double":
+                return Double.valueOf(v);
+            case "bigdec":
+                return new java.math.BigDecimal(v);
+            default:
+                return Double.valueOf(v);
+        }
     }
 
     // ---------- JDBC URL parsing ----------

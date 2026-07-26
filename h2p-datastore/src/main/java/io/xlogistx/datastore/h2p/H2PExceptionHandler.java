@@ -27,13 +27,18 @@ public class H2PExceptionHandler
         implements APIExceptionHandler {
 
     /**
-     * H2 reports errors via standard SQLState values. The mappings below match
-     * the SQL:2008 states H2 emits (unique / not-null / connection).
+     * H2 and PostgreSQL both report errors via standard SQLState values. Exact states first;
+     * unmatched states fall back on the SQLState class (first two chars) in {@link #mapException}.
      */
     public enum H2PError
             implements GetValue<String> {
         UNIQUE_VIOLATION("Already exists.", "23505", Category.OPERATION, Code.DUPLICATE_ENTRY_NOT_ALLOWED),
         NOT_NULL_VIOLATION("Missing required field.", "23502", Category.OPERATION, Code.MISSING_PARAMETERS),
+        // FK violation: 23503 on PostgreSQL (and H2 child-exists), 23506 on H2 (parent missing).
+        FK_VIOLATION("Referential integrity violation.", "23503", Category.OPERATION, Code.PROVIDER_EXCEPTION),
+        FK_VIOLATION_H2("Referential integrity violation.", "23506", Category.OPERATION, Code.PROVIDER_EXCEPTION),
+        SERIALIZATION_FAILURE("Transaction conflict, retry.", "40001", Category.OPERATION, Code.RETRY),
+        DEADLOCK_DETECTED("Deadlock detected, retry.", "40P01", Category.OPERATION, Code.RETRY),
         CONNECTION_FAILED("Failed to connect.", "08001", Category.CONNECTION, Code.CONNECTION_FAILED),
         ;
 
@@ -87,12 +92,29 @@ public class H2PExceptionHandler
             if (sqlState != null) {
                 for (H2PError he : H2PError.values()) {
                     if (he.getValue().equals(sqlState)) {
-                        return new APIException(he.getMessage(), he.getCategory(), he.getCode());
+                        return withCause(new APIException(he.getMessage(), he.getCategory(), he.getCode()), e);
                     }
                 }
+                // Fall back on the SQLState class (first two chars).
+                if (sqlState.startsWith("23")) {
+                    return withCause(new APIException(e.getMessage(), Category.OPERATION, Code.PROVIDER_EXCEPTION), e);
+                }
+                if (sqlState.startsWith("08")) {
+                    return withCause(new APIException(e.getMessage(), Category.CONNECTION, Code.CONNECTION_FAILED), e);
+                }
+                if (sqlState.startsWith("40")) {
+                    return withCause(new APIException(e.getMessage(), Category.OPERATION, Code.RETRY), e);
+                }
             }
-            return new APIException("" + e);
+            return withCause(new APIException("" + e), e);
         }
-        return new APIException(e.getMessage());
+        return withCause(new APIException(e.getMessage()), e);
+    }
+
+    private static APIException withCause(APIException apiException, Exception cause) {
+        if (apiException.getCause() == null && apiException != cause) {
+            apiException.initCause(cause);
+        }
+        return apiException;
     }
 }

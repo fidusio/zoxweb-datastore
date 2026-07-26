@@ -39,7 +39,10 @@ entities.
 join tables get `(parent_guid, ord)` + `(child_guid)`, `ENTITY_REF` columns get one, and non-unique
 uuid scalars (`subject_guid`, reference ids) get one. **A FOREIGN KEY indexes only the referenced
 side** — on PostgreSQL *and* H2 the referencing column needs its own index or every collection read
-and cascade delete is a full scan. Index names are truncated to 63 chars (PostgreSQL's limit).
+and cascade delete is a full scan. All composed identifiers (table names, join tables, FK
+constraint and index names) go through `H2PUtil.sqlName`, which keeps names ≤ 63 bytes
+(PostgreSQL's limit) by truncating + suffixing a CRC32 of the full name — deterministic and
+collision-resistant where server-side truncation isn't. Attribute/column names are used as-is.
 
 ### Schemaless JSON
 
@@ -95,7 +98,9 @@ not raw-JSON-string equality.
 
 `H2PParam` (in `H2PDSCreator`): `DRIVER`, `URL`, `TYPE` (mem/file/tcp), `HOST`, `PORT`, `PATH`,
 `DB_NAME`, `USER`, `PASSWORD`, `MODE` (H2 SQL compat, default `PostgreSQL`), `CIPHER`,
-`FILE_PASSWORD`, `IFEXISTS`, `AUTO_SERVER`, `OPTIONS`, `POOL_MAX_SIZE`/`POOL_MIN_IDLE` (HikariCP, Postgres only).
+`FILE_PASSWORD`, `IFEXISTS`, `AUTO_SERVER`, `OPTIONS`, `POOL_MAX_SIZE`/`POOL_MIN_IDLE` (HikariCP,
+both engines), `MAX_SELECT_RESULTS` (opt-in SELECT cap), `ORPHAN_CLEANUP` (opt-in update-time
+detached-child deletion).
 
 ```java
 H2PDSCreator creator = new H2PDSCreator();
@@ -149,19 +154,21 @@ APIConfigInfo enc = creator.toAPIConfigInfo(
 ```
 
 ## Connections / pooling
-- **Native PostgreSQL is pooled via HikariCP** — `H2PDataStore.newConnection()` returns
-  `pool().getConnection()` when `currentDSType == POSTGRES`. The `HikariDataSource` is built lazily
-  from the resolved URL/user/password/driver, sized by `POOL_MAX_SIZE` (default 10) / `POOL_MIN_IDLE`
-  (default 2), and closed by the datastore's `close()`.
-- **H2 is not pooled** — it opens a fresh `DriverManager` connection per op (in-mem is ~free). The
-  per-op URL/user/password are computed once and held in a per-instance `cache`
-  (`RegistrarMapDefault`, fully synchronized), which `setAPIConfigInfo` **clears** on reconfigure so
-  cached values can't go stale. (`lookup(key, fn)` won't store a `null`, so a null-valued key just
-  recomputes each op — same contract as `computeIfAbsent`.)
+- **Both engines are pooled via HikariCP** — `H2PDataStore.newConnection()` always returns
+  `pool().getConnection()`. The `HikariDataSource` is built lazily from the resolved
+  URL/user/password/driver (`dataStorePassword` handles the encrypted-H2 `"<filePwd> <userPwd>"`
+  form), sized by `POOL_MAX_SIZE` (default 10) / `POOL_MIN_IDLE` (default 2), closed by the
+  datastore's `close()` and **retired + rebuilt by `setAPIConfigInfo`** on reconfigure (a new config
+  may point at a different database/credentials).
 - A pooled `connection.close()` returns the connection to the pool, so `acquire()`, the per-op
   `close(...)`, `execDDL` (its own connection), and the ThreadLocal transaction machinery are all
-  unchanged — only the physical connection *source* differs between engines. HikariCP is a compile
-  dependency (`com.zaxxer:HikariCP:5.1.0`), only exercised on the Postgres path.
+  engine-agnostic. A failed pool bootstrap (bad URL/credentials/file password) surfaces as an
+  `APIException` with the SQL cause attached. For H2 `mem`/`file`, keep `DB_CLOSE_DELAY=-1` in the
+  URL (the factory adds it) — DB lifetime must not depend on the pool's idle churn.
+- The datastore extends **`APIServiceProviderBase<Connection, Connection>`** (same lifecycle plumbing
+  as the Mongo stores): config/exception-handler storage, `touch()`-driven
+  `lastTimeAccessed()`/`inactivityDuration()` (touched in `acquire()`), `pendingCalls`-based
+  `isBusy()`, and `lookupProperty` answering `APIProperty.ASYNC_CREATE`/`RETRY_DELAY`.
 
 ## Read/write path costs (things already fixed — don't regress them)
 - **Collection reads are batched.** `buildEntity` fetches a whole entity collection with one
@@ -185,15 +192,74 @@ Note in-memory H2 will *not* show these as wall-clock wins — a query there cos
 Benchmark statement **counts** (H2 `SET QUERY_STATISTICS TRUE` + `INFORMATION_SCHEMA.QUERY_STATISTICS`),
 not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
 
-Still open: no `LIMIT`/pagination — `search` materializes the whole matching table; H2 is unpooled
-(fine for `mem`, a real cost for `file`); `insert`/`update` each do an `existsByGuid` probe first.
+- **Cyclic entity graphs are supported.** Writes carry a per-operation `WriteCtx`: a `seen` set stops
+  the child recursion, and an FK column / join row pointing at an ancestor still being inserted is
+  bound NULL and patched by `applyFixups` once the whole graph is on disk (H2 has no deferrable
+  constraints). Reads thread a per-call `Map<String,NVEntity>` cache through
+  `select`/`buildEntity`/`innerSearchByIDs`: an entity registers itself **before** resolving its
+  references, so a cycle resolves to the same instance instead of recursing forever — and repeated
+  child fetches within one call are deduplicated for free.
+- **`userSearchByID` scopes by subject**: `guid IN (…) AND subject_guid = ?` — it is NOT a plain
+  `searchByID` (regression: `H2PRegressionTest.testUserSearchByIDScoping`).
+- **`patch()` is a real partial update** (mirrors `SyncMongoDS.patch` semantics): `nvConfigNames` +
+  `includeParam=true` = exact set of attributes written; `includeParam=false` = attributes excluded;
+  empty = full update. `updateTS` touches timestamps, `sync` serializes on the instance lock,
+  `updateRefOnly` binds existing child GUIDs without writing the child rows. Null/empty GUID →
+  insert; unknown GUID → `APIException` ("Can not patch a missing object").
+- **`fieldNames` projection is implemented** in `search`/`userSearch`: SELECT covers `guid` + the
+  named columns only, and only named entity collections are resolved; null/empty = all fields
+  (contract). Non-projected attributes stay at their defaults on the returned entity.
+
+- **`MAX_SELECT_RESULTS`** (`H2PParam`, opt-in): when set > 0 every entity SELECT is capped with
+  `LIMIT n` — a safety valve against unbounded search materialization (off by default: full results).
+  `batchSearch` orders its ID report by `guid` (UUID v7 is time-ordered) so `nextBatch` pages are
+  deterministic.
+- **`delete(nve, withReference=true)` cascades from DB state, not the in-memory object**
+  (`deleteByGuid`/`collectDbChildren`): the stored row's FK columns + join-table rows decide the
+  children, so a shell entity (GUID only, children not loaded) cascades exactly like a fully loaded
+  one; a `visited` set guards cyclic chains. A child still referenced elsewhere (**shared**) raises
+  an FK violation, is **kept**, and the cascade continues (`deleteChildSafely` — SAVEPOINT-wrapped
+  inside a transaction because PostgreSQL aborts the whole tx on any failed statement).
+- **`ORPHAN_CLEANUP`** (`H2PParam`, opt-in `"true"`): `update()` deletes child rows it just detached
+  (replaced single refs, children removed from collections) unless they are shared. Default **off**:
+  detached children remain as rows and their lifecycle belongs to the caller.
+
+Still open: no true API-level pagination (`search` still materializes all matches unless the valve is
+set); `insert`/`update` each do an `existsByGuid` probe first; SecurityController integration (see
+dedicated section below — work in progress).
+
+## SecurityController integration — WORK IN PROGRESS (not yet supported)
+
+**Current state:** the `SecurityController` from `APIConfigInfo` is used in exactly one place —
+`associateNVEntityToSubjectGUID(nve, null)` on the insert/patch path (subject association only).
+
+**Not implemented yet** (the reference behavior is `SyncMongoDS`):
+- **Field encryption at rest** — `encryptValue(...)` on every write and `decryptValue(...)` on every
+  read. Consequence today: entities whose fields are marked for encryption are stored in
+  **plaintext** by this datastore. Do not point a store at data that relies on controller-managed
+  field encryption.
+- **Read ACL enforcement** — `isNVEntityAccessible(guid, subjectGUID, CRUD.READ)` in
+  `search`/`batchSearch`/`userSearch`. Today only `userSearch`/`userSearchByID` scope by
+  `subject_guid`; there is no per-entity accessibility check.
+
+**Status:** actively being worked on. Until it lands, treat a configured `SecurityController` as
+subject-association only; encryption/ACL semantics here are NOT equivalent to the Mongo stores.
+When implementing, thread the controller through `bindColumn`/`setScalar` and the schemaless
+encode/decode, add the accessibility check to the read paths, and mirror `SyncMongoDS` semantics
+(SyncMongoDS.java:248, 605, 1708, 2617).
 
 ## Transactions / sequences / DEM
 - Transactions: ambient `ThreadLocal<Connection>` (`autoCommit=false`), `begin/end/abort`. Data ops
   route through `acquire()`; **schema DDL runs out-of-band** on its own connection (`execDDL`) — on H2
   because DDL implicitly commits; on Postgres it's harmless (and still correct).
-- Sequences: table-based `sys_long_sequence` (portable — no native `SEQUENCE`).
-- DEM: portable UPDATE-then-INSERT upsert (no H2 `MERGE` / no Postgres `ON CONFLICT`).
+- Sequences: table-based `sys_long_sequence` (portable — no native `SEQUENCE`). **Sequence ops are
+  non-transactional and atomic**: they always run on a dedicated auto-commit connection (never the
+  ambient tx — a rollback must not undo an increment, and an uncommitted tx row lock must not block
+  other callers), and `incrementSequence` does `SELECT … FOR UPDATE` + `UPDATE` in one short DB txn —
+  safe across threads, pooled connections and JVMs (the old JVM `ReentrantLock` wasn't). The
+  `createSequence` seed INSERT swallows a 23505 race loss.
+- DEM: portable UPDATE-then-INSERT upsert (no H2 `MERGE` / no Postgres `ON CONFLICT`); a 23505 on the
+  INSERT (concurrent creator won) retries the UPDATE once.
 
 ## PostgreSQL-portability rules (keep it dual-target)
 1. Use only types valid on both: `uuid`, `bytea`, `varchar`, `integer`, `bigint`, `real`,
@@ -201,13 +267,17 @@ Still open: no `LIMIT`/pagination — `search` materializes the whole matching t
 2. No H2-only or Postgres-only SQL in the shared paths (no `MERGE`, no `ON CONFLICT`, no `SEQUENCE`).
 3. Any new dialect divergence goes through `H2PDialect` keyed on `currentDSType` — never inline
    `if (postgres)` in the datastore.
-4. `INFORMATION_SCHEMA.TABLES` checks filter `TABLE_TYPE='BASE TABLE'` and exclude
-   `pg_catalog`/`information_schema` (Postgres has many schemas/views).
+4. `INFORMATION_SCHEMA.TABLES` checks filter `TABLE_TYPE='BASE TABLE'` and scope to
+   `TABLE_SCHEMA = CURRENT_SCHEMA` (works on both engines) — a same-named table in another schema
+   must not count as ours.
 5. UUID via `setObject(uuid)` / `getObject(col, UUID.class)`; bytea via `setBytes`/`getBytes` — both
    pgjdbc-native.
 
-Known low-priority gap: an equality `QueryMatch` with a **null** value binds an untyped null
-(`col = ?`), which pgjdbc may reject; such criteria are semantically dead. Not exercised by tests.
+Criteria typing (`H2PQueryFormatter`): a null-valued `=`/`!=` `QueryMatch` renders as
+`IS NULL`/`IS NOT NULL` (a bound null parameter can never match, and pgjdbc rejects untyped nulls);
+`Date` values bind as epoch millis (columns are `bigint`); values against `Number`-typed (NVNumber)
+attributes bind through `H2PUtil.encodeNumber` — equality only, range comparison on the tagged
+varchar encoding is not possible.
 
 ## Running the tests
 
@@ -223,6 +293,13 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   `DB_CLOSE_DELAY=-1` on purpose so the DB closes between stores and the password is re-validated.
   Also `testParseJdbcURL` (H2 mem/file/tcp/bare + Postgres host/opts/multi-host/db-only + guards) and
   `testDefaultH2JdbcURL` (composed URL, parse-back, trimming, null/non-directory guards).
+- `H2PRegressionTest` — regression suite for the analysis fixes (in-memory H2): cyclic pair +
+  self-reference insert/read, 4-thread sequence uniqueness, sequence-inside-transaction no-block +
+  rollback-survival, `userSearchByID` scoping, `IS [NOT] NULL` criteria, concurrent DEM upsert,
+  `patch` include/exclude/missing-object modes, `fieldNames` projection, `sqlName` identifier
+  hashing + a >63-char entity-type round trip, the `MAX_SELECT_RESULTS` valve, the
+  `APIServiceProviderBase` lifecycle (touch/lookupProperty/isBusy), shell-entity cascade delete,
+  shared-child keep-on-delete, and `ORPHAN_CLEANUP` on/off behavior.
 - `H2PPostgresDataStoreTest` — **live PostgreSQL**; auto-skipped unless configured. `h2p.pg.url` is the
   **base endpoint** (no db); the test connects to the `postgres` maintenance db, **creates the target
   database if missing** (default `testpostgres`, override `-Dh2p.pg.db`), then runs the same scenarios

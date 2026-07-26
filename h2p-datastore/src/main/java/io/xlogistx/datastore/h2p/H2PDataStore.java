@@ -18,6 +18,7 @@ package io.xlogistx.datastore.h2p;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.xlogistx.datastore.h2p.H2PDSCreator.H2PParam;
+import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.server.util.IDGs;
@@ -36,14 +37,15 @@ import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,16 +77,15 @@ import java.util.logging.Level;
  * swapping the JDBC driver + URL.
  */
 @SuppressWarnings("serial")
-public class H2PDataStore implements APIDataStore<Connection, Connection> {
+public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
+        implements APIDataStore<Connection, Connection> {
 
     public static final LogWrapper log = new LogWrapper(H2PDataStore.class);
 
     private static final String SEQ_TABLE = "sys_long_sequence";
     private static final String DEM_TABLE = "dynamic_enum_map";
 
-    private volatile APIConfigInfo apiConfig = null;
     private volatile boolean driverLoaded = false;
-    private volatile APIExceptionHandler exceptionHandler = null;
     private volatile String name;
     private volatile String description;
 
@@ -96,11 +97,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     // Resolved once from the config at creation; drives getDSType() and the schemaless dialect codec.
     private volatile DSType currentDSType = DSType.UNKNOWN;
     private volatile H2PDialect dialect = H2PDialect.H2;
-    // HikariCP connection pool — built lazily for native PostgreSQL only; null for H2.
+    // Lazily-built HikariCP connection pool (both engines); closed+reset on reconfigure and close().
     private volatile HikariDataSource pool = null;
-    // General-purpose per-instance cache (resolved-once connection params + other reuse). Cleared on
-    // reconfigure in setAPIConfigInfo so cached values can't go stale across a new config.
-    private final RegistrarMapDefault<Object, Object> cache = new RegistrarMapDefault<>();
 
     /**
      * A JDBC transaction is bound to the calling thread via this ThreadLocal connection
@@ -127,20 +125,18 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     // ---------- Config / lifecycle ----------
 
     @Override
-    public APIConfigInfo getAPIConfigInfo() {
-        return apiConfig;
-    }
-
-    @Override
     public void setAPIConfigInfo(APIConfigInfo configInfo) {
-        this.apiConfig = configInfo;
+        super.setAPIConfigInfo(configInfo);
         // Resolve the target engine once, at creation, and pick the matching schemaless dialect codec.
         this.currentDSType = H2PDSCreator.resolveDSType(configInfo);
         this.dialect = H2PDialect.forDSType(currentDSType);
-        // New config -> drop any cached connection params (jdbc-url / user / password) so they
-        // can't go stale; they are recomputed lazily on the next newConnection().
-        cache.clear(false);
-        // A new config may point at a different database, where none of these tables exist yet.
+        // A new config may point at a different database: retire the old pool so the next op
+        // connects with the new URL/credentials, and forget the old database's tables.
+        HikariDataSource p = pool;
+        if (p != null) {
+            pool = null;
+            SharedIOUtil.close(p);
+        }
         createdTables.clear();
         metaManager.clear();
     }
@@ -148,8 +144,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public Connection connect() throws APIException {
         if (!driverLoaded) {
+            lock.lock();
             try {
-                lock.lock();
                 if (!driverLoaded) {
                     SUS.checkIfNulls("Configuration null", getAPIConfigInfo());
                     String driverClassName = getAPIConfigInfo().getProperties().getValue(H2PParam.DRIVER);
@@ -170,27 +166,42 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public Connection newConnection() throws APIException {
         try {
-            // Native PostgreSQL is pooled (HikariCP); H2 opens a fresh connection per op (mem is ~free).
-            // The H2 URL/user/password are computed once and cached (the cache is cleared on reconfigure).
-            Connection conn = (currentDSType == DSType.POSTGRES)
-                    ? pool().getConnection()
-                    : DriverManager.getConnection(
-                    cache.lookup("jdbc-url", k -> H2PParam.dataStoreURI(getAPIConfigInfo())),
-                    cache.lookup(H2PParam.USER.getName(), k -> getAPIConfigInfo().getProperties().getValue(H2PParam.USER)),
-                    cache.lookup("file-user-password", k -> H2PParam.dataStorePassword(getAPIConfigInfo())));
+            // Both engines are pooled via HikariCP. A pooled close() returns the connection, so the
+            // acquire/close/transaction machinery is engine-agnostic.
+            Connection conn = pool().getConnection();
             synchronized (connections) {
+                // Callers that close a connection themselves (instead of via this store) leave a dead
+                // reference in the set — purge those before they accumulate.
+                if (connections.size() >= 64) {
+                    connections.removeIf(c -> {
+                        try {
+                            return c.isClosed();
+                        } catch (SQLException e) {
+                            return true;
+                        }
+                    });
+                }
                 connections.add(conn);
             }
             return conn;
         } catch (SQLException e) {
-            throw new APIException("Connection failed: " + e.getMessage());
+            APIException apiEx = new APIException("Connection failed: " + e.getMessage());
+            apiEx.initCause(e);
+            throw apiEx;
+        } catch (RuntimeException e) {
+            // Hikari wraps a failed pool bootstrap (bad URL / credentials / file password) in a
+            // RuntimeException; surface the underlying SQL failure as an APIException.
+            APIException apiEx = new APIException("Connection failed: " + e.getMessage());
+            apiEx.initCause(e);
+            throw apiEx;
         }
     }
 
     /**
-     * Lazily-built HikariCP pool for native PostgreSQL. A pooled {@code connection.close()} returns
-     * the connection to the pool, so the existing acquire/close/transaction machinery is unchanged —
-     * only the physical connection source differs from the H2 (DriverManager) path.
+     * Lazily-built HikariCP pool — used for both engines (H2 included: `DB_CLOSE_DELAY=-1` keeps the
+     * DB alive independently of pooling, and pooled connections remove the per-op open/auth cost that
+     * H2 file/tcp modes otherwise pay). A pooled {@code connection.close()} returns the connection to
+     * the pool, so the acquire/close/transaction machinery is engine-agnostic.
      */
     private HikariDataSource pool() {
         HikariDataSource p = pool;
@@ -210,7 +221,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                     }
                     cfg.setMaximumPoolSize(intParam(H2PParam.POOL_MAX_SIZE, 10));
                     cfg.setMinimumIdle(intParam(H2PParam.POOL_MIN_IDLE, 2));
-                    cfg.setPoolName("h2p-" + (name != null ? name : "postgres"));
+                    cfg.setPoolName("h2p-" + (name != null ? name : currentDSType));
                     p = new HikariDataSource(cfg);
                     pool = p;
                 }
@@ -233,6 +244,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
 
     /** @return the ambient transaction connection if one is active on this thread, else a fresh connection. */
     private Connection acquire() {
+        touch();
         Connection tx = txConnection.get();
         return tx != null ? tx : connect();
     }
@@ -283,7 +295,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         }
         HikariDataSource p = pool;
         if (p != null) {
-            SharedIOUtil.close(p); // shut the pool down (native PostgreSQL only)
+            SharedIOUtil.close(p); // shut the pool down
             pool = null;
         }
         if (log.isEnabled()) log.getLogger().info("Closed");
@@ -304,12 +316,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         if (txConnection.get() != null) {
             throw new IllegalStateException("A transaction is already active on this thread");
         }
+        Connection con = newConnection();
         try {
-            Connection con = newConnection();
             con.setAutoCommit(false);
             txConnection.set(con);
             return (T) con;
         } catch (SQLException e) {
+            close(con); // don't leak the connection when the transaction can't start
             throw mapOrWrap(e);
         }
     }
@@ -369,40 +382,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         return driverLoaded;
     }
 
-    @Override
-    public APIExceptionHandler getAPIExceptionHandler() {
-        return exceptionHandler;
-    }
-
-    @Override
-    public void setAPIExceptionHandler(APIExceptionHandler exceptionHandler) {
-        this.exceptionHandler = exceptionHandler;
-    }
-
-    @Override
-    public <T> T lookupProperty(GetName propertyName) {
-        return null;
-    }
-
-    @Override
-    public long lastTimeAccessed() {
-        return 0;
-    }
-
-    @Override
-    public long inactivityDuration() {
-        return 0;
-    }
-
-    @Override
-    public boolean isBusy() {
-        return lock.tryLock() ? unlockAndReturn(false) : true;
-    }
-
-    private boolean unlockAndReturn(boolean v) {
-        lock.unlock();
-        return v;
-    }
+    // Config/exception-handler storage, lookupProperty (ASYNC_CREATE/RETRY_DELAY), lastTimeAccessed/
+    // inactivityDuration (touch()-driven) and pendingCalls-based isBusy() come from
+    // APIServiceProviderBase — same lifecycle plumbing as the Mongo datastores.
 
     @Override
     public void setDescription(String str) {
@@ -431,7 +413,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public String getStoreName() {
-        return apiConfig != null ? H2PParam.dataStoreName(apiConfig) : null;
+        return getAPIConfigInfo() != null ? H2PParam.dataStoreName(getAPIConfigInfo()) : null;
     }
 
     @Override
@@ -453,7 +435,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     // ---------- Schema helpers ----------
 
     private static String tableName(NVConfigEntity nvce) {
-        return nvce.getName();
+        return H2PUtil.sqlName(nvce.getName());
     }
 
     /** Per-attribute storage plan, cached per entity type. */
@@ -498,9 +480,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         });
     }
 
-    /** Join table name for an entity-collection attribute: {@code <table>__<attr>}. */
+    /** Join table name for an entity-collection attribute: {@code <table>__<attr>} (63-byte safe). */
     private static String joinTableName(NVConfigEntity nvce, AttrInfo ai) {
-        return nvce.getName() + "__" + ai.name;
+        return H2PUtil.sqlName(nvce.getName() + "__" + ai.name);
     }
 
     /**
@@ -569,7 +551,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                     if (child == null) continue;
                     ensureTable(child);
                     execDDLQuiet("ALTER TABLE " + H2PUtil.q(tableName(nvce)) + " ADD CONSTRAINT "
-                            + H2PUtil.q("fk_" + nvce.getName() + "_" + ai.name)
+                            + H2PUtil.q(H2PUtil.sqlName("fk_" + nvce.getName() + "_" + ai.name))
                             + " FOREIGN KEY (" + H2PUtil.q(ai.name) + ") REFERENCES "
                             + H2PUtil.q(tableName(child)) + "(" + H2PUtil.q(MetaToken.GUID.getName()) + ")");
                     // A FOREIGN KEY indexes the referenced side only; the referencing column needs its own
@@ -607,8 +589,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
 
     /**
      * {@code CREATE INDEX IF NOT EXISTS} (supported by H2 and PostgreSQL 9.5+) over the given columns.
-     * The name is truncated to 63 chars so long table/attribute names stay within PostgreSQL's
-     * identifier limit instead of being silently truncated by the server.
+     * The name goes through {@link H2PUtil#sqlName} so long table/attribute names stay within
+     * PostgreSQL's 63-byte identifier limit without hash-less truncation collisions.
      */
     private void createIndex(String table, String... columns) {
         StringBuilder name = new StringBuilder("idx_").append(table);
@@ -618,8 +600,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             if (cols.length() > 0) cols.append(", ");
             cols.append(H2PUtil.q(c));
         }
-        String idx = name.length() > 63 ? name.substring(0, 63) : name.toString();
-        execDDLQuiet("CREATE INDEX IF NOT EXISTS " + H2PUtil.q(idx)
+        execDDLQuiet("CREATE INDEX IF NOT EXISTS " + H2PUtil.q(H2PUtil.sqlName(name.toString()))
                 + " ON " + H2PUtil.q(table) + " (" + cols + ")");
     }
 
@@ -629,12 +610,30 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         return currentDSType;
     }
 
+    // Duplicate-object SQLStates: PG 42P07 (table), 42710 (constraint/object), 42701 (column);
+    // H2 42101 (table), 42111 (index), 90045 (constraint).
+    private static final Set<String> DUPLICATE_DDL_SQLSTATES = new HashSet<>(Arrays.asList(
+            "42P07", "42710", "42701", "42101", "42111", "90045"));
+
     /** Run DDL that may already have been applied (ADD CONSTRAINT / join table); log-and-ignore duplicates. */
     private void execDDLQuiet(String sql) {
         try {
             execDDL(sql);
         } catch (RuntimeException e) {
-            if (log.isEnabled()) log.getLogger().log(Level.FINE, "execDDLQuiet ignored: " + sql, e);
+            // Only a duplicate-object error is expected here; anything else (connection loss,
+            // syntax, permissions) means the FK/join table/index is genuinely missing — surface it.
+            String sqlState = null;
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (t instanceof SQLException) {
+                    sqlState = ((SQLException) t).getSQLState();
+                    break;
+                }
+            }
+            if (sqlState != null && DUPLICATE_DDL_SQLSTATES.contains(sqlState)) {
+                if (log.isEnabled()) log.getLogger().log(Level.FINE, "execDDLQuiet duplicate ignored: " + sql, e);
+            } else {
+                log.getLogger().log(Level.WARNING, "execDDLQuiet failed: " + sql, e);
+            }
         }
     }
 
@@ -644,11 +643,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
+            // Scoped to the connection's current schema — a same-named table in another schema of the
+            // database must not count as ours (CURRENT_SCHEMA works on both H2 and PostgreSQL).
             ps = con.prepareStatement(
                     "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME)=UPPER(?)"
                             + " AND TABLE_TYPE='BASE TABLE'"
-                            + " AND LOWER(TABLE_SCHEMA) NOT IN ('pg_catalog','information_schema')");
-            ps.setString(1, nvce.getName());
+                            + " AND TABLE_SCHEMA = CURRENT_SCHEMA");
+            ps.setString(1, tableName(nvce));
             rs = ps.executeQuery();
             boolean exists = rs.next();
             if (exists) {
@@ -730,6 +731,58 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
 
     // ---------- Insert / update / patch ----------
 
+    /**
+     * Per-write-operation context. {@code seen} guards the child recursion so a cyclic entity graph
+     * terminates; {@code inFlight} tracks entities whose row INSERT hasn't executed yet (still on the
+     * call stack) — an FK column or join row pointing at one of those can't be written yet, so it is
+     * deferred and applied once the whole graph is on disk ({@link #applyFixups}).
+     */
+    private final class WriteCtx {
+        final Set<String> seen = new HashSet<>();
+        final Set<String> inFlight = new HashSet<>();
+        private final List<String[]> refFixups = new ArrayList<>();   // {table, column, rowGuid, refGuid}
+        private final List<Object[]> joinFixups = new ArrayList<>();  // {joinTable, parentGuid, childGuid, ord}
+
+        void deferRef(String table, String column, String rowGuid, String refGuid) {
+            refFixups.add(new String[]{table, column, rowGuid, refGuid});
+        }
+
+        void deferJoin(String joinTable, UUID parentGuid, UUID childGuid, int ord) {
+            joinFixups.add(new Object[]{joinTable, parentGuid, childGuid, ord});
+        }
+
+        void applyFixups(Connection con) throws SQLException {
+            for (String[] f : refFixups) {
+                PreparedStatement ps = null;
+                try {
+                    ps = con.prepareStatement("UPDATE " + H2PUtil.q(f[0]) + " SET " + H2PUtil.q(f[1])
+                            + " = ? WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
+                    ps.setObject(1, IDGs.UUIDV7.decode(f[3]));
+                    ps.setObject(2, IDGs.UUIDV7.decode(f[2]));
+                    ps.executeUpdate();
+                } finally {
+                    close(ps);
+                }
+            }
+            for (Object[] f : joinFixups) {
+                PreparedStatement ps = null;
+                try {
+                    ps = con.prepareStatement("INSERT INTO " + H2PUtil.q((String) f[0]) + " ("
+                            + H2PUtil.q("parent_guid") + ", " + H2PUtil.q("child_guid") + ", " + H2PUtil.q("ord")
+                            + ") VALUES (?, ?, ?)");
+                    ps.setObject(1, f[1]);
+                    ps.setObject(2, f[2]);
+                    ps.setInt(3, (Integer) f[3]);
+                    ps.executeUpdate();
+                } finally {
+                    close(ps);
+                }
+            }
+            refFixups.clear();
+            joinFixups.clear();
+        }
+    }
+
     @Override
     public <V extends NVEntity> V insert(V nve)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
@@ -737,7 +790,10 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            return innerInsert(con, nve);
+            WriteCtx ctx = new WriteCtx();
+            V ret = innerInsert(con, nve, ctx);
+            ctx.applyFixups(con);
+            return ret;
         } catch (SQLException e) {
             throw mapOrWrap(e);
         } finally {
@@ -745,7 +801,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         }
     }
 
-    private <V extends NVEntity> V innerInsert(Connection con, V nve) throws SQLException {
+    private <V extends NVEntity> V innerInsert(Connection con, V nve, WriteCtx ctx) throws SQLException {
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         ensureTable(nvce);
 
@@ -755,11 +811,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         MetaUtil.initTimeStamp(nve);
 
         if (existsByGuid(con, nvce, nve.getGUID())) {
-            return innerUpdate(con, nve);
+            return innerUpdate(con, nve, ctx);
         }
+        ctx.seen.add(nve.getGUID());
+        ctx.inFlight.add(nve.getGUID());
 
         List<AttrInfo> infos = attrInfos(nvce);
-        insertChildren(con, nve, infos); // referenced entities first (FK targets must exist)
+        insertChildren(con, nve, infos, ctx); // referenced entities first (FK targets must exist)
 
         List<AttrInfo> cols = columnAttrs(infos);
         String sql = insertSQLCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
@@ -776,13 +834,14 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             ps = con.prepareStatement(sql);
             int idx = 1;
             ps.setObject(idx++, IDGs.UUIDV7.decode(nve.getGUID()));
-            for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve);
+            for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve, ctx);
             ps.executeUpdate();
         } finally {
             close(ps);
         }
+        ctx.inFlight.remove(nve.getGUID()); // row exists now — FK references to it can bind directly
 
-        syncJoins(con, nve, infos, false); // link rows for entity collections
+        syncJoins(con, nve, infos, false, ctx); // link rows for entity collections
         return nve;
     }
 
@@ -799,30 +858,37 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
 
     /** Insert (or update) every referenced entity so FK targets exist before the parent row. */
     @SuppressWarnings("unchecked")
-    private void insertChildren(Connection con, NVEntity nve, List<AttrInfo> infos) throws SQLException {
+    private void insertChildren(Connection con, NVEntity nve, List<AttrInfo> infos, WriteCtx ctx) throws SQLException {
         for (AttrInfo ai : infos) {
             if (ai.kind == H2PUtil.AttrKind.ENTITY_REF) {
                 NVEntity child = (NVEntity) valueOf(nve, ai.nvc);
-                if (child != null) innerInsert(con, child);
+                if (child != null) writeChild(con, child, ctx);
             } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
                 ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
                 if (av != null) {
                     for (NVEntity child : av.values()) {
-                        if (child != null) innerInsert(con, child);
+                        if (child != null) writeChild(con, child, ctx);
                     }
                 }
             }
         }
     }
 
-    private void bindColumn(PreparedStatement ps, int idx, AttrInfo ai, NVEntity nve) throws SQLException {
+    /** Write one referenced entity unless this operation already wrote (or is writing) it — cycle guard. */
+    private void writeChild(Connection con, NVEntity child, WriteCtx ctx) throws SQLException {
+        if (SUS.isEmpty(child.getGUID())) child.setGUID(IDGs.UUIDV7.genID());
+        if (ctx.seen.contains(child.getGUID())) return;
+        innerInsert(con, child, ctx);
+    }
+
+    private void bindColumn(PreparedStatement ps, int idx, AttrInfo ai, NVEntity nve, WriteCtx ctx) throws SQLException {
         NVBase<?> nvb = nve.lookup(ai.name);
         Object value = nvb != null ? nvb.getValue() : null;
         switch (ai.kind) {
             case SCALAR:
                 if (nvb instanceof NVNumber) {
                     // NVNumber (e.g. Range start/end) carries a runtime numeric type — tag it so int/long/… survive.
-                    ps.setString(idx, value == null ? null : encodeNumber((Number) value));
+                    ps.setString(idx, value == null ? null : H2PUtil.encodeNumber((Number) value));
                 } else {
                     bindScalar(ps, idx, ai.nvc, value);
                 }
@@ -833,8 +899,17 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                 break;
             case ENTITY_REF: {
                 NVEntity child = (NVEntity) value;
-                ps.setObject(idx, (child != null && !SUS.isEmpty(child.getGUID()))
-                        ? IDGs.UUIDV7.decode(child.getGUID()) : null);
+                if (child == null || SUS.isEmpty(child.getGUID())) {
+                    ps.setObject(idx, null);
+                } else if (ctx != null && ctx.inFlight.contains(child.getGUID())) {
+                    // Cycle: the referenced row is an ancestor still being inserted — bind NULL now,
+                    // patch the FK column after the whole graph is on disk (WriteCtx.applyFixups).
+                    ps.setObject(idx, null);
+                    ctx.deferRef(tableName((NVConfigEntity) nve.getNVConfig()), ai.name,
+                            nve.getGUID(), child.getGUID());
+                } else {
+                    ps.setObject(idx, IDGs.UUIDV7.decode(child.getGUID()));
+                }
                 break;
             }
             case SCHEMALESS:
@@ -859,38 +934,10 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         return GSONUtil.toJSONDefault(nvb);
     }
 
-    private static String encodeNumber(Number n) {
-        if (n instanceof Integer) return "int:" + n.intValue();
-        if (n instanceof Long) return "long:" + n.longValue();
-        if (n instanceof Float) return "float:" + n.floatValue();
-        if (n instanceof Double) return "double:" + n.doubleValue();
-        if (n instanceof java.math.BigDecimal) return "bigdec:" + n;
-        return "double:" + n.doubleValue();
-    }
-
-    private static Number decodeNumber(String s) {
-        int i = s.indexOf(':');
-        if (i < 0) return null;
-        String t = s.substring(0, i), v = s.substring(i + 1);
-        switch (t) {
-            case "int":
-                return Integer.valueOf(v);
-            case "long":
-                return Long.valueOf(v);
-            case "float":
-                return Float.valueOf(v);
-            case "double":
-                return Double.valueOf(v);
-            case "bigdec":
-                return new java.math.BigDecimal(v);
-            default:
-                return Double.valueOf(v);
-        }
-    }
-
     /** Rewrite an entity's collection join rows (delete-then-insert on update; insert-only on insert). */
     @SuppressWarnings("unchecked")
-    private void syncJoins(Connection con, NVEntity nve, List<AttrInfo> infos, boolean deleteFirst) throws SQLException {
+    private void syncJoins(Connection con, NVEntity nve, List<AttrInfo> infos, boolean deleteFirst, WriteCtx ctx)
+            throws SQLException {
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         UUID parent = IDGs.UUIDV7.decode(nve.getGUID());
         for (AttrInfo ai : infos) {
@@ -915,6 +962,11 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                 int ord = 0;
                 for (NVEntity child : av.values()) {
                     if (child == null || SUS.isEmpty(child.getGUID())) continue;
+                    if (ctx != null && ctx.inFlight.contains(child.getGUID())) {
+                        // Cycle: child row not on disk yet — defer the join row, keep its position.
+                        ctx.deferJoin(jt, parent, IDGs.UUIDV7.decode(child.getGUID()), ord++);
+                        continue;
+                    }
                     if (ins == null) {
                         ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(jt) + " ("
                                 + H2PUtil.q("parent_guid") + ", " + H2PUtil.q("child_guid") + ", " + H2PUtil.q("ord")
@@ -939,13 +991,32 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         void bind(PreparedStatement ps) throws SQLException;
     }
 
-    /** Run {@code SELECT *} with an optional WHERE, materialize rows, then build entities (resolving refs/joins). */
-    private List<NVEntity> select(Connection con, NVConfigEntity nvce, String whereClause, SqlBinder binder)
-            throws SQLException {
+    /**
+     * Run a SELECT with an optional WHERE, materialize rows, then build entities (resolving
+     * refs/joins). {@code cache} is the per-call entity cache keyed by GUID — the cycle guard for
+     * mutually-referencing rows, and a dedup for repeated child fetches within one operation.
+     * {@code projection} (lowercased attribute names, null = all) limits the selected columns and
+     * the resolved collections — {@code guid} is always selected.
+     */
+    private List<NVEntity> select(Connection con, NVConfigEntity nvce, String whereClause, SqlBinder binder,
+                                  Map<String, NVEntity> cache, Set<String> projection) throws SQLException {
         List<NVEntity> ret = new ArrayList<>();
         if (nvce == null || !tableExists(con, nvce)) return ret;
-        String sql = "SELECT * FROM " + H2PUtil.q(tableName(nvce))
+        String colList = "*";
+        if (projection != null) {
+            StringBuilder sb = new StringBuilder(H2PUtil.q(MetaToken.GUID.getName()));
+            for (AttrInfo ai : attrInfos(nvce)) {
+                if (ai.isColumn() && projection.contains(ai.lowerName)) {
+                    sb.append(", ").append(H2PUtil.q(ai.name));
+                }
+            }
+            colList = sb.toString();
+        }
+        String sql = "SELECT " + colList + " FROM " + H2PUtil.q(tableName(nvce))
                 + (whereClause != null && !whereClause.isEmpty() ? " WHERE " + whereClause : "");
+        // Safety valve (opt-in via MAX_SELECT_RESULTS): cap unbounded materialization.
+        int maxResults = intParam(H2PParam.MAX_SELECT_RESULTS, 0);
+        if (maxResults > 0) sql += " LIMIT " + maxResults;
         List<Map<String, Object>> rows;
         PreparedStatement ps = null;
         ResultSet rs = null;
@@ -957,7 +1028,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         } finally {
             close(rs, ps);
         }
-        for (Map<String, Object> row : rows) ret.add(buildEntity(con, nvce, row));
+        for (Map<String, Object> row : rows) ret.add(buildEntity(con, nvce, row, cache, projection));
         return ret;
     }
 
@@ -977,7 +1048,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     }
 
     @SuppressWarnings("unchecked")
-    private NVEntity buildEntity(Connection con, NVConfigEntity nvce, Map<String, Object> row) throws SQLException {
+    private NVEntity buildEntity(Connection con, NVConfigEntity nvce, Map<String, Object> row,
+                                 Map<String, NVEntity> cache, Set<String> projection) throws SQLException {
         NVEntity nve;
         try {
             nve = (NVEntity) nvce.getMetaTypeBase().getDeclaredConstructor().newInstance();
@@ -986,6 +1058,9 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         }
         Object g = row.get(MetaToken.GUID.getName());
         if (g instanceof UUID) nve.setGUID(IDGs.UUIDV7.encode((UUID) g));
+        // Register before resolving references: a child referencing back to this row must find it
+        // here instead of re-querying (infinite recursion on cyclic graphs).
+        if (cache != null && nve.getGUID() != null) cache.put(nve.getGUID(), nve);
 
         List<AttrInfo> infos = attrInfos(nvce);
         for (AttrInfo ai : infos) {
@@ -1002,8 +1077,13 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                 case ENTITY_REF: {
                     Object ref = row.get(col);
                     if (ref instanceof UUID) {
-                        List<NVEntity> child = innerSearchByIDs(con, childNVCE(ai), IDGs.UUIDV7.encode((UUID) ref));
-                        if (!child.isEmpty()) ((NVEntityReference) nve.lookup(ai.name)).setValue(child.get(0));
+                        String refId = IDGs.UUIDV7.encode((UUID) ref);
+                        NVEntity child = cache != null ? cache.get(refId) : null;
+                        if (child == null) {
+                            List<NVEntity> found = innerSearchByIDs(con, childNVCE(ai), null, cache, refId);
+                            child = found.isEmpty() ? null : found.get(0);
+                        }
+                        if (child != null) ((NVEntityReference) nve.lookup(ai.name)).setValue(child);
                     }
                     break;
                 }
@@ -1021,13 +1101,16 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         // IN (...) query, then re-ordered to the join table's "ord" (was one SELECT per child).
         for (AttrInfo ai : infos) {
             if (ai.kind != H2PUtil.AttrKind.ENTITY_COLLECTION) continue;
+            if (projection != null && !projection.contains(ai.lowerName)) continue; // not projected
             List<UUID> childGuids = selectJoinChildren(con, nvce, ai, (UUID) g);
             if (childGuids.isEmpty()) continue;
             ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
             String[] ids = new String[childGuids.size()];
             for (int i = 0; i < ids.length; i++) ids[i] = IDGs.UUIDV7.encode(childGuids.get(i));
             Map<String, NVEntity> byGUID = new LinkedHashMap<>();
-            for (NVEntity child : innerSearchByIDs(con, childNVCE(ai), ids)) byGUID.put(child.getGUID(), child);
+            for (NVEntity child : this.<NVEntity>innerSearchByIDs(con, childNVCE(ai), null, cache, ids)) {
+                byGUID.put(child.getGUID(), child);
+            }
             for (String id : ids) {
                 NVEntity child = byGUID.get(id);
                 if (child != null) av.add(child);
@@ -1045,7 +1128,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             if (col instanceof UUID) ((NVBase<Object>) nvb).setValue(IDGs.UUIDV7.encode((UUID) col));
             return;
         }
-        if (nvb instanceof NVNumber) ((NVNumber) nvb).setValue(decodeNumber(col.toString()));
+        if (nvb instanceof NVNumber) ((NVNumber) nvb).setValue(H2PUtil.decodeNumber(col.toString()));
         else if (nvb instanceof NVEnum)
             ((NVEnum) nvb).setValue(SharedUtil.enumValue(ai.nvc.getMetaType(), col.toString()));
         else if (nvb instanceof NVBoolean) ((NVBoolean) nvb).setValue((Boolean) col);
@@ -1106,7 +1189,10 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            return innerUpdate(con, nve);
+            WriteCtx ctx = new WriteCtx();
+            V ret = innerUpdate(con, nve, ctx);
+            ctx.applyFixups(con);
+            return ret;
         } catch (SQLException e) {
             throw mapOrWrap(e);
         } finally {
@@ -1114,16 +1200,20 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         }
     }
 
-    private <V extends NVEntity> V innerUpdate(Connection con, V nve) throws SQLException {
+    private <V extends NVEntity> V innerUpdate(Connection con, V nve, WriteCtx ctx) throws SQLException {
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         ensureTable(nvce);
         if (SUS.isEmpty(nve.getGUID()) || !existsByGuid(con, nvce, nve.getGUID())) {
-            return innerInsert(con, nve);
+            return innerInsert(con, nve, ctx);
         }
+        ctx.seen.add(nve.getGUID());
         MetaUtil.initTimeStamp(nve);
 
         List<AttrInfo> infos = attrInfos(nvce);
-        insertChildren(con, nve, infos); // new/changed referenced entities
+        // Opt-in orphan cleanup: remember the stored children before the update rewrites them.
+        List<ChildRef> before = orphanCleanupEnabled()
+                ? collectDbChildren(con, nvce, IDGs.UUIDV7.decode(nve.getGUID()), infos) : null;
+        insertChildren(con, nve, infos, ctx); // new/changed referenced entities
 
         List<AttrInfo> cols = columnAttrs(infos);
         String sql = updateSQLCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
@@ -1141,22 +1231,148 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         try {
             ps = con.prepareStatement(sql);
             int idx = 1;
-            for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve);
+            for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve, ctx);
             ps.setObject(idx, IDGs.UUIDV7.decode(nve.getGUID()));
             ps.executeUpdate();
         } finally {
             close(ps);
         }
 
-        syncJoins(con, nve, infos, true); // resync collection links
+        syncJoins(con, nve, infos, true, ctx); // resync collection links
+
+        if (before != null && !before.isEmpty()) {
+            deleteDetachedChildren(con, nve, infos, before);
+        }
         return nve;
     }
 
+    private boolean orphanCleanupEnabled() {
+        APIConfigInfo aci = getAPIConfigInfo();
+        String v = aci != null ? aci.getProperties().getValue(H2PParam.ORPHAN_CLEANUP) : null;
+        return v != null && Boolean.parseBoolean(v.trim());
+    }
+
+    /**
+     * Orphan cleanup (opt-in via {@link H2PParam#ORPHAN_CLEANUP}): delete previously referenced
+     * child rows the update just detached (replaced single refs, children removed from
+     * collections). A child still referenced elsewhere is kept ({@link #deleteChildSafely}).
+     */
+    @SuppressWarnings("unchecked")
+    private void deleteDetachedChildren(Connection con, NVEntity nve, List<AttrInfo> infos,
+                                        List<ChildRef> before) throws SQLException {
+        Set<UUID> current = new HashSet<>();
+        for (AttrInfo ai : infos) {
+            if (ai.kind == H2PUtil.AttrKind.ENTITY_REF) {
+                NVEntity child = (NVEntity) valueOf(nve, ai.nvc);
+                if (child != null && !SUS.isEmpty(child.getGUID())) current.add(IDGs.UUIDV7.decode(child.getGUID()));
+            } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
+                ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
+                if (av != null) {
+                    for (NVEntity child : av.values()) {
+                        if (child != null && !SUS.isEmpty(child.getGUID())) current.add(IDGs.UUIDV7.decode(child.getGUID()));
+                    }
+                }
+            }
+        }
+        Set<UUID> visited = new HashSet<>();
+        for (ChildRef c : before) {
+            if (!current.contains(c.guid)) {
+                deleteChildSafely(con, c.nvce, c.guid, visited);
+            }
+        }
+    }
+
+    /**
+     * Partial update. Mirrors {@code SyncMongoDS.patch} semantics: {@code nvConfigNames} with
+     * {@code includeParam=true} is the exact set of attributes to write; with {@code includeParam=false}
+     * it is the set to exclude; empty means full update. {@code updateTS} touches the timestamps,
+     * {@code sync} serializes concurrent patches on this instance, {@code updateRefOnly} binds the
+     * existing GUIDs of referenced entities without writing the referenced rows themselves.
+     * A null/empty GUID falls through to insert; a GUID that doesn't exist is an error.
+     */
     @Override
     public <V extends NVEntity> V patch(V nve, boolean updateTS, boolean sync, boolean updateRefOnly,
                                         boolean includeParam, String... nvConfigNames)
             throws NullPointerException, IllegalArgumentException, APIException {
-        return update(nve);
+        SUS.checkIfNulls("Null value", nve);
+        if (sync) lock.lock();
+        try {
+            Connection con = null;
+            try {
+                con = acquire();
+                NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+                ensureTable(nvce);
+
+                SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
+                if (sc != null) sc.associateNVEntityToSubjectGUID(nve, null);
+
+                WriteCtx ctx = new WriteCtx();
+                if (SUS.isEmpty(nve.getGUID())) {
+                    V ret = innerInsert(con, nve, ctx);
+                    ctx.applyFixups(con);
+                    return ret;
+                }
+                if (!existsByGuid(con, nvce, nve.getGUID())) {
+                    throw new APIException("Can not patch a missing object " + nve.getGUID());
+                }
+                ctx.seen.add(nve.getGUID());
+                if (updateTS) MetaUtil.initTimeStamp(nve);
+
+                // Resolve the attribute subset to write.
+                List<AttrInfo> infos = attrInfos(nvce);
+                List<AttrInfo> subset;
+                if (nvConfigNames != null && nvConfigNames.length > 0) {
+                    Set<String> names = new HashSet<>();
+                    for (String n : nvConfigNames) {
+                        n = SUS.trimOrNull(n);
+                        if (n != null) names.add(n.toLowerCase());
+                    }
+                    subset = new ArrayList<>();
+                    for (AttrInfo ai : infos) {
+                        boolean named = names.contains(ai.lowerName);
+                        if (includeParam ? named : !named) subset.add(ai);
+                    }
+                } else {
+                    subset = infos; // no names -> full update
+                }
+
+                if (!updateRefOnly) {
+                    insertChildren(con, nve, subset, ctx); // write referenced entities within the subset
+                }
+
+                List<AttrInfo> cols = columnAttrs(subset);
+                if (!cols.isEmpty()) {
+                    StringBuilder sb = new StringBuilder("UPDATE ").append(H2PUtil.q(tableName(nvce))).append(" SET ");
+                    boolean first = true;
+                    for (AttrInfo ai : cols) {
+                        if (!first) sb.append(", ");
+                        sb.append(H2PUtil.q(ai.name)).append(" = ?");
+                        first = false;
+                    }
+                    sb.append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?");
+                    PreparedStatement ps = null;
+                    try {
+                        ps = con.prepareStatement(sb.toString());
+                        int idx = 1;
+                        for (AttrInfo ai : cols) bindColumn(ps, idx++, ai, nve, ctx);
+                        ps.setObject(idx, IDGs.UUIDV7.decode(nve.getGUID()));
+                        ps.executeUpdate();
+                    } finally {
+                        close(ps);
+                    }
+                }
+
+                syncJoins(con, nve, subset, true, ctx); // resync only the subset's collections
+                ctx.applyFixups(con);
+                return nve;
+            } catch (SQLException e) {
+                throw mapOrWrap(e);
+            } finally {
+                close(con);
+            }
+        } finally {
+            if (sync) lock.unlock();
+        }
     }
 
     // ---------- Delete ----------
@@ -1177,41 +1393,133 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         }
     }
 
-    /** Cascade delete on one connection — the recursion must not re-acquire per referenced entity. */
-    @SuppressWarnings("unchecked")
+    /**
+     * Cascade delete on one connection. The children to cascade to are resolved from the
+     * <b>database</b> (the stored row's FK columns and join tables), never from the in-memory
+     * object — a shell entity (children not loaded) cascades exactly like a fully loaded one.
+     */
     private boolean innerDelete(Connection con, NVEntity nve, boolean withReference) throws SQLException {
-        if (nve == null) return false;
+        if (nve == null || SUS.isEmpty(nve.getGUID())) return false;
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
+        return deleteByGuid(con, nvce, IDGs.UUIDV7.decode(nve.getGUID()), withReference, new HashSet<>());
+    }
+
+    /** A child row reference collected from the DB before its parent row is deleted. */
+    private static final class ChildRef {
+        final NVConfigEntity nvce;
+        final UUID guid;
+
+        ChildRef(NVConfigEntity nvce, UUID guid) {
+            this.nvce = nvce;
+            this.guid = guid;
+        }
+    }
+
+    /** This row's referenced children as stored: non-null ENTITY_REF FK columns + join-table rows. */
+    private List<ChildRef> collectDbChildren(Connection con, NVConfigEntity nvce, UUID guid,
+                                             List<AttrInfo> infos) throws SQLException {
+        List<ChildRef> ret = new ArrayList<>();
+        List<AttrInfo> refs = new ArrayList<>();
+        for (AttrInfo ai : infos) {
+            if (ai.kind == H2PUtil.AttrKind.ENTITY_REF && childNVCE(ai) != null) refs.add(ai);
+        }
+        if (!refs.isEmpty()) {
+            StringBuilder sql = new StringBuilder("SELECT ");
+            for (int i = 0; i < refs.size(); i++) {
+                if (i > 0) sql.append(", ");
+                sql.append(H2PUtil.q(refs.get(i).name));
+            }
+            sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)))
+                    .append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?");
+            PreparedStatement ps = null;
+            ResultSet rs = null;
+            try {
+                ps = con.prepareStatement(sql.toString());
+                ps.setObject(1, guid);
+                rs = ps.executeQuery();
+                if (rs.next()) {
+                    for (int i = 0; i < refs.size(); i++) {
+                        Object v = rs.getObject(i + 1);
+                        if (v instanceof UUID) ret.add(new ChildRef(childNVCE(refs.get(i)), (UUID) v));
+                    }
+                }
+            } finally {
+                close(rs, ps);
+            }
+        }
+        for (AttrInfo ai : infos) {
+            if (ai.kind != H2PUtil.AttrKind.ENTITY_COLLECTION) continue;
+            NVConfigEntity child = childNVCE(ai);
+            if (child == null) continue;
+            for (UUID c : selectJoinChildren(con, nvce, ai, guid)) ret.add(new ChildRef(child, c));
+        }
+        return ret;
+    }
+
+    /**
+     * DB-driven cascade delete. {@code visited} guards cyclic reference chains. Children are
+     * collected from the stored row before it is deleted (its join rows go with it via
+     * {@code ON DELETE CASCADE}); each child then cascades recursively via
+     * {@link #deleteChildSafely} — a child still referenced elsewhere (shared) is kept.
+     */
+    private boolean deleteByGuid(Connection con, NVConfigEntity nvce, UUID guid, boolean withReference,
+                                 Set<UUID> visited) throws SQLException {
+        if (nvce == null || guid == null || !visited.add(guid)) return false;
         if (!tableExists(con, nvce)) return false;
-        PreparedStatement ps = null;
+
+        List<AttrInfo> infos = attrInfos(nvce);
+        List<ChildRef> children = withReference ? collectDbChildren(con, nvce, guid, infos) : null;
+
         boolean deleted;
+        PreparedStatement ps = null;
         try {
-            // Delete the parent row first; ON DELETE CASCADE clears its collection join rows.
+            // Delete the row first; ON DELETE CASCADE clears its collection join rows, and its own
+            // FK references to the children disappear with it.
             ps = con.prepareStatement("DELETE FROM " + H2PUtil.q(tableName(nvce))
                     + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
-            ps.setObject(1, IDGs.UUIDV7.decode(nve.getGUID()));
+            ps.setObject(1, guid);
             deleted = ps.executeUpdate() > 0;
         } finally {
             close(ps);
         }
 
-        if (deleted && withReference) {
-            // Now that the parent no longer references them, delete the referenced entities.
-            for (AttrInfo ai : attrInfos(nvce)) {
-                if (ai.kind == H2PUtil.AttrKind.ENTITY_REF) {
-                    NVEntity child = (NVEntity) valueOf(nve, ai.nvc);
-                    if (child != null) innerDelete(con, child, true);
-                } else if (ai.kind == H2PUtil.AttrKind.ENTITY_COLLECTION) {
-                    ArrayValues<NVEntity> av = (ArrayValues<NVEntity>) nve.lookup(ai.name);
-                    if (av != null) {
-                        for (NVEntity child : av.values()) {
-                            if (child != null) innerDelete(con, child, true);
-                        }
-                    }
-                }
+        if (deleted && children != null) {
+            for (ChildRef c : children) {
+                deleteChildSafely(con, c.nvce, c.guid, visited);
             }
         }
         return deleted;
+    }
+
+    /**
+     * Cascade into one child; a child still referenced by another row (shared) raises an FK
+     * violation — it is kept and the cascade continues. Inside a transaction the attempt is wrapped
+     * in a SAVEPOINT (PostgreSQL aborts the whole tx on any failed statement otherwise).
+     */
+    private boolean deleteChildSafely(Connection con, NVConfigEntity childNvce, UUID childGuid,
+                                      Set<UUID> visited) throws SQLException {
+        java.sql.Savepoint sp = !con.getAutoCommit() ? con.setSavepoint() : null;
+        try {
+            boolean r = deleteByGuid(con, childNvce, childGuid, true, visited);
+            if (sp != null) con.releaseSavepoint(sp);
+            return r;
+        } catch (SQLException e) {
+            if (isFkViolation(e)) {
+                if (sp != null) con.rollback(sp);
+                if (log.isEnabled()) {
+                    log.getLogger().log(Level.FINE,
+                            "shared child kept (still referenced): " + childNvce.getName() + " " + childGuid);
+                }
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    /** FK violation SQLStates: 23503 (PostgreSQL, and H2 child-exists) / 23506 (H2 parent-missing). */
+    private static boolean isFkViolation(SQLException e) {
+        String s = e.getSQLState();
+        return "23503".equals(s) || "23506".equals(s);
     }
 
     @Override
@@ -1244,20 +1552,31 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     public <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        return innerSearch(nvce, null, queryCriteria);
+        return innerSearch(nvce, null, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> search(String className, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        return innerSearch(resolveNVCE(className), null, queryCriteria);
+        return innerSearch(resolveNVCE(className), null, fieldNames, queryCriteria);
     }
 
-    /** Core search: optional subject_guid (userID) filter AND optional criteria. */
+    /** Projection set (lowercased attribute names) from a fieldNames list; null = all fields. */
+    private static Set<String> toProjection(List<String> fieldNames) {
+        if (fieldNames == null || fieldNames.isEmpty()) return null;
+        Set<String> ret = new HashSet<>();
+        for (String fn : fieldNames) {
+            fn = SUS.trimOrNull(fn);
+            if (fn != null) ret.add(fn.toLowerCase());
+        }
+        return ret.isEmpty() ? null : ret;
+    }
+
+    /** Core search: optional subject_guid (userID) filter AND optional criteria AND optional projection. */
     @SuppressWarnings("unchecked")
     private <V extends NVEntity> List<V> innerSearch(NVConfigEntity nvce, String userID,
-                                                     QueryMarker... queryCriteria) {
+                                                     List<String> fieldNames, QueryMarker... queryCriteria) {
         List<V> ret = new ArrayList<>();
         if (nvce == null) return ret;
         Connection con = null;
@@ -1275,7 +1594,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                 int idx = 1;
                 if (hasUser) ps.setObject(idx++, IDGs.UUIDV7.decode(userID));
                 H2PQueryFormatter.bindWhere(ps, idx, nvce, queryCriteria);
-            })) {
+            }, new HashMap<>(), toProjection(fieldNames))) {
                 ret.add((V) e);
             }
         } catch (SQLException e) {
@@ -1292,7 +1611,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            return innerSearchByIDs(con, nvce, ids);
+            return innerSearchByIDs(con, nvce, null, new HashMap<>(), ids);
         } finally {
             close(con);
         }
@@ -1304,32 +1623,53 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            return innerSearchByIDs(con, resolveNVCE(className), ids);
+            return innerSearchByIDs(con, resolveNVCE(className), null, new HashMap<>(), ids);
         } finally {
             close(con);
         }
     }
 
+    /**
+     * Fetch entities by GUID, serving already-built instances from the per-call {@code cache} and
+     * querying only the missing ones. When {@code userID} is non-null the query is additionally
+     * scoped to {@code subject_guid = userID}. Result order follows {@code ids}; missing/filtered
+     * ids are simply absent.
+     */
     @SuppressWarnings("unchecked")
-    private <V extends NVEntity> List<V> innerSearchByIDs(Connection con, NVConfigEntity nvce, String... ids) {
+    private <V extends NVEntity> List<V> innerSearchByIDs(Connection con, NVConfigEntity nvce, String userID,
+                                                          Map<String, NVEntity> cache, String... ids) {
         List<V> ret = new ArrayList<>();
         if (nvce == null || ids == null || ids.length == 0) return ret;
-        List<UUID> uuids = new ArrayList<>();
+        Map<String, NVEntity> effectiveCache = cache != null ? cache : new HashMap<>();
+        List<String> order = new ArrayList<>();
+        List<UUID> toFetch = new ArrayList<>();
         for (String id : ids) {
-            if (id != null) uuids.add(IDGs.UUIDV7.decode(id));
+            if (id == null) continue;
+            UUID u = IDGs.UUIDV7.decode(id);
+            String norm = IDGs.UUIDV7.encode(u); // canonical form — must match buildEntity's cache key
+            order.add(norm);
+            if (!effectiveCache.containsKey(norm)) toFetch.add(u);
         }
-        if (uuids.isEmpty()) return ret;
-        StringBuilder in = new StringBuilder(H2PUtil.q(MetaToken.GUID.getName())).append(" IN (");
-        for (int i = 0; i < uuids.size(); i++) in.append(i == 0 ? "?" : ", ?");
-        in.append(')');
-        try {
-            for (NVEntity e : select(con, nvce, in.toString(), ps -> {
-                for (int i = 0; i < uuids.size(); i++) ps.setObject(i + 1, uuids.get(i));
-            })) {
-                ret.add((V) e);
+        if (order.isEmpty()) return ret;
+        if (!toFetch.isEmpty()) {
+            StringBuilder in = new StringBuilder(H2PUtil.q(MetaToken.GUID.getName())).append(" IN (");
+            for (int i = 0; i < toFetch.size(); i++) in.append(i == 0 ? "?" : ", ?");
+            in.append(')');
+            final boolean hasUser = userID != null;
+            if (hasUser) in.append(" AND ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName())).append(" = ?");
+            try {
+                select(con, nvce, in.toString(), ps -> {
+                    int idx = 1;
+                    for (UUID u : toFetch) ps.setObject(idx++, u);
+                    if (hasUser) ps.setObject(idx, IDGs.UUIDV7.decode(userID));
+                }, effectiveCache, null); // built entities land in the cache, keyed by GUID
+            } catch (SQLException e) {
+                throw mapOrWrap(e);
             }
-        } catch (SQLException e) {
-            throw mapOrWrap(e);
+        }
+        for (String norm : order) {
+            NVEntity e = effectiveCache.get(norm);
+            if (e != null) ret.add((V) e);
         }
         return ret;
     }
@@ -1338,20 +1678,27 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     public <V extends NVEntity> List<V> userSearch(String userID, NVConfigEntity nvce,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        return innerSearch(nvce, userID, queryCriteria);
+        return innerSearch(nvce, userID, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, String className,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        return innerSearch(resolveNVCE(className), userID, queryCriteria);
+        return innerSearch(resolveNVCE(className), userID, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearchByID(String userID, NVConfigEntity nvce, String... ids)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        return searchByID(nvce, ids);
+        Connection con = null;
+        try {
+            con = acquire();
+            // Scoped to the subject: an id belonging to another subject_guid is filtered out.
+            return innerSearchByIDs(con, nvce, userID, new HashMap<>(), ids);
+        } finally {
+            close(con);
+        }
     }
 
     @Override
@@ -1387,7 +1734,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            List<NVEntity> found = innerSearchByIDs(con, nvce, id);
+            List<NVEntity> found = innerSearchByIDs(con, nvce, null, new HashMap<>(), id);
             return (NT) (found.isEmpty() ? null : found.get(0));
         } finally {
             close(con);
@@ -1416,6 +1763,8 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
                         .append(" FROM ").append(H2PUtil.q(tableName(nvce)));
                 String where = H2PQueryFormatter.formatWhere(queryCriteria);
                 if (!where.isEmpty()) sql.append(" WHERE ").append(where);
+                // Deterministic report order (UUID v7 is time-ordered) so nextBatch pages are stable.
+                sql.append(" ORDER BY ").append(H2PUtil.q(MetaToken.GUID.getName()));
                 ps = con.prepareStatement(sql.toString());
                 H2PQueryFormatter.bindWhere(ps, 1, nvce, queryCriteria);
                 rs = ps.executeQuery();
@@ -1478,7 +1827,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         try {
             con = acquire();
-            List<NVEntity> nveList = innerSearchByIDs(con, reportResults.getNVConfigEntity(), ids);
+            List<NVEntity> nveList = innerSearchByIDs(con, reportResults.getNVConfigEntity(), null, new HashMap<>(), ids);
             batch.setBatch(nveList);
         } finally {
             close(con);
@@ -1511,11 +1860,17 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             upd.setString(1, json);
             upd.setString(2, dynamicEnumMap.getName());
             if (upd.executeUpdate() == 0) {
-                ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(DEM_TABLE) + " ("
-                        + H2PUtil.q("name") + ", " + H2PUtil.q("dem_data") + ") VALUES (?, ?)");
-                ins.setString(1, dynamicEnumMap.getName());
-                ins.setString(2, json);
-                ins.executeUpdate();
+                try {
+                    ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(DEM_TABLE) + " ("
+                            + H2PUtil.q("name") + ", " + H2PUtil.q("dem_data") + ") VALUES (?, ?)");
+                    ins.setString(1, dynamicEnumMap.getName());
+                    ins.setString(2, json);
+                    ins.executeUpdate();
+                } catch (SQLException e) {
+                    // Concurrent inserter won the race — the row exists now, retry the UPDATE.
+                    if (!"23505".equals(e.getSQLState())) throw e;
+                    upd.executeUpdate();
+                }
             }
             return dynamicEnumMap;
         } catch (Exception e) {
@@ -1603,7 +1958,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             ps = con.prepareStatement(
                     "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME)=UPPER(?)"
                             + " AND TABLE_TYPE='BASE TABLE'"
-                            + " AND LOWER(TABLE_SCHEMA) NOT IN ('pg_catalog','information_schema')");
+                            + " AND TABLE_SCHEMA = CURRENT_SCHEMA");
             ps.setString(1, table);
             rs = ps.executeQuery();
             return rs.next();
@@ -1632,19 +1987,26 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         String seq = sequenceName.toLowerCase();
+        // Sequences are non-transactional: always run on a dedicated auto-commit connection, never the
+        // ambient tx connection (a rolled-back tx must not undo — and its row locks must not pin — a sequence).
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = acquire();
+            con = newConnection();
             ensureSequenceTable();
             if (!sequenceExists(con, seq)) {
-                ps = con.prepareStatement("INSERT INTO " + H2PUtil.q(SEQ_TABLE) + " ("
-                        + H2PUtil.q("name") + ", " + H2PUtil.q("seq_value") + ", " + H2PUtil.q("increment_value")
-                        + ") VALUES (?, ?, ?)");
-                ps.setString(1, seq);
-                ps.setLong(2, startValue);
-                ps.setLong(3, defaultIncrement);
-                ps.executeUpdate();
+                try {
+                    ps = con.prepareStatement("INSERT INTO " + H2PUtil.q(SEQ_TABLE) + " ("
+                            + H2PUtil.q("name") + ", " + H2PUtil.q("seq_value") + ", " + H2PUtil.q("increment_value")
+                            + ") VALUES (?, ?, ?)");
+                    ps.setString(1, seq);
+                    ps.setLong(2, startValue);
+                    ps.setLong(3, defaultIncrement);
+                    ps.executeUpdate();
+                } catch (SQLException e) {
+                    // Lost the seed race to a concurrent creator — the row exists now, which is all we need.
+                    if (!"23505".equals(e.getSQLState())) throw e;
+                }
             }
         } catch (SQLException e) {
             throw mapOrWrap(e);
@@ -1679,7 +2041,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = acquire();
+            con = newConnection(); // sequences are non-transactional (see createSequence)
             if (!rawTableExists(con, SEQ_TABLE)) return;
             ps = con.prepareStatement("DELETE FROM " + H2PUtil.q(SEQ_TABLE)
                     + " WHERE " + H2PUtil.q("name") + " = ?");
@@ -1700,7 +2062,7 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            con = acquire();
+            con = newConnection(); // sequences are non-transactional (see createSequence)
             if (!rawTableExists(con, SEQ_TABLE)) return 0;
             ps = con.prepareStatement("SELECT " + H2PUtil.q("seq_value") + " FROM " + H2PUtil.q(SEQ_TABLE)
                     + " WHERE " + H2PUtil.q("name") + " = ?");
@@ -1717,69 +2079,83 @@ public class H2PDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public long nextSequenceValue(String sequenceName)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
-        long inc = 1;
-        Connection con = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-        try {
-            con = acquire();
-            ensureSequenceTable();
-            String seq = sequenceName.toLowerCase();
-            if (!sequenceExists(con, seq)) {
-                createSequence(sequenceName);
-            } else {
-                ps = con.prepareStatement("SELECT " + H2PUtil.q("increment_value") + " FROM " + H2PUtil.q(SEQ_TABLE)
-                        + " WHERE " + H2PUtil.q("name") + " = ?");
-                ps.setString(1, seq);
-                rs = ps.executeQuery();
-                if (rs.next()) inc = rs.getLong(1);
-            }
-        } catch (SQLException e) {
-            throw mapOrWrap(e);
-        } finally {
-            close(rs, ps, con);
-        }
-        return nextSequenceValue(sequenceName, inc);
+        SUS.checkIfNulls("Null sequence name", sequenceName);
+        return incrementSequence(sequenceName.toLowerCase(), null);
     }
 
     @Override
     public long nextSequenceValue(String sequenceName, long increment)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
-        String seq = sequenceName.toLowerCase();
-        lock.lock();
+        return incrementSequence(sequenceName.toLowerCase(), increment);
+    }
+
+    /**
+     * Atomically advance a sequence and return the new value: {@code SELECT ... FOR UPDATE} +
+     * {@code UPDATE} in one short DB transaction on a dedicated connection. The row lock makes the
+     * increment safe across threads, pooled connections and JVMs (a JVM-local lock can't); the
+     * dedicated connection keeps the op out of the ambient ThreadLocal transaction — a rolled-back
+     * tx must not undo the increment, and its uncommitted row lock must not block other callers.
+     *
+     * @param increment null = use the sequence's stored increment_value
+     */
+    private long incrementSequence(String seq, Long increment) {
         Connection con = null;
-        PreparedStatement upd = null;
         PreparedStatement sel = null;
+        PreparedStatement upd = null;
         ResultSet rs = null;
         try {
-            con = acquire();
+            con = newConnection();
             ensureSequenceTable();
-            if (!sequenceExists(con, seq)) {
-                createSequence(sequenceName);
+            con.setAutoCommit(false);
+            try {
+                sel = con.prepareStatement("SELECT " + H2PUtil.q("seq_value") + ", " + H2PUtil.q("increment_value")
+                        + " FROM " + H2PUtil.q(SEQ_TABLE) + " WHERE " + H2PUtil.q("name") + " = ? FOR UPDATE");
+                sel.setString(1, seq);
+                rs = sel.executeQuery();
+                if (!rs.next()) {
+                    // Sequence missing: seed it (own connection, seed-race safe) and re-lock the row.
+                    con.rollback();
+                    createSequence(seq);
+                    close(rs);
+                    rs = sel.executeQuery();
+                    if (!rs.next()) throw new APIException("sequence not found: " + seq);
+                }
+                long inc = increment != null ? increment : rs.getLong(2);
+                long next = rs.getLong(1) + inc;
+                upd = con.prepareStatement("UPDATE " + H2PUtil.q(SEQ_TABLE) + " SET "
+                        + H2PUtil.q("seq_value") + " = ? WHERE " + H2PUtil.q("name") + " = ?");
+                upd.setLong(1, next);
+                upd.setString(2, seq);
+                upd.executeUpdate();
+                con.commit();
+                return next;
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    con.rollback();
+                } catch (SQLException ignore) {
+                    // surface the original failure
+                }
+                throw e;
             }
-            upd = con.prepareStatement("UPDATE " + H2PUtil.q(SEQ_TABLE) + " SET "
-                    + H2PUtil.q("seq_value") + " = " + H2PUtil.q("seq_value") + " + ? WHERE " + H2PUtil.q("name") + " = ?");
-            upd.setLong(1, increment);
-            upd.setString(2, seq);
-            upd.executeUpdate();
-
-            sel = con.prepareStatement("SELECT " + H2PUtil.q("seq_value") + " FROM " + H2PUtil.q(SEQ_TABLE)
-                    + " WHERE " + H2PUtil.q("name") + " = ?");
-            sel.setString(1, seq);
-            rs = sel.executeQuery();
-            return rs.next() ? rs.getLong(1) : 0;
         } catch (SQLException e) {
             throw mapOrWrap(e);
         } finally {
+            if (con != null) {
+                try {
+                    con.setAutoCommit(true);
+                } catch (SQLException ignore) {
+                    // closing anyway
+                }
+            }
             close(rs, sel, upd, con);
-            lock.unlock();
         }
     }
 
     // ---------- Error mapping ----------
 
     private APIException mapOrWrap(Exception e) {
+        APIExceptionHandler exceptionHandler = getAPIExceptionHandler();
         if (exceptionHandler != null) {
             APIException mapped = exceptionHandler.mapException(e);
             if (mapped != null) return mapped;

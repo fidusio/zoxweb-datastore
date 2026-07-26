@@ -52,20 +52,18 @@ public class H2PPostgresDataStoreTest {
     private static H2PDataStore ds;
 
     /** Target database name; auto-created if missing. Override with -Dh2p.pg.db. */
-    private static final String DB_NAME = System.getenv("h2p.pg.db");
+    private static final String DB_NAME = System.getProperty("h2p.pg.db", "testpostgres");
 
     @BeforeAll
     @SuppressWarnings("unused")
     public static void setup() throws Exception {
         // h2p.pg.url is the BASE endpoint, e.g. jdbc:postgresql://lax2.xlogistx.io:5432 (db optional).
 
-        String raw = System.getenv("h2p.pg.url");
-        System.out.println(raw + " " + DB_NAME);
+        String raw = System.getProperty("h2p.pg.url");
         Assumptions.assumeTrue(raw != null && !raw.isEmpty(),
-                "set -Dh2p.pg.url=jdbc:postgresql://host:port (+ h2p.pg.user / h2p.pg.password) to run the live PostgreSQL test");
-        String user = System.getenv("h2p.pg.user");
-        String password = System.getenv("h2p.pg.password");
-        System.out.println(raw + " " + DB_NAME + " " + user + " " + password);
+                "set -Dh2p.pg.url=jdbc:postgresql://host:port (+ -Dh2p.pg.user / -Dh2p.pg.password) to run the live PostgreSQL test");
+        String user = System.getProperty("h2p.pg.user");
+        String password = System.getProperty("h2p.pg.password");
 
         Class.forName("org.postgresql.Driver");
 
