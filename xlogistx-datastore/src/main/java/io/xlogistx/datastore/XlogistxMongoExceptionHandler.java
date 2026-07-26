@@ -29,11 +29,16 @@ public class XlogistxMongoExceptionHandler
         implements APIExceptionHandler {
 
     /**
-     * Contains Monogo error codes.
+     * Contains Mongo error codes.
      */
     public enum MongoError
             implements GetValue<Integer> {
         DUPLICATE_KEY("Already exists.", 11000, Category.OPERATION, Code.DUPLICATE_ENTRY_NOT_ALLOWED),
+        DUPLICATE_KEY_BULK("Already exists.", 11001, Category.OPERATION, Code.DUPLICATE_ENTRY_NOT_ALLOWED),
+        WRITE_CONFLICT("Write conflict, retry.", 112, Category.OPERATION, Code.RETRY),
+        NO_SUCH_TRANSACTION("Transaction expired or aborted, retry.", 251, Category.OPERATION, Code.RETRY),
+        EXCEEDED_TIME_LIMIT("Operation timed out.", 50, Category.OPERATION, Code.RETRY),
+        // Legacy (pre-3.x) codes kept for old servers.
         INVALID_FIELD_NAME("Invalid field name.", 10333, Category.OPERATION, Code.MISSING_PARAMETERS),
         CONNECTION_FAILED("Failed to connect.", 13328, Category.CONNECTION, Code.CONNECTION_FAILED),
 
@@ -118,6 +123,12 @@ public class XlogistxMongoExceptionHandler
                 }
             }
 
+            // Driver-labeled transient transaction failures are retryable regardless of code.
+            if (apiException == null && (me.hasErrorLabel(MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL)
+                    || me.hasErrorLabel(MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL))) {
+                apiException = new APIException("Transient transaction failure, retry.", Category.OPERATION, Code.RETRY);
+            }
+
             if (apiException == null) {
                 apiException = new APIException("" + e);
             }
@@ -125,6 +136,11 @@ public class XlogistxMongoExceptionHandler
 
         if (apiException == null) {
             apiException = new APIException(e.getMessage());
+        }
+
+        // Always preserve the original failure for diagnostics.
+        if (apiException.getCause() == null && apiException != e) {
+            apiException.initCause(e);
         }
 
         return apiException;

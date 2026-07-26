@@ -197,6 +197,20 @@ public class XlogistxMongoUtil {
                             ((NVLongList) nvb).setValue(values);
                         },
                         long[].class, Long[].class)
+                // Date[] attributes are NVLongList-backed (epoch millis). Written by the generic
+                // isArray path as longs; legacy documents may hold BSON Dates — accept both.
+                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
+                            List<Long> values = new ArrayList<Long>();
+                            for (Object val : (List<?>) doc.get(nvc.getName())) {
+                                if (val instanceof Date) {
+                                    values.add(((Date) val).getTime());
+                                } else if (val instanceof Number) {
+                                    values.add(((Number) val).longValue());
+                                }
+                            }
+                            ((NVLongList) nvb).setValue(values);
+                        },
+                        Date[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<BigDecimal> ret = new ArrayList<BigDecimal>();
                             for (String val : (List<String>) doc.get(nvc.getName())) {

@@ -77,6 +77,9 @@ public class UpdateFilterClass
 
     @Override
     public boolean isValid(Class<?> in) {
+        if (in == null) {
+            return false; // ConcurrentHashMap-backed set NPEs on contains(null)
+        }
         // Fast path: not blacklisted → always valid. No Shiro call needed.
         if (!excluded.contains(in)) {
             return true;

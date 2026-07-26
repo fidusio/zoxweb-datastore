@@ -168,6 +168,18 @@ public class XlogistxMongoMetaManager {
         removeCollectionInfo(collection.getNamespace().getFullName());
     }
 
+    /**
+     * Drop all cached state (indexed collections, resolved NVConfigEntities, the
+     * nv_config_entities handle and the database reference). Called when the owning datastore is
+     * reconfigured — a new config may point at a different deployment where none of this applies.
+     */
+    protected void reset() {
+        indexedCollections.clear();
+        nvConfigEntityCache.clear();
+        nvConfigEntities = null;
+        mongoDatabase = null;
+    }
+
     public XlogistxMongoDBObjectMeta lookupCollectionName(XlogistxMongoDataStore mds, UUID collectionID) {
         Document nvceDB = mds.lookupByReferenceID(MetaCollections.NV_CONFIG_ENTITIES.getName(), collectionID);
 
@@ -216,8 +228,12 @@ public class XlogistxMongoMetaManager {
         addNVConfigEntity(getMongoDatabase(), nvce);
         for (NVConfig nvc : nvce.getAttributes()) {
             if (!nvc.getName().equals(MetaToken.GUID.getName()) && nvc.isUnique() && !nvc.isArray()) {
-                if(log.isEnabled()) log.getLogger().info("**************************************** " + nvc.getName());
-                createUniqueIndex(collection, nvc.getName());
+                // Index the key the write path actually stores: reserved names remap (guid -> _id)
+                // and reference-ID-typed attributes persist under "_" + name. Indexing the raw
+                // name would enforce uniqueness of an always-absent field (duplicate-null errors).
+                String indexKey = XlogistxMongoUtil.ReservedID.map(nvc, nvc.getName());
+                if(log.isEnabled()) log.getLogger().info("**************************************** " + indexKey);
+                createUniqueIndex(collection, indexKey);
             }
         }
     }

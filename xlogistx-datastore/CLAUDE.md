@@ -177,7 +177,7 @@ Test: `testEntityReferenceRoundTrip()` in `XlogistxMongoDataStoreTest` — `DSCo
 
 ### Running tests in this environment
 
-`mvn test` silently skips: surefire can't download its JUnit provider (PKIX/TLS failure to Maven Central; local repo is `D:/dev/data/java/.m2/repository`). Workaround: compile with `mvn -o test-compile`, then run via `junit-platform-launcher-6.0.1` (present in the local repo) with the classpath from `mvn -o dependency:build-classpath`. Tests need the live replica set `mongodb://localhost:27017/?replicaSet=rs0`.
+`mvn test` silently skips: surefire can't download its JUnit provider (PKIX/TLS failure to Maven Central; local repo is `D:/dev/data/java/.m2/repository`). Workaround: compile with `mvn -o test-compile`, then run via `junit-platform-launcher-6.0.1` (present in the local repo) with the classpath from `mvn -o dependency:build-classpath`. Tests target the live replica set `mongodb://localhost:27017/?replicaSet=rs0` by default, overridable with `-Dxds.url=mongodb://host:port/db?...`; when no server is reachable both suites **skip gracefully** (JUnit Assumptions via `MongoTestUtil.assumeMongoAvailable`, 3s server-selection timeout) instead of failing.
 
 ### Verification
 
@@ -233,6 +233,58 @@ Tests require a replica set; the test URLs use `?replicaSet=rs0`.
 | `testTransactionFirstUseCollection()` | `XlogistxMongoDataStoreTest` | Fresh throwaway DB: read pins the txn snapshot before any collection exists → first-use insert in-txn → commit succeeds (was WriteConflict 112) → deferred DDL ran post-commit (`isIndexed` true). Drops the DB afterwards |
 
 `H2PDomainSecurityManagerDBTest` also covers subject create/lookup, login success/failure, credential lookup, password update (`updatePassword_changesLoginCredential`: re-hash via `CredentialHasher.update` → `updateCredential` → old password rejected / new accepted, credential updated in place with the same GUID), and permission/role/role-group grant round-trips (mirrors the mock-backed `DomainSecurityManagerDefaultTest`, but against live Mongo). `roleGroupGrant_roundTripsThroughDataStore` additionally exercises the reference sub-document resolution path (fix #56): `RoleGroupInfo.roles` is a GET_NAME_MAP of non-embedded `RoleInfo` references resolved via `lookupByReferenceIDsMaybe` on read-back. All tests use unique UUID-suffixed principals/names and delete nothing, so they are safe to re-run against a persistent DB.
+
+## Analysis round 2026-07-26 — fixes applied (Phases 1 & 2)
+
+A full module re-analysis (including a behavioral diff against `mongo-sync`) surfaced the issues
+below. Phase 1 + 2 are fixed; Phase 3 is **pending the security model** (next section).
+
+| # | Category | Location | Fix applied |
+|---|---|---|---|
+| 58 | Critical | `fromDBtoDynamicEnumMap` | Null-guards its argument — `searchDynamicEnumMapByName`/`ByReferenceID` now return null for a missing DEM instead of NPE-ing |
+| 59 | Critical | `serNVPair` DEM branch | No longer clobbers the original DEM with the (possibly null) search result before the insert-if-missing fallback; inserts the original and rebinds the filter |
+| 60 | Critical | `userSearchByID` | Collection resolved via `nvce.toCanonicalID()` (was `getName()` — read a nonexistent collection for domainID-scoped types) |
+| 61 | Critical | `patch()` reload | `searchByID(...).get(0)` guarded — missing reload now throws a descriptive `APIException`, not `IndexOutOfBoundsException` |
+| 62 | Critical | `XlogistxMongoMetaManager.addUniqueIndexes` | Unique indexes created on `ReservedID.map(nvc, name)` — the key the write path stores. Raw-name indexing put a unique index on an always-absent field (duplicate-null error on the second insert of refID-typed unique attrs) |
+| 63 | Critical | `setAPIConfigInfo` | Retires `mongoClient`/`mongoDB`/`gridFSDB` and resets the metaManager (`reset()`) — a reconfigured store no longer silently keeps talking to the old database |
+| 64 | Critical | `close()` | Aborts + closes + clears the calling thread's ambient `txSession`/`txDeferredDDL` (sessions from a closed client must not stay reachable; other threads' transactions must be ended by their owners) |
+| 65 | Important | `XlogistxMongoExceptionHandler` | Added 11001 (dup bulk), 112 WriteConflict→RETRY, 251 NoSuchTransaction→RETRY, 50 timeout→RETRY, TransientTransactionError/UnknownTransactionCommitResult labels→RETRY; **every** APIException now carries the cause via `initCause` |
+| 66 | Important | `formatSearchFields` | Projection names remapped via `ReservedID.map` (guid→`_id`, refID attrs→`"_"+name`); signature takes the NVConfigEntity |
+| 67 | Important | `XlogistxMongoUtil.init` | Restored the `Date[]` deserializer (removed in fix #9 with no replacement): NVLongList target, tolerant of epoch-long and legacy BSON `Date` items |
+| 68 | Important | `toNVPair`, `serNVPair`, `insert()` | Null-guards on the encryption plumbing: missing SecurityController on read logs + skips instead of NPE; ENCRYPT-filtered field with no KeyMaker/controller on write fails fast with a descriptive `APIException` (never silent plaintext) |
+| 69 | Important | `insertDynamicEnumMap` / `getAllDynamicEnumMap` | DEM docs now persist `subject_guid` (native UUID when decodable — `toSubjectFilterValue`), and the subject filter decodes symmetrically. The `domain_id` filter matched a field that is never written → now logged + ignored (DynamicEnumMap has no domain attribute) |
+| 70 | Important | `createSequence` | Suspends the ambient transaction for the whole bootstrap (sequences are non-transactional by design — a rollback must not un-create a sequence whose `findOneAndUpdate` increments ran out-of-band) and handles the bootstrap race: duplicate-key insert → re-search → return the winner's row |
+| 71 | Important | `lookupByReferenceIDsMaybe` | Unresolvable `canonical_id` now logs a WARNING with the dropped-reference count (was: silent `continue` — collection members vanished quietly) |
+| 72 | Important | `pom.xml` | `junit-jupiter-params` scoped to `test` (was leaking into consumers' compile classpath) |
+| 73 | Important | tests | `DB_URL` overridable via `-Dxds.url`; default carries `serverSelectionTimeoutMS=3000`; `MongoTestUtil.assumeMongoAvailable` skips both suites gracefully when no server is reachable (was: hard-coded localhost, every test failed without a replica set). Config JSON dumps removed from stdout |
+| 74 | Minor | `UpdateFilterClass.isValid(Class)` | Null argument returns false (ConcurrentHashMap-backed set NPE'd on `contains(null)`) |
+| 75 | Important | `XlogistxMongoDSCreator` | **Authenticated MongoDB supported**: new `MongoParam.USER`/`PASSWORD`; `dataStoreURI` emits `mongodb://user:pass@host:port/db?...` with RFC-3986 percent-encoded userinfo; `toAPIConfigInfo` preserves (and percent-decodes) credentials from the input URL instead of dropping them. Also: empty `DB_NAME` no longer serializes as `/null`, and an `OPTIONS` override of `uuidRepresentation` away from `standard` logs a WARNING. Offline tests: `XlogistxMongoDSCreatorTest` (URI round-trips, encoding, empty-db) — no Mongo needed |
+
+## Phase 3 — PENDING (blocked on the security model)
+
+These are analyzed and documented but intentionally **not** implemented until the security model is
+settled:
+
+1. ~~Authenticated MongoDB support~~ — **DONE** (fix #75: `USER`/`PASSWORD` params + URL
+   credential preservation with percent-encoding).
+2. **Subject scoping / ACL policy** — `userSearch`/`userSearchByID` use `userID` only as a
+   decryption context (no `subject_guid` filter, no `isNVEntityAccessible`); `batchSearch` fails
+   open without a SecurityController and hides subject-less rows with one. One coherent policy is
+   needed across all three read paths (mirror of the h2p SecurityController work — same pending
+   security model).
+3. **Cascade delete redesign** — `delete(withReference)` walks only in-memory references (h2p now
+   resolves children from the DB; same treatment applies here), and the EncapsulatedKey cleanup
+   uses `getName()` instead of the canonical id → orphaned key rows. Key-material lifecycle is
+   security-relevant → deferred with the model.
+4. **`serNVGenericMap` unsupported-type policy** — silently drops NVEnumList/NVBigDecimalList/
+   Date/NamedValue-in-map values; needs a drop-vs-throw decision.
+5. **Caps and timeouts** — `maxSearchResults` truncation is silent (log-only); `withTimeout`
+   covers finds but not `countDocuments`/`findOneAndUpdate`/GridFS.
+6. **Legacy-data migration** — mongo-sync-era documents (`reference_id` sub-document keys,
+   String-typed reserved IDs) are unreadable/unmatchable; needs one-off migration tooling if that
+   data matters.
+7. ~~`jdk.version=25`~~ — **confirmed intended** by the user (2026-07-26); this module targets
+   JDK 25 deliberately, unlike the JDK-11 siblings. Do not "fix" it.
 
 ## Ground rules for future sessions on this module
 

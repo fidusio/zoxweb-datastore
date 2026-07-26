@@ -40,8 +40,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * do not delete anything — all created data is left in the store for inspection.
  */
 public class DomainSecurityManagerDBTest {
-    // replicaSet=rs0 targets the replica set (required for transactions).
-    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0";
+    // replicaSet=rs0 targets the replica set (required for transactions); override with
+    // -Dxds.url=mongodb://host:port/db?... — the whole suite skips if the server is unreachable.
+    public static final String DB_URL = System.getProperty("xds.url",
+            "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0&serverSelectionTimeoutMS=3000");
 
     private static final String PASSWORD = "Secret123!";
     private static final String NEW_PASSWORD = "N3wSecret456$";
@@ -54,10 +56,10 @@ public class DomainSecurityManagerDBTest {
     public static void setup() {
         XlogistxMongoDSCreator creator = new XlogistxMongoDSCreator();
         APIConfigInfo configInfo = creator.toAPIConfigInfo(DB_URL);
-        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
 
         mongoDataStore = new XlogistxMongoDataStore();
         mongoDataStore.setAPIConfigInfo(configInfo);
+        MongoTestUtil.assumeMongoAvailable(mongoDataStore, DB_URL);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
         domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(mongoDataStore).addCredentialType(CIPassword.class);

@@ -38,8 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class XlogistxMongoDataStoreTest {
 
-    // replicaSet=rs0 targets the replica set (required for transactions).
-    public static final String DB_URL = "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0";
+    // replicaSet=rs0 targets the replica set (required for transactions); override with
+    // -Dxds.url=mongodb://host:port/db?... — the whole suite skips if the server is unreachable.
+    public static final String DB_URL = System.getProperty("xds.url",
+            "mongodb://localhost:27017/xlog_datastore_test?replicaSet=rs0&serverSelectionTimeoutMS=3000");
 
     private static XlogistxMongoDataStore mongoDataStore;
     private static CommonDataStoreTest<MongoClient, MongoDatabase> cdst;
@@ -48,10 +50,10 @@ public class XlogistxMongoDataStoreTest {
     public static void setup() {
         XlogistxMongoDSCreator creator = new XlogistxMongoDSCreator();
         APIConfigInfo configInfo = creator.toAPIConfigInfo(DB_URL);
-        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
 
         mongoDataStore = new XlogistxMongoDataStore();
         mongoDataStore.setAPIConfigInfo(configInfo);
+        MongoTestUtil.assumeMongoAvailable(mongoDataStore, DB_URL);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
     }

@@ -37,6 +37,10 @@ public class XlogistxMongoDSCreator
         PORT("port", "27017"),
         // "mongodb://localhost:27017";
         //DB_URI("db_uri", null),
+        // Credentials for authenticated deployments; percent-encoded into the connection string's
+        // userinfo by dataStoreURI. authSource/authMechanism, when needed, ride in OPTIONS.
+        USER("user", null),
+        PASSWORD("password", null),
         DATA_CACHE("data_cache", "false"),
         DATA_CACHE_CLASS_NAME("data_cache_class_name", null),
         GRIDFS_POSTFIX("gridfs_name", "_gridfs"),
@@ -66,17 +70,61 @@ public class XlogistxMongoDSCreator
         }
 
         public static String dataStoreURI(APIConfigInfo aci) {
-            String base = "mongodb://" + aci.getProperties().getValue(HOST) + ":" + aci.getProperties().getValue(PORT)
-                    + "/" + aci.getProperties().getValue(DB_NAME);
+            StringBuilder base = new StringBuilder("mongodb://");
+            // Authenticated deployment: mongodb://user:password@host:port/... — userinfo must be
+            // percent-encoded (':' '@' '/' '%' are structural in the connection string).
+            String user = aci.getProperties().getValue(USER);
+            if (SUS.isNotEmpty(user)) {
+                base.append(percentEncode(user));
+                String password = aci.getProperties().getValue(PASSWORD);
+                if (SUS.isNotEmpty(password)) {
+                    base.append(':').append(percentEncode(password));
+                }
+                base.append('@');
+            }
+            String host = aci.getProperties().getValue(HOST);
+            Object port = aci.getProperties().getValue(PORT); // NVInt-typed -> Integer
+            base.append(host).append(':').append(port);
+            String dbName = aci.getProperties().getValue(DB_NAME);
+            base.append('/');
+            if (SUS.isNotEmpty(dbName)) {
+                base.append(dbName); // empty db -> "mongodb://host:port/?query", never ".../null"
+            }
             // Always enforce standard UUID representation; merge any options carried from the input
             // URL (replicaSet, directConnection, ...) so transaction-capable deployments can be targeted.
             String query = "uuidRepresentation=standard";
             Object optionsObj = aci.getProperties().getValue(OPTIONS);
             String options = optionsObj != null ? optionsObj.toString() : null;
             if (SUS.isNotEmpty(options)) {
-                query = options.contains("uuidRepresentation") ? options : query + "&" + options;
+                if (options.contains("uuidRepresentation")) {
+                    if (!options.contains("uuidRepresentation=standard") && log.isEnabled()) {
+                        log.getLogger().warning("dataStoreURI: OPTIONS overrides uuidRepresentation away from "
+                                + "'standard' — UUID storage will be incompatible with this datastore's invariants: " + options);
+                    }
+                    query = options;
+                } else {
+                    query = query + "&" + options;
+                }
             }
             return base + "?" + query;
+        }
+
+        /** RFC 3986 percent-encoding for connection-string userinfo. */
+        private static String percentEncode(String s) {
+            try {
+                return java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20");
+            } catch (java.io.UnsupportedEncodingException e) {
+                throw new IllegalStateException(e); // UTF-8 always present
+            }
+        }
+
+        /** Inverse of {@link #percentEncode} — a literal '+' must survive (not form-decode to space). */
+        static String percentDecode(String s) {
+            try {
+                return java.net.URLDecoder.decode(s.replace("+", "%2B"), "UTF-8");
+            } catch (java.io.UnsupportedEncodingException e) {
+                throw new IllegalStateException(e);
+            }
         }
 
         public static String gridFSDataStoreName(APIConfigInfo aci) {
@@ -92,6 +140,16 @@ public class XlogistxMongoDSCreator
         ret.getProperties().build(MongoParam.HOST, urlInfo.ipAddress.getInetAddress())
                 .build(new NVInt(MongoParam.PORT, urlInfo.ipAddress.getPort()))
                 .build(MongoParam.DB_NAME, urlInfo.justPath());
+        // Preserve credentials from an authenticated URL (mongodb://user:pass@host:...) — they
+        // were previously dropped silently, making authenticated deployments unreachable.
+        // URLInfo keeps the userinfo verbatim, so percent-decode here: the config stores the PLAIN
+        // credential and dataStoreURI percent-encodes exactly once on rebuild.
+        if (SUS.isNotEmpty(urlInfo.username)) {
+            ret.getProperties().build(MongoParam.USER, MongoParam.percentDecode(urlInfo.username));
+        }
+        if (SUS.isNotEmpty(urlInfo.password)) {
+            ret.getProperties().build(MongoParam.PASSWORD, MongoParam.percentDecode(urlInfo.password));
+        }
         // Preserve the query string (replicaSet, directConnection, ...) so dataStoreURI can re-apply it.
         if (SUS.isNotEmpty(urlInfo.query)) {
             ret.getProperties().build(MongoParam.OPTIONS, urlInfo.query);

@@ -364,9 +364,23 @@ public class XlogistxMongoDataStore
     }
 
     /**
-     * Closes all connections to the database.
+     * Closes all connections to the database. Also aborts and clears any transaction bound to the
+     * calling thread — a session from a closed client must not stay reachable through the
+     * ThreadLocal (transactions on OTHER threads cannot be cleared from here; their owners must
+     * end/abort them).
      */
     public synchronized void close() {
+        ClientSession s = txSession.get();
+        if (s != null) {
+            try {
+                if (s.hasActiveTransaction()) s.abortTransaction();
+            } catch (RuntimeException ignore) {
+                // closing anyway
+            }
+            SharedIOUtil.close(s);
+            txSession.remove();
+        }
+        txDeferredDDL.remove();
         SharedIOUtil.close(mongoClient);
         mongoClient = null;
         mongoDB = null;
@@ -439,6 +453,13 @@ public class XlogistxMongoDataStore
         Object value = nvp.getValue();
 
         if (container != null && (ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvp.getValueFilter(), FilterType.ENCRYPT_MASK))) {
+            // Fail fast with a clear message instead of an anonymous NPE when the security
+            // plumbing is incomplete: an ENCRYPT-filtered field must never fall through to
+            // plaintext storage silently.
+            if (getAPIConfigInfo().getKeyMaker() == null || getAPIConfigInfo().getSecurityController() == null) {
+                throw new APIException("Field '" + nvp.getName()
+                        + "' requires encryption but KeyMaker/SecurityController is not configured");
+            }
             getAPIConfigInfo().getKeyMaker().createNVEntityKey(this, container, getAPIConfigInfo().getKeyMaker().getKey(this, getAPIConfigInfo().getKeyMaker().getMasterKey(), container.getSubjectGUID()));
             value = getAPIConfigInfo().getSecurityController().encryptValue(this, container, null, nvp, null);
         }
@@ -455,12 +476,16 @@ public class XlogistxMongoDataStore
                 DynamicEnumMap dem = (DynamicEnumMap) nvp.getValueFilter();
 
                 if (dem.getReferenceID() == null) {
-                    dem = searchDynamicEnumMapByName(dem.getName(), dem.getClass());
-
-                    if (dem == null) {
+                    // Keep the original reference: if the DB doesn't know this DEM yet, THAT is
+                    // what must be inserted (the old code clobbered it with the null search result
+                    // and would have inserted null).
+                    DynamicEnumMap found = searchDynamicEnumMapByName(dem.getName(), dem.getClass());
+                    if (found == null) {
                         dem = insertDynamicEnumMap(dem);
-                        nvp.setValueFilter(dem);
+                    } else {
+                        dem = found;
                     }
+                    nvp.setValueFilter(dem);
                 }
 
                 Document dbObject = new Document();
@@ -787,12 +812,20 @@ public class XlogistxMongoDataStore
         if (container != null) {
 
             if (value instanceof Document) {
-                //if(log.isEnabled()) log.getLogger().info("userID:" + userID);
-                try {
-                    value = getAPIConfigInfo().getSecurityController().decryptValue(userID, this, container, fromDB(userID, connect(), (Document) value, EncryptedData.class), null);
-                } catch (InstantiationException | IllegalAccessException e) {
-                    if (log.isEnabled())
-                        log.getLogger().log(java.util.logging.Level.WARNING, "toNVPair decrypt failed", e);
+                // An encrypted sub-document without a configured SecurityController cannot be
+                // decrypted — surface null rather than NPE-ing on the controller lookup.
+                SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
+                if (sc == null) {
+                    if (log.isEnabled()) log.getLogger().warning(
+                            "toNVPair: encrypted value present but no SecurityController configured; value skipped");
+                    value = null;
+                } else {
+                    try {
+                        value = sc.decryptValue(userID, this, container, fromDB(userID, connect(), (Document) value, EncryptedData.class), null);
+                    } catch (InstantiationException | IllegalAccessException e) {
+                        if (log.isEnabled())
+                            log.getLogger().log(java.util.logging.Level.WARNING, "toNVPair decrypt failed", e);
+                    }
                 }
             }
         }
@@ -1058,6 +1091,9 @@ public class XlogistxMongoDataStore
             // Lookup collection metadata
             XlogistxMongoDBObjectMeta meta = metaManager.lookupCollectionName(this, canonicalId);
             if (meta == null || meta.getNVConfigEntity() == null) {
+                // These references silently vanish from the caller's collection — make it loud.
+                log.getLogger().warning("lookupByReferenceIDsMaybe: dropping " + refIds.size()
+                        + " reference(s) — canonical_id " + canonicalId + " not resolvable in nv_config_entities");
                 continue;
             }
 
@@ -1100,17 +1136,22 @@ public class XlogistxMongoDataStore
 
 
     /**
-     * Formats a list of field names used for search criteria.
+     * Formats a list of field names into a projection document. Each name is remapped to the key
+     * the write path actually stores ({@code guid -> _id}, reference-ID attributes ->
+     * {@code "_" + name}) — projecting the declared name of a remapped field would silently
+     * return it empty.
      *
-     * @param fieldNames
-     * @return
+     * @param nvce       the entity meta used to resolve reference-ID attributes (nullable)
+     * @param fieldNames declared attribute names
+     * @return projection document or null for "all fields"
      */
-    private static Document formatSearchFields(List<String> fieldNames) {
+    private static Document formatSearchFields(NVConfigEntity nvce, List<String> fieldNames) {
         if (fieldNames != null && !fieldNames.isEmpty()) {
             Document dbObject = new Document();
 
             for (String str : fieldNames) {
-                dbObject.append(str, true);
+                NVConfig nvc = nvce != null ? nvce.lookup(str) : null;
+                dbObject.append(XlogistxMongoUtil.ReservedID.map(nvc, str), true);
             }
 
             return dbObject;
@@ -1179,6 +1220,10 @@ public class XlogistxMongoDataStore
         for (NVConfig nvc : nvce.getAttributes()) {
             if (securityController != null) {
                 if (ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT) || ChainedFilter.isFilterSupported(nvc.getValueFilter(), FilterType.ENCRYPT_MASK)) {
+                    if (getAPIConfigInfo().getKeyMaker() == null) {
+                        throw new APIException("Field '" + nvc.getName()
+                                + "' requires encryption but no KeyMaker is configured");
+                    }
                     getAPIConfigInfo().
                             getKeyMaker().
                             createNVEntityKey(this,
@@ -1581,7 +1626,11 @@ public class XlogistxMongoDataStore
             }
 
             if (patchMode) {
-                nve = (V) searchByID((NVConfigEntity) nve.getNVConfig(), nve.getGUID()).get(0);
+                List<V> reloaded = searchByID((NVConfigEntity) nve.getNVConfig(), nve.getGUID());
+                if (reloaded.isEmpty()) {
+                    throw new APIException("patched object vanished on reload " + nve.getGUID());
+                }
+                nve = reloaded.get(0);
             }
 
 
@@ -1723,13 +1772,22 @@ public class XlogistxMongoDataStore
     }
 
     /**
-     * Sets the API service information.
+     * Sets the API service information. A new config may point at a different deployment or
+     * database, so the cached client/database handles and the meta manager's per-database state
+     * are retired — the next operation reconnects with the new settings. (Without this, a
+     * reconfigured datastore silently kept talking to the old database.)
      *
      * @param ci
      */
     @Override
     public synchronized void setAPIConfigInfo(APIConfigInfo ci) {
         this.configInfo = ci;
+        MongoClient old = mongoClient;
+        mongoClient = null;
+        mongoDB = null;
+        gridFSDB = null;
+        metaManager.reset();
+        SharedIOUtil.close(old);
     }
 
     /**
@@ -1978,6 +2036,11 @@ public class XlogistxMongoDataStore
         doc.append(MetaToken.NAME.getName(), dynamicEnumMap.getName());
         doc.append(MetaToken.VALUE.getName(), serArrayValuesNVPair(null, dynamicEnumMap, false));
         doc.append(MetaToken.DESCRIPTION.getName(), dynamicEnumMap.getDescription());
+        // Persist the owning subject so getAllDynamicEnumMap's subject filter can actually match
+        // (native UUID per the reserved-ID invariant when decodable, else the raw value).
+        if (SUS.isNotEmpty(dynamicEnumMap.getSubjectGUID())) {
+            doc.append(MetaToken.SUBJECT_GUID.getName(), toSubjectFilterValue(dynamicEnumMap.getSubjectGUID()));
+        }
 
         // _id must be a native UUID like every other collection — so getRefIDAsUUID(doc) below
         // reads it back. Reuse the DEM's existing GUID if present, else generate one. (The old
@@ -2033,6 +2096,19 @@ public class XlogistxMongoDataStore
 
 
     /**
+     * Subject value as stored/queried on DEM documents: a native UUID when the string is a valid
+     * UUID (the reserved-ID invariant), else the raw string. Used symmetrically by
+     * {@code insertDynamicEnumMap} and {@code getAllDynamicEnumMap}.
+     */
+    private static Object toSubjectFilterValue(String subject) {
+        try {
+            return IDGs.UUIDV7.decode(subject);
+        } catch (RuntimeException e) {
+            return subject;
+        }
+    }
+
+    /**
      * Looks up the database object in the collection by name.
      *
      * @param collectionName
@@ -2063,6 +2139,11 @@ public class XlogistxMongoDataStore
      * @return
      */
     private DynamicEnumMap fromDBtoDynamicEnumMap(Document obj) {
+        if (obj == null) {
+            // Missing DEM must surface as null (callers use null to trigger insert-if-absent),
+            // not as an NPE from the field reads below.
+            return null;
+        }
         List<Document> list = (List<Document>) obj.get(MetaToken.VALUE.getName());
         UUID objectID = XlogistxMongoUtil.SINGLETON.getRefIDAsUUID(obj);
 
@@ -2253,10 +2334,14 @@ public class XlogistxMongoDataStore
 
         Document filter = new Document();
         if (SUS.isNotEmpty(domainID)) {
-            filter.append(MetaToken.DOMAIN_ID.getName(), domainID);
+            // DynamicEnumMap carries no domain attribute and insertDynamicEnumMap never writes
+            // domain_id — filtering on it would only ever return an empty list. Log and ignore.
+            if (log.isEnabled()) log.getLogger().warning(
+                    "getAllDynamicEnumMap: domainID filtering is not supported (no domain_id is persisted); ignoring " + domainID);
         }
         if (SUS.isNotEmpty(userID)) {
-            filter.append(MetaToken.SUBJECT_GUID.getName(), userID);
+            // Symmetric with insertDynamicEnumMap: subject stored as native UUID when decodable.
+            filter.append(MetaToken.SUBJECT_GUID.getName(), toSubjectFilterValue(userID));
         }
 
         try (MongoCursor<Document> cur = withTimeout(sFind(collection, filter)).cursor()) {
@@ -2315,7 +2400,9 @@ public class XlogistxMongoDataStore
             refIdsToLookFor.add(IDGs.UUIDV7.decode(id));
         }
 
-        List<Document> listOfDBObject = lookupByReferenceIDs(nvce.getName(), refIdsToLookFor);
+        // toCanonicalID() (domainID + "." + name when a domainID is set) is the collection name
+        // every write path uses — getName() would read a nonexistent collection for scoped types.
+        List<Document> listOfDBObject = lookupByReferenceIDs(nvce.toCanonicalID(), refIdsToLookFor);
 
         for (Document dbObject : listOfDBObject) {
             try {
@@ -2347,7 +2434,7 @@ public class XlogistxMongoDataStore
 
         try {
             if (collection != null) {
-                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
+                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(nvce, fieldNames))).limit(maxSearchResults).cursor();
 
                 while (cur.hasNext()) {
                     try {
@@ -2444,7 +2531,7 @@ public class XlogistxMongoDataStore
                 fieldNames.add(XlogistxMongoUtil.ReservedID.GUID.getValue());
                 fieldNames.add(MetaToken.GUID.getName());
                 fieldNames.add(MetaToken.SUBJECT_GUID.getName());
-                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(fieldNames))).limit(maxSearchResults).cursor();
+                cur = withTimeout(sFind(collection, query).projection(formatSearchFields(nvce, fieldNames))).limit(maxSearchResults).cursor();
 
                 SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
 
@@ -2559,21 +2646,35 @@ public class XlogistxMongoDataStore
         if (defaultIncrement < 1)
             throw new IllegalArgumentException("Sequence default increment can't < 1:" + startValue);
 
-
-        List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(),
-                LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
-        if (result == null || result.size() == 0) {
-            LongSequence ls = new LongSequence();
-            ls.setName(sequenceName);
-            ls.setSequenceValue(startValue);
-            ls.setDefaultIncrement(defaultIncrement);
-            insert(ls);
-
-            return ls;
+        // Sequences are non-transactional by design (increments use findOneAndUpdate outside the
+        // ambient session). The bootstrap must not join a transaction either: a rollback would
+        // un-create a sequence whose increments already ran out-of-band. Suspend the ambient
+        // session for the whole create.
+        ClientSession ambient = txSession.get();
+        if (ambient != null) txSession.remove();
+        try {
+            List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(),
+                    sequenceName, RelationalOperator.EQUAL));
+            if (result == null || result.size() == 0) {
+                LongSequence ls = new LongSequence();
+                ls.setName(sequenceName);
+                ls.setSequenceValue(startValue);
+                ls.setDefaultIncrement(defaultIncrement);
+                try {
+                    insert(ls);
+                    return ls;
+                } catch (APIException e) {
+                    // Lost the bootstrap race — the unique name index rejected this insert.
+                    // The sequence exists now; return it instead of surfacing the duplicate error.
+                    result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(),
+                            sequenceName, RelationalOperator.EQUAL));
+                    if (result == null || result.isEmpty()) throw e;
+                }
+            }
+            return result.get(0);
+        } finally {
+            if (ambient != null) txSession.set(ambient);
         }
-        return result.get(0);
-
-
     }
 
     @Override
