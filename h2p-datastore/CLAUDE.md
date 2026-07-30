@@ -9,7 +9,7 @@ JDBC driver + URL.
 
 | File | Role |
 |---|---|
-| `H2PDataStore.java` | The datastore — DDL, CRUD, search, references, transactions, sequences, DEM |
+| `H2PDataStore.java` | The datastore — DDL, CRUD, search, references, transactions, sequences, DEM, **versioned file storage** (implements `APIDataStore` **and** `APIDocumentStore`, like `XlogistxMongoDataStore`) |
 | `H2PDSCreator.java` | Factory + `H2PParam` config enum + URL/DSType resolution |
 | `H2PUtil.java` | Attribute classification (`AttrKind`) + column-type mapping + identifier quoting + `parseJdbcURL` |
 | `H2PQueryFormatter.java` | `QueryMarker` → `WHERE` clause + parameter binding |
@@ -100,7 +100,7 @@ not raw-JSON-string equality.
 `DB_NAME`, `USER`, `PASSWORD`, `MODE` (H2 SQL compat, default `PostgreSQL`), `CIPHER`,
 `FILE_PASSWORD`, `IFEXISTS`, `AUTO_SERVER`, `OPTIONS`, `POOL_MAX_SIZE`/`POOL_MIN_IDLE` (HikariCP,
 both engines), `MAX_SELECT_RESULTS` (opt-in SELECT cap), `ORPHAN_CLEANUP` (opt-in update-time
-detached-child deletion).
+detached-child deletion), `FILE_VERSIONS_MAX` (opt-in per-file version-retention cap).
 
 ```java
 H2PDSCreator creator = new H2PDSCreator();
@@ -226,7 +226,8 @@ not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
 
 Still open: no true API-level pagination (`search` still materializes all matches unless the valve is
 set); `insert`/`update` each do an `existsByGuid` probe first; SecurityController integration (see
-dedicated section below — work in progress).
+dedicated section below — work in progress); real `discover()`/`search(String...)` implementations
+over `file_info_dao` for the document store (currently null stubs, parity with the Mongo stores).
 
 ## SecurityController integration — WORK IN PROGRESS (not yet supported)
 
@@ -247,6 +248,39 @@ subject-association only; encryption/ACL semantics here are NOT equivalent to th
 When implementing, thread the controller through `bindColumn`/`setScalar` and the schemaless
 encode/decode, add the accessibility check to the read paths, and mirror `SyncMongoDS` semantics
 (SyncMongoDS.java:248, 605, 1708, 2617).
+
+## File storage (APIDocumentStore) — versioned
+
+`H2PDataStore` implements `APIDocumentStore<Connection, Connection>` alongside `APIDataStore`
+(same both-interfaces pattern as `XlogistxMongoDataStore`). Designed for files **1 KB – a few MB**
+(whole content is materialized in memory per op — no chunking/streaming).
+
+- **Metadata** is a regular `FileInfoDAO` row (existing normalized CRUD, table `file_info_dao`);
+  `FileInfoDAO` itself implements `APIFileInfoMap`. **Content** is versioned in `sys_file_version`
+  — one `bytea` row per version, `PRIMARY KEY (file_guid, version)`, FK →
+  `file_info_dao(guid) ON DELETE CASCADE`. `sys_file_head(file_guid PK, current_version)` points
+  at the current version. Identical SQL on H2 and PostgreSQL — no dialect divergence.
+- **`createFile`/`updateFile`** store the stream as the file's next version (`MAX(version)+1`,
+  monotonic, never reused — also not after a rollback) and repoint the head. Concurrent updates
+  are **last-write-wins with full history**: the version INSERT retries on 23505
+  (SAVEPOINT-wrapped inside a transaction — PostgreSQL aborts the tx on any failed statement).
+  Metadata + version + head move **atomically**: the op joins the ambient transaction if one is
+  active, else it runs its own local transaction (no orphaned metadata/content — the SQL
+  equivalent of `XlogistxMongoDataStore.createFile`'s GridFS rollback).
+- **`readFile(map, os, …)`** streams the head version; **`readFile(map, version, os, …)`** a
+  specific one; **`fileVersions(map)`** lists them newest-first (`version`/`length`/`created_ts`/
+  `current` per `NVGenericMap`); **`rollbackFile(map, version)`** repoints the head (no content
+  copy, no history rewrite) and restores the metadata `length`. The three version methods are
+  `default` methods on `APIDocumentStore` (zoxweb-core) throwing `UnsupportedOperationException` —
+  the Mongo stores don't override them.
+- **`deleteFile`** deletes the metadata row; FK cascade removes every version + the head row.
+- **`FILE_VERSIONS_MAX`** (`H2PParam`, opt-in > 0): after each create/update, versions older than
+  the newest n are pruned — **never the head-pointed version**. Default: unlimited.
+- `discover()`/`createFolder()`/`search(String...)` return `null` — parity with both Mongo stores;
+  folders are just `FULL_PATH_NAME` strings on the DAO.
+- File tables are created out-of-band via `execDDL` (`ensureFileTables`, guarded by a volatile
+  flag reset in `setAPIConfigInfo`). SecurityController field-encryption does NOT apply to file
+  content (module-wide WIP — content is stored as-is).
 
 ## Transactions / sequences / DEM
 - Transactions: ambient `ThreadLocal<Connection>` (`autoCommit=false`), `begin/end/abort`. Data ops
@@ -300,10 +334,15 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   hashing + a >63-char entity-type round trip, the `MAX_SELECT_RESULTS` valve, the
   `APIServiceProviderBase` lifecycle (touch/lookupProperty/isBusy), shell-entity cascade delete,
   shared-child keep-on-delete, and `ORPHAN_CLEANUP` on/off behavior.
+- `H2PFileStoreTest` — versioned file storage (in-memory H2): 1 KB + ~3 MB round-trips, version
+  bumping + specific-version reads, head-pointer rollback (monotonic numbering afterwards),
+  4-thread concurrent updates (unique versions, head = highest), `FILE_VERSIONS_MAX` pruning,
+  cascade delete, and ambient-transaction commit/abort participation.
 - `H2PPostgresDataStoreTest` — **live PostgreSQL**; auto-skipped unless configured. `h2p.pg.url` is the
   **base endpoint** (no db); the test connects to the `postgres` maintenance db, **creates the target
   database if missing** (default `testpostgres`, override `-Dh2p.pg.db`), then runs the same scenarios
-  (jsonb NVGenericMap/NamedValue, bytea, FK references, transactions) and asserts `getDSType()==POSTGRES`:
+  (jsonb NVGenericMap/NamedValue, bytea, FK references, transactions, versioned file storage) and
+  asserts `getDSType()==POSTGRES`:
   ```
   -Dh2p.pg.url=jdbc:postgresql://host:5432 -Dh2p.pg.user=… -Dh2p.pg.password=…
   ```

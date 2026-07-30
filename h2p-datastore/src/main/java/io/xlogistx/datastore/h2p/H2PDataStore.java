@@ -19,6 +19,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.xlogistx.datastore.h2p.H2PDSCreator.H2PParam;
 import org.zoxweb.server.api.APIServiceProviderBase;
+import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.server.util.IDGs;
@@ -26,9 +27,12 @@ import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIDataStore;
+import org.zoxweb.shared.api.APIDocumentStore;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIExceptionHandler;
+import org.zoxweb.shared.api.APIFileInfoMap;
 import org.zoxweb.shared.api.APISearchResult;
+import org.zoxweb.shared.data.FileInfoDAO;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
@@ -36,6 +40,9 @@ import org.zoxweb.shared.security.AccessException;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -78,12 +85,14 @@ import java.util.logging.Level;
  */
 @SuppressWarnings("serial")
 public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
-        implements APIDataStore<Connection, Connection> {
+        implements APIDataStore<Connection, Connection>, APIDocumentStore<Connection, Connection> {
 
     public static final LogWrapper log = new LogWrapper(H2PDataStore.class);
 
     private static final String SEQ_TABLE = "sys_long_sequence";
     private static final String DEM_TABLE = "dynamic_enum_map";
+    private static final String FILE_VERSION_TABLE = "sys_file_version";
+    private static final String FILE_HEAD_TABLE = "sys_file_head";
 
     private volatile boolean driverLoaded = false;
     private volatile String name;
@@ -99,6 +108,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     private volatile H2PDialect dialect = H2PDialect.H2;
     // Lazily-built HikariCP connection pool (both engines); closed+reset on reconfigure and close().
     private volatile HikariDataSource pool = null;
+    // One-shot guard for the file-storage DDL (sys_file_version/sys_file_head); reset on reconfigure.
+    private volatile boolean fileTablesEnsured = false;
 
     /**
      * A JDBC transaction is bound to the calling thread via this ThreadLocal connection
@@ -139,6 +150,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
         createdTables.clear();
         metaManager.clear();
+        fileTablesEnsured = false;
     }
 
     @Override
@@ -2149,6 +2161,427 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 }
             }
             close(rs, sel, upd, con);
+        }
+    }
+
+    // ---------- File storage (APIDocumentStore) — versioned, dual-target ----------
+    //
+    // Metadata is a regular FileInfoDAO row (existing normalized CRUD, table file_info_dao);
+    // content lives in sys_file_version — one bytea row per version, keyed (file_guid, version)
+    // with version numbers monotonic per file (MAX+1, never reused, 23505-retry on concurrent
+    // updates: last-write-wins with full history). sys_file_head points at the current version;
+    // rollback just repoints it (no content copy). Identical SQL on H2 and PostgreSQL — no
+    // dialect divergence. FILE_VERSIONS_MAX (opt-in) prunes old versions, never the head's.
+
+    /** Out-of-band DDL for the file tables (metadata table first — the FKs reference it). */
+    private void ensureFileTables() {
+        if (fileTablesEnsured) {
+            return;
+        }
+        ensureTable(FileInfoDAO.NVC_FILE_INFO_DAO);
+        String fileTable = H2PUtil.q(FileInfoDAO.NVC_FILE_INFO_DAO.getName());
+        String guidCol = H2PUtil.q(MetaToken.GUID.getName());
+        execDDL("CREATE TABLE IF NOT EXISTS " + H2PUtil.q(FILE_VERSION_TABLE) + " ("
+                + H2PUtil.q("file_guid") + " uuid NOT NULL REFERENCES " + fileTable + "(" + guidCol + ") ON DELETE CASCADE, "
+                + H2PUtil.q("version") + " BIGINT NOT NULL, "
+                + H2PUtil.q("length") + " BIGINT NOT NULL, "
+                + H2PUtil.q("created_ts") + " BIGINT NOT NULL, "
+                + H2PUtil.q("data") + " bytea NOT NULL, "
+                + "PRIMARY KEY (" + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + "))");
+        execDDL("CREATE TABLE IF NOT EXISTS " + H2PUtil.q(FILE_HEAD_TABLE) + " ("
+                + H2PUtil.q("file_guid") + " uuid PRIMARY KEY REFERENCES " + fileTable + "(" + guidCol + ") ON DELETE CASCADE, "
+                + H2PUtil.q("current_version") + " BIGINT NOT NULL)");
+        fileTablesEnsured = true;
+    }
+
+    /** @return the file's guid as a UUID; throws when the map has no GUID (never stored). */
+    private static UUID fileGuid(APIFileInfoMap map) {
+        SUS.checkIfNulls("Null file info", map.getOriginalFileInfo());
+        String guid = map.getOriginalFileInfo().getGUID();
+        if (SUS.isEmpty(guid)) {
+            throw new APIException("File has no GUID (was never stored): " + map.getOriginalFileInfo().getName());
+        }
+        return IDGs.UUIDV7.decode(guid);
+    }
+
+    /**
+     * Stores the stream as the file's next version and makes it current. First store = version 1;
+     * every subsequent call bumps the version (monotonic, never reused). Metadata row, version row
+     * and head move as one atomic unit: the op joins the caller's ambient transaction when one is
+     * active, otherwise it runs its own local transaction — a failure leaves no orphaned
+     * metadata/content (cf. {@code XlogistxMongoDataStore.createFile}'s GridFS rollback).
+     */
+    @Override
+    public APIFileInfoMap createFile(String folderID, APIFileInfoMap file, InputStream is, boolean closeStream)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        SUS.checkIfNulls("Null value", file, is);
+        FileInfoDAO info = file.getOriginalFileInfo();
+        SUS.checkIfNulls("Null file info", info);
+        try {
+            byte[] content = IOUtil.inputStreamToByteArray(is, false).toByteArray();
+            info.setLength(content.length);
+            ensureFileTables(); // out-of-band DDL — before joining/starting any transaction
+            boolean localTx = getTransactionConnection() == null;
+            if (localTx) beginTransaction();
+            try {
+                insert(info); // existing CRUD: null GUID -> insert (assigns UUID v7), known GUID -> update
+                UUID guid = IDGs.UUIDV7.decode(info.getGUID());
+                Connection con = null;
+                try {
+                    con = acquire();
+                    long version = insertFileVersion(con, guid, content);
+                    setFileHead(con, guid, version);
+                    pruneFileVersions(con, guid);
+                } catch (SQLException e) {
+                    throw mapOrWrap(e);
+                } finally {
+                    close(con);
+                }
+                if (localTx) endTransaction();
+            } catch (RuntimeException e) {
+                if (localTx) {
+                    try {
+                        abortTransaction();
+                    } catch (RuntimeException ignore) {
+                        // surface the original failure
+                    }
+                }
+                throw e;
+            }
+            if (log.isEnabled()) log.getLogger().info(info.getName());
+            return file;
+        } finally {
+            if (closeStream) SharedIOUtil.close(is);
+        }
+    }
+
+    /** Streams the file's current (head) version. */
+    @Override
+    public APIFileInfoMap readFile(APIFileInfoMap map, OutputStream os, boolean closeStream)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        SUS.checkIfNulls("Null value", map, os);
+        try {
+            writeVersionTo(map, null, os);
+            return map;
+        } finally {
+            if (closeStream) SharedIOUtil.close(os);
+        }
+    }
+
+    /** Streams one specific stored version of the file. */
+    @Override
+    public APIFileInfoMap readFile(APIFileInfoMap map, long version, OutputStream os, boolean closeStream)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        SUS.checkIfNulls("Null value", map, os);
+        try {
+            writeVersionTo(map, version, os);
+            return map;
+        } finally {
+            if (closeStream) SharedIOUtil.close(os);
+        }
+    }
+
+    /** Writes one stored version's content ({@code null} = the head version) to {@code os}. */
+    private void writeVersionTo(APIFileInfoMap map, Long version, OutputStream os) throws IOException {
+        UUID guid = fileGuid(map);
+        Connection con = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            con = acquire();
+            if (!rawTableExists(con, FILE_VERSION_TABLE)) {
+                throw new APIException("File not found: " + map.getOriginalFileInfo().getName());
+            }
+            if (version == null) {
+                ps = con.prepareStatement("SELECT v." + H2PUtil.q("data")
+                        + " FROM " + H2PUtil.q(FILE_VERSION_TABLE) + " v JOIN " + H2PUtil.q(FILE_HEAD_TABLE) + " h"
+                        + " ON h." + H2PUtil.q("file_guid") + " = v." + H2PUtil.q("file_guid")
+                        + " AND h." + H2PUtil.q("current_version") + " = v." + H2PUtil.q("version")
+                        + " WHERE v." + H2PUtil.q("file_guid") + " = ?");
+                ps.setObject(1, guid);
+            } else {
+                ps = con.prepareStatement("SELECT " + H2PUtil.q("data")
+                        + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                        + " WHERE " + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " = ?");
+                ps.setObject(1, guid);
+                ps.setLong(2, version);
+            }
+            rs = ps.executeQuery();
+            if (!rs.next()) {
+                throw new APIException("File " + (version != null ? "version " + version + " " : "")
+                        + "not found: " + map.getOriginalFileInfo().getName());
+            }
+            os.write(rs.getBytes(1));
+            os.flush();
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(rs, ps, con);
+        }
+    }
+
+    /** Overwrites the file: stores the stream as the next version and moves the head to it. */
+    @Override
+    public APIFileInfoMap updateFile(APIFileInfoMap map, InputStream is, boolean closeStream)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        // createFile already versions + repoints the head — the versioned equivalent of the
+        // Mongo stores' delete-then-recreate.
+        return createFile(null, map, is, closeStream);
+    }
+
+    /** Deletes the file: metadata row + (via FK ON DELETE CASCADE) every version row and the head. */
+    @Override
+    public void deleteFile(APIFileInfoMap map)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        SUS.checkIfNulls("Null value", map);
+        FileInfoDAO info = map.getOriginalFileInfo();
+        fileGuid(map); // validates presence of a GUID
+        delete(info, false);
+        if (log.isEnabled()) log.getLogger().info(info.getName());
+    }
+
+    /** Lists the stored versions of a file, newest first (version, length, created_ts, current). */
+    @Override
+    public List<NVGenericMap> fileVersions(APIFileInfoMap map)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        UUID guid = fileGuid(map);
+        List<NVGenericMap> ret = new ArrayList<>();
+        Connection con = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            con = acquire();
+            if (!rawTableExists(con, FILE_VERSION_TABLE)) {
+                return ret;
+            }
+            long head = currentFileVersion(con, guid);
+            ps = con.prepareStatement("SELECT " + H2PUtil.q("version") + ", " + H2PUtil.q("length") + ", "
+                    + H2PUtil.q("created_ts") + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                    + " WHERE " + H2PUtil.q("file_guid") + " = ? ORDER BY " + H2PUtil.q("version") + " DESC");
+            ps.setObject(1, guid);
+            rs = ps.executeQuery();
+            while (rs.next()) {
+                long v = rs.getLong(1);
+                ret.add(new NVGenericMap()
+                        .build(new NVLong("version", v))
+                        .build(new NVLong("length", rs.getLong(2)))
+                        .build(new NVLong("created_ts", rs.getLong(3)))
+                        .build(new NVBoolean("current", v == head)));
+            }
+            return ret;
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(rs, ps, con);
+        }
+    }
+
+    /**
+     * Rolls the file back: the given stored version becomes current by repointing the head — no
+     * content is copied and no history is rewritten (a later update continues above the highest
+     * stored version number). The restored length is reflected on the metadata row.
+     */
+    @Override
+    public APIFileInfoMap rollbackFile(APIFileInfoMap map, long version)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        SUS.checkIfNulls("Null value", map);
+        FileInfoDAO info = map.getOriginalFileInfo();
+        UUID guid = fileGuid(map);
+        boolean localTx = getTransactionConnection() == null;
+        if (localTx) beginTransaction();
+        try {
+            long restoredLength;
+            Connection con = null;
+            PreparedStatement sel = null;
+            ResultSet rs = null;
+            try {
+                con = acquire();
+                sel = con.prepareStatement("SELECT " + H2PUtil.q("length")
+                        + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                        + " WHERE " + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " = ?");
+                sel.setObject(1, guid);
+                sel.setLong(2, version);
+                rs = sel.executeQuery();
+                if (!rs.next()) {
+                    throw new APIException("File version " + version + " not found: " + info.getName());
+                }
+                restoredLength = rs.getLong(1);
+                setFileHead(con, guid, version);
+            } catch (SQLException e) {
+                throw mapOrWrap(e);
+            } finally {
+                close(rs, sel, con);
+            }
+            info.setLength(restoredLength);
+            update(info);
+            if (localTx) endTransaction();
+            if (log.isEnabled()) log.getLogger().info(info.getName() + " -> version " + version);
+            return map;
+        } catch (RuntimeException e) {
+            if (localTx) {
+                try {
+                    abortTransaction();
+                } catch (RuntimeException ignore) {
+                    // surface the original failure
+                }
+            }
+            throw e;
+        }
+    }
+
+    /** Not implemented — parity with the Mongo document stores (folders are FULL_PATH_NAME strings). */
+    @Override
+    public APIFileInfoMap createFolder(String folderFullPath)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        return null;
+    }
+
+    /** Not implemented — parity with the Mongo document stores. */
+    @Override
+    public Map<String, APIFileInfoMap> discover() throws IOException, AccessException, APIException {
+        return null;
+    }
+
+    /** Not implemented — parity with the Mongo document stores. */
+    @Override
+    public List<APIFileInfoMap> search(String... args)
+            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+        return null;
+    }
+
+    /**
+     * Inserts the file's next version row: {@code MAX(version)+1}, retried when a concurrent
+     * updater takes the same number (23505 — last-write-wins, both versions are kept). Inside a
+     * transaction the INSERT is SAVEPOINT-wrapped: PostgreSQL aborts the whole tx on any failed
+     * statement, and the retry must survive the collision.
+     */
+    private long insertFileVersion(Connection con, UUID fileGuid, byte[] content) throws SQLException {
+        long now = System.currentTimeMillis();
+        while (true) {
+            long next;
+            PreparedStatement sel = null;
+            ResultSet rs = null;
+            try {
+                sel = con.prepareStatement("SELECT COALESCE(MAX(" + H2PUtil.q("version") + "), 0) + 1"
+                        + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                        + " WHERE " + H2PUtil.q("file_guid") + " = ?");
+                sel.setObject(1, fileGuid);
+                rs = sel.executeQuery();
+                rs.next();
+                next = rs.getLong(1);
+            } finally {
+                close(rs, sel);
+            }
+            java.sql.Savepoint sp = !con.getAutoCommit() ? con.setSavepoint() : null;
+            PreparedStatement ins = null;
+            try {
+                ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(FILE_VERSION_TABLE) + " ("
+                        + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + ", " + H2PUtil.q("length") + ", "
+                        + H2PUtil.q("created_ts") + ", " + H2PUtil.q("data") + ") VALUES (?, ?, ?, ?, ?)");
+                ins.setObject(1, fileGuid);
+                ins.setLong(2, next);
+                ins.setLong(3, content.length);
+                ins.setLong(4, now);
+                ins.setBytes(5, content);
+                ins.executeUpdate();
+                if (sp != null) con.releaseSavepoint(sp);
+                return next;
+            } catch (SQLException e) {
+                if (!"23505".equals(e.getSQLState())) throw e;
+                if (sp != null) con.rollback(sp);
+                // a concurrent updater took this version number — recompute and retry
+            } finally {
+                close(ins);
+            }
+        }
+    }
+
+    /** Points the head at a version — portable UPDATE-then-INSERT upsert (DEM pattern), last-write-wins. */
+    private void setFileHead(Connection con, UUID fileGuid, long version) throws SQLException {
+        PreparedStatement upd = null;
+        PreparedStatement ins = null;
+        try {
+            upd = con.prepareStatement("UPDATE " + H2PUtil.q(FILE_HEAD_TABLE) + " SET "
+                    + H2PUtil.q("current_version") + " = ? WHERE " + H2PUtil.q("file_guid") + " = ?");
+            upd.setLong(1, version);
+            upd.setObject(2, fileGuid);
+            if (upd.executeUpdate() == 0) {
+                java.sql.Savepoint sp = !con.getAutoCommit() ? con.setSavepoint() : null;
+                try {
+                    ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(FILE_HEAD_TABLE) + " ("
+                            + H2PUtil.q("file_guid") + ", " + H2PUtil.q("current_version") + ") VALUES (?, ?)");
+                    ins.setObject(1, fileGuid);
+                    ins.setLong(2, version);
+                    ins.executeUpdate();
+                    if (sp != null) con.releaseSavepoint(sp);
+                } catch (SQLException e) {
+                    // Concurrent creator won the race — the row exists now, retry the UPDATE.
+                    if (!"23505".equals(e.getSQLState())) throw e;
+                    if (sp != null) con.rollback(sp);
+                    upd.executeUpdate();
+                }
+            }
+        } finally {
+            close(ins, upd);
+        }
+    }
+
+    /** @return the head version for a file, or -1 when it has none. */
+    private long currentFileVersion(Connection con, UUID fileGuid) throws SQLException {
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            ps = con.prepareStatement("SELECT " + H2PUtil.q("current_version")
+                    + " FROM " + H2PUtil.q(FILE_HEAD_TABLE)
+                    + " WHERE " + H2PUtil.q("file_guid") + " = ?");
+            ps.setObject(1, fileGuid);
+            rs = ps.executeQuery();
+            return rs.next() ? rs.getLong(1) : -1;
+        } finally {
+            close(rs, ps);
+        }
+    }
+
+    /**
+     * Enforces {@link H2PParam#FILE_VERSIONS_MAX} (opt-in, > 0): deletes versions older than the
+     * newest n for the file — except the version the head points at (a rolled-back head must
+     * always stay readable).
+     */
+    private void pruneFileVersions(Connection con, UUID fileGuid) throws SQLException {
+        int max = intParam(H2PParam.FILE_VERSIONS_MAX, 0);
+        if (max <= 0) {
+            return;
+        }
+        long cutoff;
+        PreparedStatement sel = null;
+        ResultSet rs = null;
+        try {
+            sel = con.prepareStatement("SELECT " + H2PUtil.q("version")
+                    + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                    + " WHERE " + H2PUtil.q("file_guid") + " = ?"
+                    + " ORDER BY " + H2PUtil.q("version") + " DESC LIMIT 1 OFFSET " + (max - 1));
+            sel.setObject(1, fileGuid);
+            rs = sel.executeQuery();
+            if (!rs.next()) {
+                return; // fewer than max versions stored — nothing to prune
+            }
+            cutoff = rs.getLong(1);
+        } finally {
+            close(rs, sel);
+        }
+        PreparedStatement del = null;
+        try {
+            del = con.prepareStatement("DELETE FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                    + " WHERE " + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " < ?"
+                    + " AND " + H2PUtil.q("version") + " NOT IN (SELECT " + H2PUtil.q("current_version")
+                    + " FROM " + H2PUtil.q(FILE_HEAD_TABLE)
+                    + " WHERE " + H2PUtil.q("file_guid") + " = ?)");
+            del.setObject(1, fileGuid);
+            del.setLong(2, cutoff);
+            del.setObject(3, fileGuid);
+            del.executeUpdate();
+        } finally {
+            close(del);
         }
     }
 

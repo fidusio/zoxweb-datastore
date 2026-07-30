@@ -78,6 +78,10 @@ public class H2PDSCreator
         // children removed from collections) unless they are still referenced elsewhere (shared).
         // Default off: detached children remain as rows (caller manages their lifecycle).
         ORPHAN_CLEANUP("orphan_cleanup", null),
+        // Opt-in (> 0): cap on stored file versions per file (APIDocumentStore). After each
+        // createFile/updateFile the oldest versions beyond the newest n are pruned; the version
+        // the head pointer references is never pruned. Default: unlimited (full history).
+        FILE_VERSIONS_MAX("file_versions_max", null),
         ;
 
         private final String name;

@@ -199,9 +199,49 @@ public class H2PPostgresDataStoreTest {
         System.out.println("PG transactions OK");
     }
 
-    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    /** Versioned file storage on native PG: create/update/rollback + specific-version reads (bytea content). */
     @Test
     @Order(6)
+    public void versionedFileStoreRoundTrip() throws java.io.IOException {
+        byte[] v1 = new byte[64 * 1024], v2 = new byte[128 * 1024];
+        new java.util.Random(42).nextBytes(v1);
+        new java.util.Random(43).nextBytes(v2);
+
+        org.zoxweb.shared.data.FileInfoDAO fid = new org.zoxweb.shared.data.FileInfoDAO();
+        fid.setFullPathName("pg_file_" + UUID.randomUUID());
+        fid.setFileType(org.zoxweb.shared.data.FileInfoDAO.FileType.FILE);
+        fid.setCreationTime(System.currentTimeMillis());
+
+        ds.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
+        ds.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+
+        java.io.ByteArrayOutputStream head = new java.io.ByteArrayOutputStream();
+        ds.readFile(fid, head, true);
+        assertArrayEquals(v2, head.toByteArray(), "head must be v2");
+
+        java.io.ByteArrayOutputStream old = new java.io.ByteArrayOutputStream();
+        ds.readFile(fid, 1, old, true);
+        assertArrayEquals(v1, old.toByteArray(), "version 1 must stay readable");
+
+        java.util.List<org.zoxweb.shared.util.NVGenericMap> versions = ds.fileVersions(fid);
+        assertEquals(2, versions.size());
+        assertEquals(2L, (long) versions.get(0).getValue("version"));
+        assertTrue((boolean) versions.get(0).getValue("current"));
+
+        ds.rollbackFile(fid, 1);
+        java.io.ByteArrayOutputStream rolled = new java.io.ByteArrayOutputStream();
+        ds.readFile(fid, rolled, true);
+        assertArrayEquals(v1, rolled.toByteArray(), "after rollback head must be v1");
+        assertEquals(v1.length, fid.getLength());
+
+        ds.deleteFile(fid);
+        assertTrue(ds.fileVersions(fid).isEmpty(), "delete must cascade to the version rows");
+        System.out.println("PG versioned file store OK");
+    }
+
+    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    @Test
+    @Order(7)
     public void listAllTables() {
         java.util.List<String> tables = new java.util.ArrayList<>();
         Connection c = ds.connect();
