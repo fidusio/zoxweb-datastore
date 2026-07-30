@@ -16,6 +16,7 @@ JDBC driver + URL.
 | `H2PExceptionHandler.java` | SQLState → `APIException` mapping |
 | `H2PMetaManager.java` | Per-instance table registry (case-insensitive; backs `getStoreTables()`; cleared on reconfigure) |
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
+| `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
 
 ## Storage model (fully normalized — no binary blobs)
 
@@ -34,6 +35,13 @@ Referenced entities are stored as **their own rows** and resolved on read (`inse
 children first so FK targets exist; read resolves single refs via `searchByID` and collections via
 the join table). Referential integrity is DB-enforced. There is **no binary serialization** of
 entities.
+
+**`sys_meta_catalog`** (`table_name` PK → `class_type`) is the persistent type catalog: upserted
+(best-effort, own auto-commit connection, guarded by the `catalogSynced` set) whenever `ensureTable`
+creates a table or `tableExists` first confirms one. `discoverStoreTypes()` returns the session
+registry ∪ catalog rows resolved via `resolveNVCE` — this is what lets a **fresh JVM** enumerate
+every stored type (the whole-store `dump` depends on it; `H2PMetaManager` only knows types touched
+this session). Databases created before the catalog existed only have rows for types touched since.
 
 `ensureTable` also emits `CREATE INDEX IF NOT EXISTS` (portable to both engines) via `createIndex`:
 join tables get `(parent_guid, ord)` + `(child_guid)`, `ENTITY_REF` columns get one, and non-unique
@@ -295,6 +303,60 @@ encode/decode, add the accessibility check to the read paths, and mirror `SyncMo
 - DEM: portable UPDATE-then-INSERT upsert (no H2 `MERGE` / no Postgres `ON CONFLICT`); a 23505 on the
   INSERT (concurrent creator won) retries the UPDATE once.
 
+## JSON dump / restore (JSONL, engine-portable)
+
+Public API on `H2PDataStore` (engine in package-private `H2PDumpRestore`):
+- `long dump(NVConfigEntity, OutputStream)` — one type as JSONL; returns rows written.
+- `String dumpToJSON(NVConfigEntity)` — one type as a JSON array string (small tables; materializes).
+- `NVGenericMap dump(OutputStream[, includeFiles], NVConfigEntity... types)` — whole store: header
+  line, every entity of every type, DEM, sequences and (default on) versioned file content
+  (`sys_file_version`/`sys_file_head`, content base64). Empty `types` ⇒ discovery via
+  `discoverStoreTypes()` (catalog ∪ session registry) — pass explicit types for pre-catalog DBs.
+  Returns per-kind counts (`types` nested map — read with `getNV("types")` — `dem`, `sequences`,
+  `file_versions`, `file_heads`, `cycles_skipped`).
+- `NVGenericMap dumpZip(OutputStream[, includeFiles], NVConfigEntity... types)` — same dump as a
+  **zip archive**: entry `dump.jsonl` first (its `file_version` records carry an
+  `entry:"files/<file_guid>/<version>"` pointer instead of inline base64), then one raw
+  deflate-compressed content entry per stored version. The right form when file content dominates
+  (no base64 ~33% inflation). Stream is `finish()`ed, not closed.
+- `NVGenericMap restore(InputStream, RestoreMode)` — **auto-detects the container** (`PK` magic ⇒
+  zip, else plain JSONL). `MERGE` (guid-keyed upsert, idempotent, sequences raise-only) or
+  `WIPE_AND_LOAD` (clears every discoverable entity table — join tables first, FK columns nulled —
+  file content, DEM and sequences, then loads). Accepts a header-less per-type dump too. Zip
+  restore is sequential: `dump.jsonl` loads normally while entry-referencing `file_version` records
+  park as pending metadata, then each content entry completes one version (one version's bytes in
+  memory); versions still pending at end-of-archive ⇒ `APIException` (truncated zip). A JSONL
+  stream with `entry` records but no surrounding zip fails with a clear "restore from zip" error.
+
+Positioning: **migration/interchange** (H2 ↔ PostgreSQL, cross-store — the JSON is self-describing
+via `class_type`), not same-engine backup (use H2 `SCRIPT TO` / `pg_dump` for that).
+
+**CLI**: `H2PDumpRestore.main` — `java -cp <module+deps+entity classes> io.xlogistx.datastore.h2p.H2PDumpRestore
+dump|restore --url <jdbc-url> [--user/--password/--file-password] --out|--in <file>
+[--types c1,c2] [--no-files] [--format zip|jsonl] [--mode merge|wipe]`. A `.zip` `--out` extension
+selects the zip container; restore auto-detects. Prints the stats JSON; exit 0/1 (usage)/2 (failed).
+The entity classes named by the dump's `class_type` must be on the CLI classpath.
+
+Format: one `{"k":<kind>,"v":{...}}` envelope per line; kinds `header` (`format:"h2p-json-dump"`,
+`version:1`), `entity` (`GSONUtil.toJSON(nve, printClassType=true)`), `dem`, `seq`, `file_version`,
+`file_head`. Streamed both ways: dump pages via `batchSearch`/`nextBatch` (page size clamped to
+`MAX_SELECT_RESULTS` when set — otherwise the id-list fetch would be silently LIMIT-truncated);
+restore loads entity lines in per-batch transactions (256/tx; a failure aborts the open batch and
+rethrows with the line number — completed batches stay committed, `MERGE` re-runs converge).
+
+Semantics to keep in mind:
+- `GSONUtil` **inlines** referenced entities: every entity line carries its whole subtree, so restore
+  has no ordering constraints and shared children (dumped redundantly) dedup by GUID through
+  `insert`'s upsert. The flip side: a **cyclic** graph is not JSON-representable — cyclic entities
+  are detected up front (`H2PDumpRestore.hasCycle`, identity-based DFS; the read path materializes
+  cycles as the same instance) and **skipped**, counted in `cycles_skipped`.
+- Restore needs the entity classes (`class_type` → `Class.forName`) on the restoring JVM's classpath.
+- Non-entity records restore outside the batch transaction (sequences are non-transactional by
+  contract; file-content SQL runs on its own connection and preserves version numbers — `createFile`
+  would renumber). Sequence restore is raise-only under `MERGE` so issued values are never re-issued.
+- File dump lines hold one version's bytes in memory at a time (same bound as the file API); the
+  `FileInfoDAO` metadata type is force-included whenever `includeFiles` is on.
+
 ## PostgreSQL-portability rules (keep it dual-target)
 1. Use only types valid on both: `uuid`, `bytea`, `varchar`, `integer`, `bigint`, `real`,
    `double precision`, `boolean`, and `jsonb` (Postgres) / `varchar` (H2) **only via `H2PDialect`**.
@@ -334,6 +396,13 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   hashing + a >63-char entity-type round trip, the `MAX_SELECT_RESULTS` valve, the
   `APIServiceProviderBase` lifecycle (touch/lookupProperty/isBusy), shell-entity cascade delete,
   shared-child keep-on-delete, and `ORPHAN_CLEANUP` on/off behavior.
+- `H2PDumpRestoreTest` — JSON dump/restore (in-memory H2, per-test stores on unique URLs): per-type
+  and whole-store round trips into a fresh store (entities compared by re-serialized JSON, DEM by
+  both stores' read-back, sequence continuity, 2-version file with rolled-back head), shared-child
+  GUID dedup, cycle skip policy (`cycles_skipped`), the `MAX_SELECT_RESULTS` page clamp, MERGE vs
+  WIPE_AND_LOAD, cold-start discovery through `sys_meta_catalog`, foreign-format rejection, and the
+  zip container (layout + auto-detected round trip incl. rolled-back head, missing-content-entry
+  failure, external-`entry` JSONL rejected without its zip).
 - `H2PFileStoreTest` — versioned file storage (in-memory H2): 1 KB + ~3 MB round-trips, version
   bumping + specific-version reads, head-pointer rollback (monotonic numbering afterwards),
   4-thread concurrent updates (unique versions, head = highest), `FILE_VERSIONS_MAX` pruning,
@@ -342,7 +411,10 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   **base endpoint** (no db); the test connects to the `postgres` maintenance db, **creates the target
   database if missing** (default `testpostgres`, override `-Dh2p.pg.db`), then runs the same scenarios
   (jsonb NVGenericMap/NamedValue, bytea, FK references, transactions, versioned file storage) and
-  asserts `getDSType()==POSTGRES`:
+  asserts `getDSType()==POSTGRES`. Also runs the dump/restore **headline scenario**: a whole-store
+  JSONL dump from an in-memory H2 store restored into live PG (`MERGE` — the shared test DB is never
+  wiped) covering entities/DEM/sequence/2-version file, then a per-type dump back off PG into a
+  fresh H2 store (H2 → PG → H2 loop):
   ```
   -Dh2p.pg.url=jdbc:postgresql://host:5432 -Dh2p.pg.user=… -Dh2p.pg.password=…
   ```

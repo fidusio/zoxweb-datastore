@@ -89,10 +89,11 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     public static final LogWrapper log = new LogWrapper(H2PDataStore.class);
 
-    private static final String SEQ_TABLE = "sys_long_sequence";
-    private static final String DEM_TABLE = "dynamic_enum_map";
-    private static final String FILE_VERSION_TABLE = "sys_file_version";
-    private static final String FILE_HEAD_TABLE = "sys_file_head";
+    static final String SEQ_TABLE = "sys_long_sequence";
+    static final String DEM_TABLE = "dynamic_enum_map";
+    static final String FILE_VERSION_TABLE = "sys_file_version";
+    static final String FILE_HEAD_TABLE = "sys_file_head";
+    static final String META_CATALOG_TABLE = "sys_meta_catalog";
 
     private volatile boolean driverLoaded = false;
     private volatile String name;
@@ -110,6 +111,10 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     private volatile HikariDataSource pool = null;
     // One-shot guard for the file-storage DDL (sys_file_version/sys_file_head); reset on reconfigure.
     private volatile boolean fileTablesEnsured = false;
+    // Types already written to sys_meta_catalog this session (avoid an upsert per operation);
+    // one-shot DDL guard for the catalog table itself. Both reset on reconfigure.
+    private final Set<String> catalogSynced = ConcurrentHashMap.newKeySet();
+    private volatile boolean metaCatalogEnsured = false;
 
     /**
      * A JDBC transaction is bound to the calling thread via this ThreadLocal connection
@@ -151,6 +156,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         createdTables.clear();
         metaManager.clear();
         fileTablesEnsured = false;
+        catalogSynced.clear();
+        metaCatalogEnsured = false;
     }
 
     @Override
@@ -242,7 +249,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return p;
     }
 
-    private int intParam(H2PParam param, int defaultValue) {
+    int intParam(H2PParam param, int defaultValue) {
         String v = getAPIConfigInfo().getProperties().getValue(param);
         if (v == null || v.isEmpty()) {
             return defaultValue;
@@ -446,7 +453,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     // ---------- Schema helpers ----------
 
-    private static String tableName(NVConfigEntity nvce) {
+    static String tableName(NVConfigEntity nvce) {
         return H2PUtil.sqlName(nvce.getName());
     }
 
@@ -555,6 +562,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             execDDL(sb.toString());
             metaManager.register(nvce);
             createdTables.add(key); // register bare table before FKs so cyclic refs resolve
+            registerInCatalog(nvce);
 
             // FKs and join tables (child tables ensured first)
             for (AttrInfo ai : infos) {
@@ -669,6 +677,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 // every single select would pay an INFORMATION_SCHEMA round trip.
                 metaManager.register(nvce);
                 createdTables.add(key);
+                registerInCatalog(nvce);
             }
             return exists;
         } finally {
@@ -676,12 +685,101 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
     }
 
+    // ---------- Meta catalog (sys_meta_catalog) ----------
+
+    /**
+     * Persistent type catalog: one row per entity table ({@code table_name} → {@code class_type},
+     * the entity's Java class name). Written whenever a table is created ({@link #ensureTable}) or
+     * first confirmed ({@link #tableExists}) — {@link H2PMetaManager} only knows types touched this
+     * session, the catalog lets a fresh JVM enumerate every stored type ({@link #discoverStoreTypes},
+     * the whole-store {@code dump} relies on it). Best-effort: a catalog failure never fails the data
+     * operation that triggered it. Runs on its own auto-commit connection (DEM-style portable upsert)
+     * — registration must survive a rolled-back ambient transaction.
+     */
+    private void registerInCatalog(NVConfigEntity nvce) {
+        String key = nvce.getName().toLowerCase();
+        if (!catalogSynced.add(key)) return;
+        Connection con = null;
+        PreparedStatement upd = null;
+        PreparedStatement ins = null;
+        try {
+            if (!metaCatalogEnsured) {
+                execDDL("CREATE TABLE IF NOT EXISTS " + H2PUtil.q(META_CATALOG_TABLE) + " ("
+                        + H2PUtil.q("table_name") + " VARCHAR PRIMARY KEY, "
+                        + H2PUtil.q("class_type") + " VARCHAR)");
+                metaCatalogEnsured = true;
+            }
+            String classType = nvce.getMetaTypeBase().getName();
+            con = newConnection();
+            upd = con.prepareStatement("UPDATE " + H2PUtil.q(META_CATALOG_TABLE) + " SET "
+                    + H2PUtil.q("class_type") + " = ? WHERE " + H2PUtil.q("table_name") + " = ?");
+            upd.setString(1, classType);
+            upd.setString(2, tableName(nvce));
+            if (upd.executeUpdate() == 0) {
+                try {
+                    ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(META_CATALOG_TABLE) + " ("
+                            + H2PUtil.q("table_name") + ", " + H2PUtil.q("class_type") + ") VALUES (?, ?)");
+                    ins.setString(1, tableName(nvce));
+                    ins.setString(2, classType);
+                    ins.executeUpdate();
+                } catch (SQLException e) {
+                    // Concurrent registrar won the race — the row exists now, which is all we need.
+                    if (!"23505".equals(e.getSQLState())) throw e;
+                }
+            }
+        } catch (Exception e) {
+            catalogSynced.remove(key); // retry on the next touch of this type
+            if (log.isEnabled())
+                log.getLogger().log(Level.WARNING, "meta catalog registration failed: " + nvce.getName(), e);
+        } finally {
+            close(ins, upd, con);
+        }
+    }
+
+    /**
+     * Every entity type known to this store: the session registry ({@link H2PMetaManager}) unioned
+     * with the persistent {@code sys_meta_catalog} rows resolved via {@link #resolveNVCE}, so a fresh
+     * JVM sees types it has never touched. Catalog rows whose class is not on this JVM's classpath
+     * are skipped with a warning. Databases created before the catalog existed only have rows for
+     * types touched since — pass explicit types to {@code dump} for those.
+     */
+    List<NVConfigEntity> discoverStoreTypes() {
+        Map<String, NVConfigEntity> byKey = new LinkedHashMap<>();
+        for (String t : metaManager.getTables()) {
+            NVConfigEntity nvce = metaManager.lookup(t);
+            if (nvce != null) byKey.putIfAbsent(nvce.getName().toLowerCase(), nvce);
+        }
+        Connection con = null;
+        Statement st = null;
+        ResultSet rs = null;
+        try {
+            con = newConnection();
+            if (rawTableExists(con, META_CATALOG_TABLE)) {
+                st = con.createStatement();
+                rs = st.executeQuery("SELECT " + H2PUtil.q("table_name") + ", " + H2PUtil.q("class_type")
+                        + " FROM " + H2PUtil.q(META_CATALOG_TABLE));
+                while (rs.next()) {
+                    String classType = rs.getString(2);
+                    NVConfigEntity nvce = resolveNVCE(classType);
+                    if (nvce != null) byKey.putIfAbsent(nvce.getName().toLowerCase(), nvce);
+                    else if (log.isEnabled())
+                        log.getLogger().warning("catalog type not resolvable on this classpath: " + classType);
+                }
+            }
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(rs, st, con);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
     // Class-name / meta-type-name -> NVConfigEntity, including the reflective (Class.forName) resolutions,
     // which H2PMetaManager can't serve because it is keyed by meta-type name only.
     private final Map<String, NVConfigEntity> nvceByTypeName = new ConcurrentHashMap<>();
 
     /** Resolve an NVConfigEntity from either a Java class name or a registered meta-type name. */
-    private NVConfigEntity resolveNVCE(String typeName) {
+    NVConfigEntity resolveNVCE(String typeName) {
         if (typeName == null) return null;
         NVConfigEntity cached = nvceByTypeName.get(typeName);
         if (cached != null) return cached;
@@ -1963,7 +2061,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return ret;
     }
 
-    private boolean rawTableExists(Connection con, String table) throws SQLException {
+    boolean rawTableExists(Connection con, String table) throws SQLException {
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
@@ -2174,7 +2272,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     // dialect divergence. FILE_VERSIONS_MAX (opt-in) prunes old versions, never the head's.
 
     /** Out-of-band DDL for the file tables (metadata table first — the FKs reference it). */
-    private void ensureFileTables() {
+    void ensureFileTables() {
         if (fileTablesEnsured) {
             return;
         }
@@ -2583,6 +2681,113 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         } finally {
             close(del);
         }
+    }
+
+    // ---------- Dump / restore (portable JSONL) ----------
+    //
+    // Engine-portable JSON export/import (H2PDumpRestore): entities via GSONUtil (self-describing
+    // "class_type"), DEM, sequences and versioned file content in one JSONL stream. Intended for
+    // migration/interchange (H2 <-> PostgreSQL, cross-store) — for same-engine backup prefer the
+    // native tools (H2 SCRIPT TO / pg_dump).
+
+    /** How {@link #restore} treats data already in the store. */
+    public enum RestoreMode {
+        /**
+         * Upsert every dump record over the existing data (guid-keyed — {@code insert} routes
+         * existing GUIDs to update); nothing is deleted. Idempotent: re-running a partially
+         * completed restore converges. Sequences are only ever raised, never lowered.
+         */
+        MERGE,
+        /**
+         * First clear every discoverable entity table (FK columns nulled, join tables and file
+         * content included), DEM and sequences, then load the dump. The store ends up equal to
+         * the dump's content.
+         */
+        WIPE_AND_LOAD
+    }
+
+    /**
+     * Dumps every stored entity of one type as JSONL (one {@code {"k":"entity","v":{...}}} envelope
+     * per line) to {@code out} — streamed via the batch-search paging path, so memory stays bounded
+     * by one batch. Entities whose reference graph is cyclic cannot be represented in JSON
+     * (references are inlined) and are skipped with a warning. The stream is flushed but not closed.
+     *
+     * @return the number of entities written
+     */
+    public long dump(NVConfigEntity nvce, OutputStream out) throws APIException {
+        SUS.checkIfNulls("Null type or stream", nvce, out);
+        return new H2PDumpRestore(this).dumpType(nvce, out);
+    }
+
+    /**
+     * Convenience form of {@link #dump(NVConfigEntity, OutputStream)} for small tables: every stored
+     * entity of the type as one JSON array string (cyclic entities skipped). The whole result is
+     * materialized in memory — use the streaming form for large tables.
+     */
+    public String dumpToJSON(NVConfigEntity nvce) throws APIException {
+        SUS.checkIfNulls("Null type", nvce);
+        return new H2PDumpRestore(this).dumpTypeToJSONArray(nvce);
+    }
+
+    /** Whole-store dump including file content — see {@link #dump(OutputStream, boolean, NVConfigEntity...)}. */
+    public NVGenericMap dump(OutputStream out, NVConfigEntity... types) throws APIException {
+        return dump(out, true, types);
+    }
+
+    /**
+     * Dumps the whole store as JSONL: a header line, then every entity of every type, DEM entries,
+     * sequences and (when {@code includeFiles}) the versioned file content ({@code sys_file_version}/
+     * {@code sys_file_head}, content base64). With no explicit {@code types} the type set is
+     * discovered from {@code sys_meta_catalog} ∪ the session registry — databases created before the
+     * catalog existed only have rows for types touched since, so pass the types explicitly for those.
+     * The stream is flushed but not closed.
+     *
+     * @return per-kind counts ({@code types} nested map, {@code dem}, {@code sequences},
+     *         {@code file_versions}, {@code file_heads}, {@code cycles_skipped})
+     */
+    public NVGenericMap dump(OutputStream out, boolean includeFiles, NVConfigEntity... types) throws APIException {
+        SUS.checkIfNulls("Null stream", out);
+        return new H2PDumpRestore(this).dumpStore(out, includeFiles, types);
+    }
+
+    /** Zip-container dump including file content — see {@link #dumpZip(OutputStream, boolean, NVConfigEntity...)}. */
+    public NVGenericMap dumpZip(OutputStream out, NVConfigEntity... types) throws APIException {
+        return dumpZip(out, true, types);
+    }
+
+    /**
+     * Dumps the whole store as a <b>zip archive</b>: entry {@code dump.jsonl} holds the same JSONL
+     * stream as {@link #dump(OutputStream, boolean, NVConfigEntity...)}, but file content is stored
+     * as raw {@code files/<file_guid>/<version>} entries (deflate-compressed by the zip layer)
+     * instead of inline base64 — the right form when file content dominates the store. Restore the
+     * archive with {@link #restore} — it auto-detects the container. The stream is finalized
+     * ({@code finish()}) but not closed.
+     *
+     * @return the same per-kind counts as the JSONL dump
+     */
+    public NVGenericMap dumpZip(OutputStream out, boolean includeFiles, NVConfigEntity... types)
+            throws APIException {
+        SUS.checkIfNulls("Null stream", out);
+        return new H2PDumpRestore(this).dumpZip(out, includeFiles, types);
+    }
+
+    /**
+     * Restores a dump into this store, auto-detecting the container: a {@link #dumpZip} archive
+     * ({@code PK} magic — {@code dump.jsonl} + raw content entries), or a plain JSONL stream
+     * (whole-store with header, or a header-less per-type dump) with inline base64 file content.
+     * Entities load in per-batch transactions and upsert by GUID — inlined children are
+     * written by the same recursion as a live {@code insert}, so shared children dedup to one row
+     * and no ordering between lines is required. Restoring an existing row runs the update path
+     * (collection join rows are resynced). Entity classes named by {@code class_type} must be on
+     * this JVM's classpath. A failure aborts the current batch and rethrows with the line number;
+     * completed batches stay committed — re-running with {@link RestoreMode#MERGE} converges.
+     *
+     * @return per-kind counts ({@code entities}, {@code dem}, {@code sequences},
+     *         {@code file_versions}, {@code file_heads})
+     */
+    public NVGenericMap restore(InputStream in, RestoreMode mode) throws APIException {
+        SUS.checkIfNulls("Null stream or mode", in, mode);
+        return new H2PDumpRestore(this).restore(in, mode);
     }
 
     // ---------- Error mapping ----------

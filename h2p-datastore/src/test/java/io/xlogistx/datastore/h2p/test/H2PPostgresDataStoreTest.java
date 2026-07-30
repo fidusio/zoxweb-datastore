@@ -239,9 +239,105 @@ public class H2PPostgresDataStoreTest {
         System.out.println("PG versioned file store OK");
     }
 
+    /**
+     * The dump/restore headline scenario: a whole-store JSONL dump taken from an in-memory H2 store
+     * restores into the live PostgreSQL store ({@code MERGE} — the shared test database is never
+     * wiped). Entities (incl. an FK reference chain and jsonb schemaless), DEM, sequence and a
+     * 2-version file all carry over.
+     */
+    @Test
+    @Order(8)
+    public void h2DumpRestoresIntoPostgres() throws java.io.IOException {
+        H2PDataStore h2 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
+                "jdbc:h2:mem:pg_mig_src_" + Math.abs(UUID.randomUUID().hashCode())
+                        + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"));
+        try {
+            String tag = UUID.randomUUID().toString();
+            PropertyDAO pd = new PropertyDAO();
+            pd.setName("mig-pd-" + tag);
+            pd.setDescription("h2 to pg migration");
+            pd.getProperties().build("str", "hello").build(new NVInt("n", 7));
+            h2.insert(pd);
+
+            H2PRegressionTest.CyclicDAO parent = new H2PRegressionTest.CyclicDAO();
+            parent.setName("mig-parent-" + tag);
+            H2PRegressionTest.CyclicDAO child = new H2PRegressionTest.CyclicDAO();
+            child.setName("mig-child-" + tag);
+            parent.setPeer(child); // acyclic reference chain
+            h2.insert(parent);
+
+            org.zoxweb.shared.util.DynamicEnumMap dem =
+                    new org.zoxweb.shared.util.DynamicEnumMap("mig_dem_" + Math.abs(tag.hashCode()));
+            dem.addEnumValue(new org.zoxweb.shared.util.NVPair("k1", "v1"));
+            h2.insertDynamicEnumMap(dem);
+
+            String seqName = "mig_seq_" + Math.abs(tag.hashCode());
+            h2.createSequence(seqName, 0, 1);
+            for (int i = 0; i < 5; i++) h2.nextSequenceValue(seqName);
+
+            byte[] v1 = ("file v1 " + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] v2 = ("file v2 longer " + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            org.zoxweb.shared.data.FileInfoDAO fid = new org.zoxweb.shared.data.FileInfoDAO();
+            fid.setFullPathName("mig_file_" + tag);
+            fid.setFileType(org.zoxweb.shared.data.FileInfoDAO.FileType.FILE);
+            h2.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
+            h2.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            org.zoxweb.shared.util.NVGenericMap dumpStats = h2.dump(bos);
+            System.out.println("H2 dump stats: " + GSONUtil.toJSONDefault(dumpStats));
+
+            org.zoxweb.shared.util.NVGenericMap restoreStats = ds.restore(
+                    new java.io.ByteArrayInputStream(bos.toByteArray()),
+                    H2PDataStore.RestoreMode.MERGE); // shared test DB — never WIPE_AND_LOAD here
+            System.out.println("PG restore stats: " + GSONUtil.toJSONDefault(restoreStats));
+
+            // Entities on native PG, schemaless now living in jsonb — assert semantic content.
+            PropertyDAO pdRead = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+            assertEquals(pd.getName(), pdRead.getName());
+            assertEquals("hello", pdRead.getProperties().getValue("str"));
+            H2PRegressionTest.CyclicDAO parentRead = (H2PRegressionTest.CyclicDAO) ds
+                    .searchByID(H2PRegressionTest.CyclicDAO.class.getName(), parent.getGUID()).get(0);
+            assertNotNull(parentRead.getPeer(), "FK reference must survive H2 -> PG");
+            assertEquals(child.getGUID(), parentRead.getPeer().getGUID());
+
+            assertNotNull(ds.searchDynamicEnumMapByName(dem.getName()), "DEM must be restored on PG");
+            assertEquals(5, ds.currentSequenceValue(seqName), "sequence value must carry over to PG");
+
+            java.io.ByteArrayOutputStream head = new java.io.ByteArrayOutputStream();
+            ds.readFile(fid, head, true);
+            assertArrayEquals(v2, head.toByteArray(), "file head content must match on PG");
+            java.io.ByteArrayOutputStream firstVersion = new java.io.ByteArrayOutputStream();
+            ds.readFile(fid, 1, firstVersion, true);
+            assertArrayEquals(v1, firstVersion.toByteArray(), "version 1 must be preserved on PG");
+            assertEquals(2, ds.fileVersions(fid).size());
+
+            // Close the loop: dump the migrated entities back OFF PostgreSQL into a fresh H2 store.
+            java.io.ByteArrayOutputStream back = new java.io.ByteArrayOutputStream();
+            long dumped = ds.dump(H2PRegressionTest.CyclicDAO.NVC_CYCLIC_DAO, back);
+            assertTrue(dumped >= 2, "PG per-type dump must include the migrated entities");
+            H2PDataStore h2Back = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
+                    "jdbc:h2:mem:pg_mig_back_" + Math.abs(UUID.randomUUID().hashCode())
+                            + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"));
+            try {
+                h2Back.restore(new java.io.ByteArrayInputStream(back.toByteArray()),
+                        H2PDataStore.RestoreMode.MERGE);
+                H2PRegressionTest.CyclicDAO roundTripped = (H2PRegressionTest.CyclicDAO) h2Back
+                        .searchByID(H2PRegressionTest.CyclicDAO.class.getName(), parent.getGUID()).get(0);
+                assertEquals(child.getGUID(), roundTripped.getPeer().getGUID(),
+                        "PG -> H2 restore must preserve the reference");
+            } finally {
+                h2Back.close();
+            }
+            System.out.println("H2 -> PG -> H2 dump/restore OK");
+        } finally {
+            h2.close();
+        }
+    }
+
     /** Last: list every base table in the target database (shows the normalized schema the suite created). */
     @Test
-    @Order(7)
+    @Order(9)
     public void listAllTables() {
         java.util.List<String> tables = new java.util.ArrayList<>();
         Connection c = ds.connect();
