@@ -17,10 +17,12 @@ package io.xlogistx.datastore.h2p;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import io.xlogistx.datastore.h2p.H2PDSCreator.H2PParam;
 import org.zoxweb.server.api.APIServiceProviderBase;
 import org.zoxweb.server.io.IOUtil;
 import org.zoxweb.server.logging.LogWrapper;
+import org.zoxweb.server.util.DateUtil;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.server.util.MetaUtil;
@@ -44,6 +46,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -318,6 +321,91 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             pool = null;
         }
         if (log.isEnabled()) log.getLogger().info("Closed");
+    }
+
+    /**
+     * Health check — the JDBC counterpart of {@code XlogistxMongoDataStore.ping}. Validates the
+     * store by taking a pooled connection and running {@code SELECT 1}, then reports via
+     * {@link DatabaseMetaData} and the HikariCP pool — portable to both engines, no dialect SQL.
+     *
+     * @param detailed if true also reports the JDBC driver, URL, resolved DSType and pool sizing
+     * @return status info ({@code status}, {@code version}, {@code latency_millis}, {@code connections})
+     * @throws APIException if the database is not reachable
+     */
+    @Override
+    public NVGenericMap ping(boolean detailed) throws APIException {
+        String product;
+        String productVersion;
+        String driverName = null;
+        String driverVersion = null;
+        String jdbcURL = null;
+        long latencyMillis;
+        Connection con = null;
+        Statement stmt = null;
+        ResultSet rs = null;
+        try {
+            long ts = System.currentTimeMillis();
+            con = connect();
+            stmt = con.createStatement();
+            rs = stmt.executeQuery("SELECT 1");
+            if (!rs.next()) {
+                throw new SQLException("ping query returned no result");
+            }
+            latencyMillis = System.currentTimeMillis() - ts;
+            DatabaseMetaData dmd = con.getMetaData();
+            product = dmd.getDatabaseProductName();
+            productVersion = dmd.getDatabaseProductVersion();
+            if (detailed) {
+                driverName = dmd.getDriverName();
+                driverVersion = dmd.getDriverVersion();
+                jdbcURL = dmd.getURL();
+            }
+        } catch (Exception e) {
+            if (log.isEnabled()) log.getLogger().log(Level.WARNING, "ping failed", e);
+            throw mapOrWrap(e);
+        } finally {
+            close(rs, stmt, con);
+        }
+
+        NVGenericMap ret = new NVGenericMap();
+        ret.build("time_stamp", DateUtil.DEFAULT_DATE_FORMAT_TZ.format(new Date()));
+        ret.build("status", "UP");
+        ret.build("version", product + " " + productVersion);
+        ret.build(new NVLong("latency_millis", latencyMillis));
+
+        HikariDataSource p = pool;
+        HikariPoolMXBean mx = p != null ? p.getHikariPoolMXBean() : null;
+        if (mx != null) {
+            NVGenericMap connectionsInfo = new NVGenericMap("connections");
+            connectionsInfo.build(new NVInt("active", mx.getActiveConnections()))
+                    .build(new NVInt("idle", mx.getIdleConnections()))
+                    .build(new NVInt("total", mx.getTotalConnections()))
+                    .build(new NVInt("waiting", mx.getThreadsAwaitingConnection()));
+            ret.build(connectionsInfo);
+        }
+
+        if (detailed) {
+            NVGenericMap driverInfo = new NVGenericMap("driver");
+            driverInfo.build("name", driverName)
+                    .build("version", driverVersion);
+            ret.build(driverInfo);
+
+            NVGenericMap dbInfo = new NVGenericMap("database");
+            dbInfo.build("url", jdbcURL)
+                    .build("ds_type", "" + getDSType())
+                    .build("dialect", "" + dialect);
+            ret.build(dbInfo);
+
+            if (p != null) {
+                NVGenericMap poolInfo = new NVGenericMap("pool");
+                poolInfo.build("name", p.getPoolName())
+                        .build(new NVInt("max_size", p.getMaximumPoolSize()))
+                        .build(new NVInt("min_idle", p.getMinimumIdle()));
+                ret.build(poolInfo);
+            }
+        }
+
+        return ret;
     }
 
     // ---------- Transactions (ambient ThreadLocal connection) ----------
