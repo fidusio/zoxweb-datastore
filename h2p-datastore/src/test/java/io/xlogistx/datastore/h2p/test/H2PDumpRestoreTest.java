@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * JSON dump/restore ({@code H2PDumpRestore}) on in-memory H2 in PostgreSQL mode: per-type and
  * whole-store round trips into a fresh store, shared-child GUID dedup, the cycle skip policy,
- * the {@code MAX_SELECT_RESULTS} batch clamp, MERGE vs WIPE_AND_LOAD semantics, and cold-start
+ * dump completeness under {@code MAX_SELECT_RESULTS}, MERGE vs WIPE_AND_LOAD semantics, and cold-start
  * type discovery through {@code sys_meta_catalog}.
  *
  * <p>Each test builds its own store(s) on a unique in-memory URL so content is fully controlled.
@@ -265,8 +265,9 @@ public class H2PDumpRestoreTest {
         }
     }
 
+    /** The valve caps only predicate searches — dump paging (guid-list fetches) is never affected. */
     @Test
-    public void testMaxSelectResultsBatchClamp() {
+    public void testMaxSelectResultsDoesNotTruncateDump() {
         APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:" + db("clamp") + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         cfg.getProperties().build(H2PDSCreator.H2PParam.MAX_SELECT_RESULTS.getName(), "3");
@@ -278,7 +279,7 @@ public class H2PDumpRestoreTest {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             long written = capped.dump(PropertyDAO.NVC_PROPERTY_DAO, bos);
             assertEquals(10, written,
-                    "the dump pages must clamp to MAX_SELECT_RESULTS instead of being LIMIT-truncated");
+                    "the dump must write every stored entity regardless of MAX_SELECT_RESULTS");
         } finally {
             capped.close();
         }

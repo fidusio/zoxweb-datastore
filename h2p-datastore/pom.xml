@@ -32,8 +32,8 @@
             <version>${postgres.version}</version>
             <scope>compile</scope>
         </dependency>
-        <!-- Connection pool for native PostgreSQL (not used for H2). Source:
-             https://mvnrepository.com/artifact/com.zaxxer/HikariCP -->
+        <!-- Connection pool for both engines (H2 and native PostgreSQL) — newConnection() always
+             goes through the pool. Source: https://mvnrepository.com/artifact/com.zaxxer/HikariCP -->
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>

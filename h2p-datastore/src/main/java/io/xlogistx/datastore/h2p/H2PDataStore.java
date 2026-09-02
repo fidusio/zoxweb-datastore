@@ -252,7 +252,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return p;
     }
 
-    int intParam(H2PParam param, int defaultValue) {
+    private int intParam(H2PParam param, int defaultValue) {
         String v = getAPIConfigInfo().getProperties().getValue(param);
         if (v == null || v.isEmpty()) {
             return defaultValue;
@@ -576,10 +576,15 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     private List<AttrInfo> attrInfos(NVConfigEntity nvce) {
         return attrCache.computeIfAbsent(nvce.getName().toLowerCase(), k -> {
+            // Identifier gate, once per type on first touch: entity/attribute names become SQL
+            // identifiers verbatim, so they must be printable ASCII and <= 63 bytes (PostgreSQL's
+            // limit). Bad names are REJECTED loudly — fix them at the source, they are never mangled.
+            H2PUtil.checkNameForSQL("entity type", nvce.getName());
             List<AttrInfo> list = new ArrayList<>();
             for (NVConfig nvc : nvce.getAttributes()) {
                 AttrInfo ai = new AttrInfo(nvc);
                 if (ai.kind != H2PUtil.AttrKind.PK && ai.kind != H2PUtil.AttrKind.EXCLUDED) {
+                    H2PUtil.checkNameForSQL("attribute", ai.name);
                     list.add(ai);
                 }
             }
@@ -610,11 +615,21 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     }
 
     /**
-     * Create the entity's table (typed columns, {@code bytea} blobs, {@code uuid} FK columns for
-     * single references, {@code varchar} JSON for schemaless), then — after recursively ensuring
-     * referenced types' tables exist — add FOREIGN KEY constraints and create join tables for
-     * entity collections. The bare table is registered before FKs are added, so cyclic type
-     * references resolve.
+     * First-touch gate for a type's physical schema, run once per type per JVM (guarded by
+     * {@code createdTables}; reconfigure clears the guard so a new database re-syncs). One
+     * {@code INFORMATION_SCHEMA.COLUMNS} probe decides the branch:
+     * <ul>
+     *   <li><b>Table absent</b> — create it (typed columns, {@code bytea} blobs, {@code uuid} FK
+     *       columns for single references, dialect JSON for schemaless).</li>
+     *   <li><b>Table pre-existing</b> — {@link #syncExistingTable additive sync + type gate}:
+     *       added attributes get {@code ALTER TABLE ADD COLUMN IF NOT EXISTS} (nullable, so old
+     *       rows read as attribute defaults — document-store missing-key semantics); a changed
+     *       column type is rejected loudly; deleted attributes leave dead columns untouched.</li>
+     * </ul>
+     * Then — after recursively ensuring referenced types' tables exist — FOREIGN KEY constraints,
+     * join tables for entity collections and indexes are applied idempotently (covers collections/
+     * refs added to a pre-existing table too). The bare table is registered before FKs are added,
+     * so cyclic type references resolve.
      */
     private void ensureTable(NVConfigEntity nvce) {
         String key = nvce.getName().toLowerCase();
@@ -624,30 +639,21 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             if (createdTables.contains(key)) return;
             List<AttrInfo> infos = attrInfos(nvce);
 
-            StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
-                    .append(H2PUtil.q(tableName(nvce))).append(" (")
-                    .append(H2PUtil.q(MetaToken.GUID.getName())).append(" uuid PRIMARY KEY");
-            for (AttrInfo ai : infos) {
-                switch (ai.kind) {
-                    case SCALAR:
-                        sb.append(", ").append(H2PUtil.q(ai.name)).append(' ').append(H2PUtil.scalarColumnType(ai.nvc));
-                        if (ai.nvc.isUnique()) sb.append(" UNIQUE");
-                        break;
-                    case BLOB:
-                        sb.append(", ").append(H2PUtil.q(ai.name)).append(" bytea");
-                        break;
-                    case ENTITY_REF:
-                        sb.append(", ").append(H2PUtil.q(ai.name)).append(" uuid");
-                        break;
-                    case SCHEMALESS:
-                        sb.append(", ").append(H2PUtil.q(ai.name)).append(' ').append(dialect.schemalessColumnType());
-                        break;
-                    default: // ENTITY_COLLECTION -> join table, no column
-                        break;
+            Map<String, String> existingColumns = readColumnTypes(tableName(nvce));
+            if (existingColumns.isEmpty()) {
+                StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
+                        .append(H2PUtil.q(tableName(nvce))).append(" (")
+                        .append(H2PUtil.q(MetaToken.GUID.getName())).append(" uuid PRIMARY KEY");
+                for (AttrInfo ai : infos) {
+                    if (!ai.isColumn()) continue; // ENTITY_COLLECTION -> join table, no column
+                    sb.append(", ").append(H2PUtil.q(ai.name)).append(' ').append(columnDDLType(ai));
+                    if (ai.kind == H2PUtil.AttrKind.SCALAR && ai.nvc.isUnique()) sb.append(" UNIQUE");
                 }
+                sb.append(')');
+                execDDL(sb.toString());
+            } else {
+                syncExistingTable(nvce, infos, existingColumns);
             }
-            sb.append(')');
-            execDDL(sb.toString());
             metaManager.register(nvce);
             createdTables.add(key); // register bare table before FKs so cyclic refs resolve
             registerInCatalog(nvce);
@@ -692,6 +698,97 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             }
         } finally {
             ddlLock.unlock();
+        }
+    }
+
+    /** The DDL column type for a column-mapped attribute — the single mapping create and sync share. */
+    private String columnDDLType(AttrInfo ai) {
+        switch (ai.kind) {
+            case BLOB:
+                return "bytea";
+            case ENTITY_REF:
+                return "uuid";
+            case SCHEMALESS:
+                return dialect.schemalessColumnType();
+            default:
+                return H2PUtil.scalarColumnType(ai.nvc);
+        }
+    }
+
+    /**
+     * {@code column_name (lowercased) -> normalized data type} for the table in the current schema;
+     * an empty map means the table does not exist. One query — the probe that decides create vs.
+     * sync in {@link #ensureTable}. Runs on its own connection (schema probing is out-of-band).
+     */
+    private Map<String, String> readColumnTypes(String table) {
+        Map<String, String> ret = new HashMap<>();
+        Connection con = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            con = newConnection();
+            ps = con.prepareStatement("SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS"
+                    + " WHERE UPPER(TABLE_NAME)=UPPER(?) AND TABLE_SCHEMA = CURRENT_SCHEMA");
+            ps.setString(1, table);
+            rs = ps.executeQuery();
+            while (rs.next()) {
+                ret.put(rs.getString(1).toLowerCase(), H2PUtil.normalizeSqlType(rs.getString(2)));
+            }
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(rs, ps, con);
+        }
+        return ret;
+    }
+
+    /**
+     * Additive schema sync + type gate for a pre-existing table (schema evolution), run once per
+     * type per JVM from {@link #ensureTable}:
+     * <ul>
+     *   <li><b>Added attribute</b> → {@code ALTER TABLE ADD COLUMN IF NOT EXISTS}. The column is
+     *       nullable, so pre-existing rows read the attribute at its default — exactly a document
+     *       store's missing-key semantics. A unique scalar gets a best-effort UNIQUE constraint
+     *       (pre-existing duplicate data logs a warning instead of failing). Added collections,
+     *       FK constraints and indexes are covered by the idempotent DDL that follows in
+     *       {@code ensureTable}.</li>
+     *   <li><b>Deleted attribute</b> → its column / join table stays as harmless dead weight; reads
+     *       and writes ignore it. Never dropped.</li>
+     *   <li><b>Type change</b> → REJECTED with an actionable exception. Altering a column's type is
+     *       data-destructive and is never done automatically — migrate via dump (old entity classes)
+     *       / restore (new classes), or revert the attribute's type.</li>
+     * </ul>
+     */
+    private void syncExistingTable(NVConfigEntity nvce, List<AttrInfo> infos, Map<String, String> existing) {
+        String table = tableName(nvce);
+        String guidType = existing.get(MetaToken.GUID.getName());
+        if (!"uuid".equals(guidType)) {
+            throw new APIException("SCHEMA MISMATCH: table \"" + table + "\" exists but has no 'guid' uuid column"
+                    + " (found: " + guidType + ") — it was not created by this datastore."
+                    + " Rename the entity type or the conflicting table.");
+        }
+        for (AttrInfo ai : infos) {
+            if (!ai.isColumn()) continue; // collections have no column; their join tables are ensured after
+            String ddlType = columnDDLType(ai);
+            String expected = H2PUtil.normalizeSqlType(ddlType);
+            String found = existing.get(ai.lowerName);
+            if (found == null) {
+                // Additive evolution: the attribute was added since the table was created.
+                execDDL("ALTER TABLE " + H2PUtil.q(table) + " ADD COLUMN IF NOT EXISTS "
+                        + H2PUtil.q(ai.name) + ' ' + ddlType);
+                if (ai.kind == H2PUtil.AttrKind.SCALAR && ai.nvc.isUnique()) {
+                    execDDLQuiet("ALTER TABLE " + H2PUtil.q(table) + " ADD CONSTRAINT "
+                            + H2PUtil.q(H2PUtil.sqlName("uq_" + table + "_" + ai.name))
+                            + " UNIQUE (" + H2PUtil.q(ai.name) + ")");
+                }
+            } else if (!found.equals(expected)) {
+                throw new APIException("SCHEMA TYPE MISMATCH: column \"" + ai.name + "\" of table \"" + table
+                        + "\" is '" + found + "' in the database, but attribute '" + ai.name
+                        + "' of entity type '" + nvce.getName() + "' now maps to '" + expected + "'."
+                        + " Altering a column's type is data-destructive and is NEVER done automatically."
+                        + " FIX: migrate the data (dump with the old entity classes, restore with the new —"
+                        + " see H2PDumpRestore) or revert the attribute's type.");
+            }
         }
     }
 
@@ -750,6 +847,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         if (createdTables.contains(key)) return true;
         PreparedStatement ps = null;
         ResultSet rs = null;
+        boolean exists;
         try {
             // Scoped to the connection's current schema — a same-named table in another schema of the
             // database must not count as ours (CURRENT_SCHEMA works on both H2 and PostgreSQL).
@@ -759,18 +857,19 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                             + " AND TABLE_SCHEMA = CURRENT_SCHEMA");
             ps.setString(1, tableName(nvce));
             rs = ps.executeQuery();
-            boolean exists = rs.next();
-            if (exists) {
-                // Remember it: a JVM reading a pre-existing DB never runs ensureTable, so without this
-                // every single select would pay an INFORMATION_SCHEMA round trip.
-                metaManager.register(nvce);
-                createdTables.add(key);
-                registerInCatalog(nvce);
-            }
-            return exists;
+            exists = rs.next();
         } finally {
             close(rs, ps);
         }
+        if (exists) {
+            // First sight of a pre-existing table on the read path: run the same one-time schema
+            // pass as the write path (additive column sync + type gate + registration + idempotent
+            // FK/join/index DDL) and cache the type — without the cache every select would pay an
+            // INFORMATION_SCHEMA round trip; without the sync a projection on an added attribute or
+            // a read of an added collection would fail on the missing column/join table.
+            ensureTable(nvce);
+        }
+        return exists;
     }
 
     // ---------- Meta catalog (sys_meta_catalog) ----------
@@ -1194,10 +1293,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      * refs/joins). {@code cache} is the per-call entity cache keyed by GUID — the cycle guard for
      * mutually-referencing rows, and a dedup for repeated child fetches within one operation.
      * {@code projection} (lowercased attribute names, null = all) limits the selected columns and
-     * the resolved collections — {@code guid} is always selected.
+     * the resolved collections — {@code guid} is always selected. {@code capResults} applies the
+     * {@link H2PParam#MAX_SELECT_RESULTS} valve — only ever true for open-ended predicate searches;
+     * guid-IN lookups ({@link #innerSearchByIDs}) are already bounded by their id list and must
+     * NEVER be capped, or collection resolution / batch pages would silently drop rows.
      */
     private List<NVEntity> select(Connection con, NVConfigEntity nvce, String whereClause, SqlBinder binder,
-                                  Map<String, NVEntity> cache, Set<String> projection) throws SQLException {
+                                  Map<String, NVEntity> cache, Set<String> projection, boolean capResults)
+            throws SQLException {
         List<NVEntity> ret = new ArrayList<>();
         if (nvce == null || !tableExists(con, nvce)) return ret;
         String colList = "*";
@@ -1212,9 +1315,11 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
         String sql = "SELECT " + colList + " FROM " + H2PUtil.q(tableName(nvce))
                 + (whereClause != null && !whereClause.isEmpty() ? " WHERE " + whereClause : "");
-        // Safety valve (opt-in via MAX_SELECT_RESULTS): cap unbounded materialization.
-        int maxResults = intParam(H2PParam.MAX_SELECT_RESULTS, 0);
-        if (maxResults > 0) sql += " LIMIT " + maxResults;
+        // Safety valve (opt-in via MAX_SELECT_RESULTS): cap unbounded search materialization.
+        if (capResults) {
+            int maxResults = intParam(H2PParam.MAX_SELECT_RESULTS, 0);
+            if (maxResults > 0) sql += " LIMIT " + maxResults;
+        }
         List<Map<String, Object>> rows;
         PreparedStatement ps = null;
         ResultSet rs = null;
@@ -1341,6 +1446,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     @SuppressWarnings("unchecked")
     private void decodeSchemaless(String json, AttrInfo ai, NVEntity nve) {
         NVBase<?> target = nve.lookup(ai.name);
+        if (target == null) {
+            // Meta/class drift: the NVConfigEntity declares the attribute but the instance lacks its
+            // NVBase — skip the column instead of NPEing (same degradation as setScalar's null path).
+            if (log.isEnabled()) log.getLogger().warning("schemaless attribute not on instance, skipped: "
+                    + nve.getNVConfig().getName() + "." + ai.name);
+            return;
+        }
         if (target instanceof NVEnumList) {
             String[] names = GSONUtil.fromJSONDefault(json, String[].class);
             NVEnumList el = (NVEnumList) target;
@@ -1792,7 +1904,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 int idx = 1;
                 if (hasUser) ps.setObject(idx++, IDGs.UUIDV7.decode(userID));
                 H2PQueryFormatter.bindWhere(ps, idx, nvce, queryCriteria);
-            }, new HashMap<>(), toProjection(fieldNames))) {
+            }, new HashMap<>(), toProjection(fieldNames), true)) {
                 ret.add((V) e);
             }
         } catch (SQLException e) {
@@ -1856,11 +1968,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             final boolean hasUser = userID != null;
             if (hasUser) in.append(" AND ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName())).append(" = ?");
             try {
+                // capResults=false: the result is already bounded by the id list — capping here
+                // would silently drop collection children and batch-page rows.
                 select(con, nvce, in.toString(), ps -> {
                     int idx = 1;
                     for (UUID u : toFetch) ps.setObject(idx++, u);
                     if (hasUser) ps.setObject(idx, IDGs.UUIDV7.decode(userID));
-                }, effectiveCache, null); // built entities land in the cache, keyed by GUID
+                }, effectiveCache, null, false); // built entities land in the cache, keyed by GUID
             } catch (SQLException e) {
                 throw mapOrWrap(e);
             }
@@ -1946,6 +2060,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     // ---------- Batch search ----------
 
+    /**
+     * Builds the pagination report: the complete, deterministic list of every matching guid.
+     * NEVER capped — {@code batchSearch}/{@code nextBatch} IS the datastore-agnostic user-space
+     * pagination mechanism ({@code MAX_SELECT_RESULTS} guards full-entity materialization; a
+     * guid-only report row is cheap, and the caller pages the actual data via {@link #nextBatch}
+     * at the size of its own choosing).
+     */
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
             throws NullPointerException, IllegalArgumentException, AccessException, APIException {

@@ -12,7 +12,7 @@ JDBC driver + URL.
 | `H2PDataStore.java` | The datastore — DDL, CRUD, search, references, transactions, sequences, DEM, **versioned file storage** (implements `APIDataStore` **and** `APIDocumentStore`, like `XlogistxMongoDataStore`) |
 | `H2PDSCreator.java` | Factory + `H2PParam` config enum + URL/DSType resolution |
 | `H2PUtil.java` | Attribute classification (`AttrKind`) + column-type mapping + identifier quoting + `parseJdbcURL` |
-| `H2PQueryFormatter.java` | `QueryMarker` → `WHERE` clause + parameter binding |
+| `H2PQueryFormatter.java` | `QueryMarker` → `WHERE` clause + parameter binding (`QueryMatch` incl. `LIKE`/`NOT_LIKE`, `QueryMatchIn`, `QueryGroup` parens; unknown markers REJECTED) |
 | `H2PExceptionHandler.java` | SQLState → `APIException` mapping |
 | `H2PMetaManager.java` | Per-instance table registry (case-insensitive; backs `getStoreTables()`; cleared on reconfigure) |
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
@@ -47,10 +47,50 @@ this session). Databases created before the catalog existed only have rows for t
 join tables get `(parent_guid, ord)` + `(child_guid)`, `ENTITY_REF` columns get one, and non-unique
 uuid scalars (`subject_guid`, reference ids) get one. **A FOREIGN KEY indexes only the referenced
 side** — on PostgreSQL *and* H2 the referencing column needs its own index or every collection read
-and cascade delete is a full scan. All composed identifiers (table names, join tables, FK
-constraint and index names) go through `H2PUtil.sqlName`, which keeps names ≤ 63 bytes
-(PostgreSQL's limit) by truncating + suffixing a CRC32 of the full name — deterministic and
-collision-resistant where server-side truncation isn't. Attribute/column names are used as-is.
+and cascade delete is a full scan.
+
+**Identifier policy** (two tiers):
+- **User-controlled names** (entity type + attribute names) are **validated, never mangled**:
+  `H2PUtil.checkNameForSQL` (called once per type from `attrInfos`, the choke point of every
+  read/write path) requires printable **ASCII, ≤ 63 bytes** (PostgreSQL's identifier limit — the
+  lowest mainstream engine, and the only one that silently *truncates* instead of erroring) and
+  rejects violations with an actionable `IllegalArgumentException` — the caller fixes the name at
+  its source. ASCII also guarantees chars == UTF-8 bytes, so identifier math stays exact.
+  (A matching check in zoxweb-core's `NVConfigPortable.setName` was tried and reverted — it broke
+  too many existing name usages — so this gate is the sole enforcement; do not remove it.)
+- **Composed identifiers** the datastore builds itself (join tables `<table>__<attr>`, FK constraint
+  and index names) go through `H2PUtil.sqlName`, which keeps names ≤ 63 bytes by truncating +
+  suffixing a CRC32 of the full name — deterministic and collision-resistant where server-side
+  truncation isn't (the caller can't shorten these, so hashing is correct here).
+
+### Schema evolution (additive sync + type gate)
+
+The first touch of a type (write path `ensureTable`, or read path `tableExists` on first sight of a
+pre-existing table — both funnel into `ensureTable`, guarded by `createdTables` + `ddlLock`, so it
+runs **once per type per JVM**; reconfigure clears the guard) makes ONE
+`INFORMATION_SCHEMA.COLUMNS` probe (`readColumnTypes`) and branches:
+
+- **Table absent** → normal `CREATE TABLE` (column types via `columnDDLType`, the single mapping
+  create and sync share).
+- **Table pre-existing** → `syncExistingTable`:
+  - **Added attribute** → `ALTER TABLE ADD COLUMN IF NOT EXISTS` (nullable ⇒ old rows read the
+    attribute at its default — document-store missing-key semantics; new rows round-trip). A unique
+    scalar gets a best-effort UNIQUE constraint (duplicate pre-existing data logs a warning). Added
+    collections / FK refs / indexes are covered by the idempotent FK/join/index DDL that follows.
+  - **Deleted attribute** → its column / join table stays as dead weight, ignored by reads and
+    writes. Never dropped automatically.
+  - **Changed column type** → `APIException` "SCHEMA TYPE MISMATCH" (never auto-`ALTER`ed — that is
+    data-destructive). Sanctioned migration: dump with the old entity classes, restore with the new
+    (`H2PDumpRestore`), or revert the attribute type. A same-named table without a `guid uuid`
+    column is likewise rejected (not ours).
+- Type comparison goes through `H2PUtil.normalizeSqlType`, which unifies engine spellings
+  (H2 `CHARACTER VARYING`/`BINARY VARYING` vs PG `character varying`/`bytea`, `int4/int8`,
+  `float4/float8`, `bool`, `text`≡`varchar`, `json`≡`jsonb`).
+- After the sync the caches are updated as one unit: `metaManager.register`, `createdTables`,
+  `sys_meta_catalog` (`class_type` upserts to the latest class). A mismatch throws BEFORE any cache
+  is touched, so the type stays unregistered and rejects again on the next touch.
+- Regression: `H2PRegressionTest.testSchemaEvolution` (V1 → V2 adds a column across store
+  reopens on one DB; a String→Long change is rejected).
 
 ### Schemaless JSON
 
@@ -218,8 +258,17 @@ not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
   named columns only, and only named entity collections are resolved; null/empty = all fields
   (contract). Non-projected attributes stay at their defaults on the returned entity.
 
-- **`MAX_SELECT_RESULTS`** (`H2PParam`, opt-in): when set > 0 every entity SELECT is capped with
-  `LIMIT n` — a safety valve against unbounded search materialization (off by default: full results).
+- **`MAX_SELECT_RESULTS`** (`H2PParam`, opt-in): when set > 0, open-ended **predicate searches**
+  (`search`/`userSearch`) are capped with `LIMIT n` — a safety valve against unbounded search
+  materialization (off by default: full results). Guid-list reads are **never** capped (their size is
+  already bounded by the id list): `searchByID`, entity-collection resolution in `buildEntity`,
+  `nextBatch` pages and the dump always return complete results — and `batchSearch`'s guid report is
+  likewise **never** capped: `batchSearch`/`nextBatch` IS the datastore-agnostic user-space pagination
+  mechanism (complete guid-only report; the caller pages actual data via `nextBatch` at its own size).
+  A cap on any of these would silently drop
+  collection children and a follow-up `update()` would persist the loss via the join-table resync
+  (regression: `H2PRegressionTest.testMaxSelectResultsValve`). The cap is the `capResults` flag on
+  `select()`; only `innerSearch` passes true.
   `batchSearch` orders its ID report by `guid` (UUID v7 is time-ordered) so `nextBatch` pages are
   deterministic.
 - **`delete(nve, withReference=true)` cascades from DB state, not the in-memory object**
@@ -232,10 +281,57 @@ not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
   (replaced single refs, children removed from collections) unless they are shared. Default **off**:
   detached children remain as rows and their lifecycle belongs to the caller.
 
-Still open: no true API-level pagination (`search` still materializes all matches unless the valve is
-set); `insert`/`update` each do an `existsByGuid` probe first; SecurityController integration (see
-dedicated section below — work in progress); real `discover()`/`search(String...)` implementations
-over `file_info_dao` for the document store (currently null stubs, parity with the Mongo stores).
+Still open: SecurityController integration (see dedicated section below — the user is providing it);
+`search` materializes all matches (use `batchSearch`/`nextBatch` for large sets — that IS the
+pagination mechanism); real `discover()`/`search(String...)` implementations over `file_info_dao`
+for the document store (currently null stubs, parity with the Mongo stores);
+`isProviderActive()` returns "driver ever loaded", not health (`ping()` is the health check).
+
+## Performance roadmap (agreed plan — NOT yet implemented)
+
+All remaining wins are round-trip eliminations: they show on live PostgreSQL and H2 file/tcp, not
+on in-memory H2 (benchmark statement counts, not wall clock). Ranked, per the 2026-09-01 planning
+discussion with the user:
+
+**Tier 1 (do first, one pass):**
+1. **Batch reference resolution across rows** — `select()`/`buildEntity` two-phase: materialize all
+   rows, then per collection attribute ONE `parent_guid IN (…)` join query for all parents, and per
+   child type ONE `guid IN (…)` fetch for all single-ref children (the per-call GUID cache already
+   dedups). Search of N entities with refs goes O(N)→O(1) queries per reference attribute; the
+   documented 100×3-collection case drops ~204 → ~4 statements.
+2. **Drop the `existsByGuid` probe** on insert/update — DEM pattern instead: `update()` = UPDATE
+   first (0 rows → insert); `insert()` = INSERT first (23505, SAVEPOINT-wrapped on PG → update).
+   Saves 1 round trip per entity per write, per node on graph writes.
+3. **pgjdbc URL options** (config only, Postgres path): `reWriteBatchedInserts=true` (multi-row
+   INSERTs for `syncJoins`/restore batches) and `prepareThreshold=1` (server-side plans for the hot
+   cached per-type statements).
+
+**Tier 2:** multi-row batching in restore's per-transaction loop; diff join rows on update instead
+of delete+reinsert (`syncJoins(deleteFirst=true)` rewrites unchanged collections today); optional
+LIMIT/OFFSET paging on `search`.
+
+**Tier 3 (only on demonstrated need):** `fetchSize` streaming instead of `materialize()`'s row-map
+copy (memory); opt-in secondary indexes on frequently-queried scalar columns (arbitrary-field
+searches are full scans today — this also completes the query-pushdown win from the
+`QueryGroup`/`IN`/`LIKE` vocabulary); NO entity cache (invalidation risk > win at this scale).
+
+## Cross-repo coupling + scope (2026-09-01)
+
+- The query vocabulary lives in **zoxweb-core** (local tree: `D:\dev\data\java\projects\zoxweb-core`):
+  `shared/db/QueryGroup.java`, `shared/db/QueryMatchIn.java` (added by Claude, drafted for the user),
+  and `LIKE`/`NOT_LIKE` appended (APPEND-ONLY — ordinals persisted) to `Const.RelationalOperator`.
+  The installed 2.4.0 jar in `D:/dev/data/java/.m2/repository` contains them. h2p's formatter and
+  tests depend on this — if zoxweb-core is rebuilt from an older tree (e.g. a checkout where these
+  additions were never committed), `H2PQueryFormatter` won't compile. When committing, land the
+  zoxweb-core additions before (or with) the h2p changes.
+- zoxweb-core also aliases `get/setReferenceID` → `get/setGUID` (default methods on `ReferenceID`)
+  and dropped `NVC_REFERENCE_ID` from `ReferenceIDDAO`'s meta; a validating `NVConfigPortable.setName`
+  was tried and REVERTED (broke existing name usages) — the h2p identifier gate is the sole
+  name enforcement, do not remove it.
+- **Scope rule (user decision): Derby (`zoxweb-jdbc`) is being retired and the Mongo stores are on
+  standby** — new features (query markers included) land in h2p ONLY; do not update the other
+  stores' formatters (their silently-skip-unknown-marker behavior is accepted as-is). The Mongo
+  stores remain the behavioral reference for parity (SyncMongoDS for SecurityController semantics).
 
 ## SecurityController integration — WORK IN PROGRESS (not yet supported)
 
@@ -339,8 +435,8 @@ The entity classes named by the dump's `class_type` must be on the CLI classpath
 
 Format: one `{"k":<kind>,"v":{...}}` envelope per line; kinds `header` (`format:"h2p-json-dump"`,
 `version:1`), `entity` (`GSONUtil.toJSON(nve, printClassType=true)`), `dem`, `seq`, `file_version`,
-`file_head`. Streamed both ways: dump pages via `batchSearch`/`nextBatch` (page size clamped to
-`MAX_SELECT_RESULTS` when set — otherwise the id-list fetch would be silently LIMIT-truncated);
+`file_head`. Streamed both ways: dump pages via `batchSearch`/`nextBatch` (`MAX_SELECT_RESULTS` never affects it —
+the valve caps only predicate searches, not guid-list fetches);
 restore loads entity lines in per-batch transactions (256/tx; a failure aborts the open batch and
 rethrows with the line number — completed batches stay committed, `MERGE` re-runs converge).
 
@@ -369,18 +465,31 @@ Semantics to keep in mind:
 5. UUID via `setObject(uuid)` / `getObject(col, UUID.class)`; bytea via `setBytes`/`getBytes` — both
    pgjdbc-native.
 
-Criteria typing (`H2PQueryFormatter`): a null-valued `=`/`!=` `QueryMatch` renders as
-`IS NULL`/`IS NOT NULL` (a bound null parameter can never match, and pgjdbc rejects untyped nulls);
-`Date` values bind as epoch millis (columns are `bigint`); values against `Number`-typed (NVNumber)
-attributes bind through `H2PUtil.encodeNumber` — equality only, range comparison on the tagged
-varchar encoding is not possible.
+Criteria (`H2PQueryFormatter`) — supported markers: `QueryMatch` with every `RelationalOperator`
+including `LIKE`/`NOT_LIKE` (appended to the enum in zoxweb-core — APPEND-ONLY, ordinals are
+persisted); `QueryMatchIn` → `[NOT] IN (…)` (empty value list renders as a constant: matches
+nothing, or everything when negated); `QueryGroup.OPEN/CLOSE` → explicit parentheses (balance
+validated — without grouping, `a AND b OR c` silently parses as `(a AND b) OR c`);
+`Const.LogicalOperator`. Any other `QueryMarker` is REJECTED with `IllegalArgumentException` —
+silently skipping an unknown criterion would widen the result set on version skew. Typing: a
+null-valued `=`/`!=` `QueryMatch` renders as `IS NULL`/`IS NOT NULL` (a bound null parameter can
+never match, and pgjdbc rejects untyped nulls); `Date` values bind as epoch millis (columns are
+`bigint`); values against `Number`-typed (NVNumber) attributes bind through `H2PUtil.encodeNumber`
+— equality only. Regression: `testGroupedCriteria`/`testInCriteria`/`testLikeCriteria`/
+`testMalformedCriteriaRejected`.
 
 ## Running the tests
 
 Tests run via the JUnit Platform launcher (surefire can't fetch its provider offline in this env).
-Compile with `mvn -o -pl h2p-datastore -DskipTests test-compile`, then run the launcher with the
-module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath` + the
-`junit-platform-*` jars) selecting package `io.xlogistx.datastore.h2p.test`, with `-ea`.
+Compile with `mvn -o -pl h2p-datastore -DskipTests test-compile`, then run a small
+`LauncherFactory`-based main selecting package `io.xlogistx.datastore.h2p.test`, with `-ea`.
+Local repo is `D:/dev/data/java/.m2/repository` (see `~/.m2/settings.xml`); the classpath =
+`target/classes` + `target/test-classes` + zoxweb-core 2.4.0, common-datastore 1.0.0, uuid-creator,
+gson, HikariCP, slf4j-api, h2, postgresql, the junit-jupiter/junit-platform 6.1.2 jars + opentest4j —
+**plus**, because `H2PDataStoreTest.setup` calls `OPSecUtil.singleton()`: xlogistx-opsec,
+xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/bctls/bcutil-jdk18on
+(bcutil is required for the live-PG SSL handshake once OPSecUtil registers the BC JSSE provider).
+(The dependency:build-classpath plugin is not cached offline — list the jars manually.)
 
 - `H2PDataStoreTest` — full suite on in-memory H2 (`MODE=PostgreSQL`). All green. Includes
   `testEncryptedH2FileRoundTrip` — a temp **file** DB with `;CIPHER=AES` (secrets passed via the 4-arg
@@ -393,14 +502,16 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   self-reference insert/read, 4-thread sequence uniqueness, sequence-inside-transaction no-block +
   rollback-survival, `userSearchByID` scoping, `IS [NOT] NULL` criteria, concurrent DEM upsert,
   `patch` include/exclude/missing-object modes, `fieldNames` projection, `sqlName` identifier
-  hashing + a >63-char entity-type round trip, the `MAX_SELECT_RESULTS` valve, the
+  hashing (composed names) + rejection of >63-byte / non-ASCII entity-type names, the
+  `MAX_SELECT_RESULTS` valve, the
   `APIServiceProviderBase` lifecycle (touch/lookupProperty/isBusy), shell-entity cascade delete,
   shared-child keep-on-delete, and `ORPHAN_CLEANUP` on/off behavior.
 - `H2PDumpRestoreTest` — JSON dump/restore (in-memory H2, per-test stores on unique URLs): per-type
   and whole-store round trips into a fresh store (entities compared by re-serialized JSON, DEM by
   both stores' read-back, sequence continuity, 2-version file with rolled-back head), shared-child
-  GUID dedup, cycle skip policy (`cycles_skipped`), the `MAX_SELECT_RESULTS` page clamp, MERGE vs
-  WIPE_AND_LOAD, cold-start discovery through `sys_meta_catalog`, foreign-format rejection, and the
+  GUID dedup, cycle skip policy (`cycles_skipped`), dump completeness under `MAX_SELECT_RESULTS`,
+  MERGE vs WIPE_AND_LOAD, cold-start discovery through `sys_meta_catalog`, foreign-format rejection,
+  and the
   zip container (layout + auto-detected round trip incl. rolled-back head, missing-content-entry
   failure, external-`entry` JSONL rejected without its zip).
 - `H2PFileStoreTest` — versioned file storage (in-memory H2): 1 KB + ~3 MB round-trips, version
@@ -429,6 +540,25 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
   -Dds.url=jdbc:postgresql://host:5432 -Dds.user=… -Dds.password=…   # -Dds.db optional
   ```
 
+## Session log — 2026-09-01 (all tested: 68/68 local H2; PG suite 73/73 verified live on lax-2.xlogistx.io)
+
+1. **`MAX_SELECT_RESULTS` scoped to predicate searches only** (`capResults` flag on `select()`);
+   guid-list reads, `nextBatch`, collection resolution, `batchSearch` report and dump are NEVER
+   capped (dump's clamp workaround removed).
+2. **Identifier gate** — `H2PUtil.checkNameForSQL` (ASCII, ≤63 bytes) called once per type from
+   `attrInfos`; rejects loudly. Sole enforcement (core-side setName validation was reverted).
+3. **`reference_id` machinery removed** (`META_INSERT_EXCLUSION`, `excludeMeta`); `AttrKind.EXCLUDED`
+   is now only the null-NVConfig guard.
+4. **Schema evolution** — additive sync + type gate in `ensureTable`/`syncExistingTable`
+   (see dedicated section); verified on live PG including a real `ALTER TABLE ADD COLUMN`.
+5. **Query vocabulary** — `QueryGroup`/`QueryMatchIn`/`LIKE`/`NOT_LIKE` (zoxweb-core) wired into
+   `H2PQueryFormatter` with fail-loud on unknown markers.
+6. **`decodeSchemaless` null-guard** (meta/class drift skips the column with a warning, no NPE).
+7. Stale HikariCP pom comment fixed (the pool serves BOTH engines — H2 included).
+
+Next agreed work item: **performance Tier 1** (section above). The user provides SecurityController
+integration separately.
+
 ## Ground rules for future sessions
 1. Keep the SQL PostgreSQL-portable; route every dialect difference through `H2PDialect`.
 2. `currentDSType` is resolved once in `setAPIConfigInfo` — don't re-detect per call.
@@ -436,4 +566,8 @@ module's runtime classpath (`mvn -o -pl h2p-datastore dependency:build-classpath
    `H2PDataStore`: DDL (`ensureTable`), write (`bindColumn`), read (`buildEntity`/`setScalar`/
    `decodeSchemaless`), and — for entity refs — `insertChildren`/`syncJoins`/join resolution.
 4. Referenced entities are separate rows with FKs; never re-introduce inline/binary embedding.
-5. `guid` (UUID v7) is the single row identity; `referenceID` is legacy.
+5. `guid` (UUID v7) is the single row identity. `referenceID` no longer exists as an attribute:
+   zoxweb-core's `ReferenceID` interface aliases `get/setReferenceID` to `get/setGUID` (default
+   methods) and `NVC_REFERENCE_ID` is gone from `ReferenceIDDAO`'s meta — so `lookupByReferenceID`/
+   `isValidReferenceID` operate on GUIDs, and no exclusion set is needed (`AttrKind.EXCLUDED`
+   remains only as the defensive classification for a null NVConfig).

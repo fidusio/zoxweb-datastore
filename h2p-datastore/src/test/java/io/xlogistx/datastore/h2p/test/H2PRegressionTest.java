@@ -7,7 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
+import org.zoxweb.shared.db.QueryGroup;
+import org.zoxweb.shared.db.QueryMarker;
+import org.zoxweb.shared.db.QueryMatchIn;
 import org.zoxweb.shared.db.QueryMatchString;
+import org.zoxweb.shared.util.Const.LogicalOperator;
 import org.zoxweb.shared.util.Const.RelationalOperator;
 import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.MetaToken;
@@ -29,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -206,7 +211,213 @@ public class H2PRegressionTest {
                 "IS NOT NULL must not match the row without a description");
     }
 
-    /** Entity type whose name exceeds PostgreSQL's 63-byte identifier limit (hashed by sqlName). */
+    private static PropertyDAO namedProp(String name, String description) {
+        PropertyDAO pd = new PropertyDAO();
+        pd.setName(name);
+        pd.setDescription(description);
+        ds.insert(pd);
+        return pd;
+    }
+
+    /**
+     * QueryGroup parentheses: {@code desc = act AND (name = A OR name = B)} must NOT match an
+     * inactive row named B. The ungrouped control shows the SQL precedence trap the marker fixes:
+     * {@code AND} binds tighter, so {@code desc = act AND name = A OR name = B} matches it.
+     */
+    @Test
+    public void testGroupedCriteria() {
+        String tag = UUID.randomUUID().toString();
+        String act = "act-" + tag, inact = "inact-" + tag;
+        String nA = "qg-a-" + tag, nB = "qg-b-" + tag;
+        namedProp(nA, act);
+        namedProp(nB, act);
+        namedProp(nB, inact); // same name as B, but inactive
+
+        List<PropertyDAO> grouped = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
+                QueryGroup.OPEN,
+                new QueryMatchString(RelationalOperator.EQUAL, nA, "name"), LogicalOperator.OR,
+                new QueryMatchString(RelationalOperator.EQUAL, nB, "name"),
+                QueryGroup.CLOSE);
+        assertEquals(2, grouped.size(), "grouping must exclude the inactive row named B");
+
+        List<PropertyDAO> ungrouped = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
+                new QueryMatchString(RelationalOperator.EQUAL, nA, "name"), LogicalOperator.OR,
+                new QueryMatchString(RelationalOperator.EQUAL, nB, "name"));
+        assertEquals(3, ungrouped.size(),
+                "without grouping, SQL precedence ((act AND A) OR B) also matches the inactive B row");
+    }
+
+    /** QueryMatchIn: IN / NOT IN / the empty-set constant, alone and inside a compound AND. */
+    @Test
+    public void testInCriteria() {
+        String tag = UUID.randomUUID().toString();
+        String act = "act-" + tag;
+        String nA = "qi-a-" + tag, nB = "qi-b-" + tag, nC = "qi-c-" + tag;
+        namedProp(nA, act);
+        namedProp(nB, act);
+        namedProp(nC, "inact-" + tag);
+
+        assertEquals(2, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                        new QueryMatchIn<>("name", nA, nB)).size(),
+                "IN must match exactly the named set");
+
+        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                        new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
+                        new QueryMatchIn<>(true, "name", nA, nC)).size(),
+                "desc = act AND name NOT IN (A, C) must leave only the active B row");
+
+        assertEquals(0, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                        new QueryMatchIn<String>("name")).size(),
+                "IN over an empty set matches nothing");
+    }
+
+    /** LIKE / NOT_LIKE pattern criteria (appended to RelationalOperator). */
+    @Test
+    public void testLikeCriteria() {
+        String tag = UUID.randomUUID().toString();
+        namedProp("lk1-" + tag, "like");
+        namedProp("lk2-" + tag, "like");
+        namedProp("oth-" + tag, "like");
+
+        assertEquals(2, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                        new QueryMatchString(RelationalOperator.LIKE, "lk%" + tag, "name")).size(),
+                "LIKE prefix pattern must match the two lk rows");
+
+        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+                        new QueryMatchString(RelationalOperator.LIKE, "%" + tag, "name"), LogicalOperator.AND,
+                        new QueryMatchString(RelationalOperator.NOT_LIKE, "lk%", "name")).size(),
+                "NOT_LIKE must exclude the lk rows within the tag scope");
+    }
+
+    /** Unknown markers and unbalanced groups fail loudly — never silently widen the result set. */
+    @Test
+    public void testMalformedCriteriaRejected() {
+        assertThrows(IllegalArgumentException.class, () ->
+                        io.xlogistx.datastore.h2p.H2PQueryFormatter.formatWhere(new QueryMarker() {
+                        }),
+                "an unrecognized QueryMarker must be rejected, not skipped");
+        assertThrows(IllegalArgumentException.class, () ->
+                        io.xlogistx.datastore.h2p.H2PQueryFormatter.formatWhere(QueryGroup.OPEN,
+                                new QueryMatchString(RelationalOperator.EQUAL, "x", "name")),
+                "an unclosed OPEN must be rejected");
+        assertThrows(IllegalArgumentException.class, () ->
+                        io.xlogistx.datastore.h2p.H2PQueryFormatter.formatWhere(QueryGroup.CLOSE),
+                "a CLOSE without OPEN must be rejected");
+    }
+
+    // ---- Schema evolution fixtures: three meta generations of the SAME entity/table name ----
+
+    /** Generation 1: base attributes + a String field {@code keep_me}. */
+    public static class EvolvedV1 extends SetNameDescriptionDAO {
+        public static final NVConfig NVC_KEEP =
+                NVConfigManager.createNVConfig("keep_me", "v1 field", "KeepMe", false, true, String.class);
+        public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
+                "regression_evolved_dao", null, "EvolvedV1", true, false, false, false, EvolvedV1.class,
+                SharedUtil.toNVConfigList(NVC_KEEP), null, false,
+                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+
+        public EvolvedV1() {
+            super(NVC_E);
+        }
+    }
+
+    /** Generation 2: same table, {@code keep_me} unchanged, Long field {@code added_later} ADDED. */
+    public static class EvolvedV2 extends SetNameDescriptionDAO {
+        public static final NVConfig NVC_KEEP =
+                NVConfigManager.createNVConfig("keep_me", "v1 field", "KeepMe", false, true, String.class);
+        public static final NVConfig NVC_ADDED =
+                NVConfigManager.createNVConfig("added_later", "v2 field", "AddedLater", false, true, Long.class);
+        public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
+                "regression_evolved_dao", null, "EvolvedV2", true, false, false, false, EvolvedV2.class,
+                SharedUtil.toNVConfigList(NVC_KEEP, NVC_ADDED), null, false,
+                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+
+        public EvolvedV2() {
+            super(NVC_E);
+        }
+    }
+
+    /** Bad generation: same table, {@code keep_me} type CHANGED String -> Long (must be rejected). */
+    public static class EvolvedBadType extends SetNameDescriptionDAO {
+        public static final NVConfig NVC_KEEP =
+                NVConfigManager.createNVConfig("keep_me", "now a long", "KeepMe", false, true, Long.class);
+        public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
+                "regression_evolved_dao", null, "EvolvedBadType", true, false, false, false, EvolvedBadType.class,
+                SharedUtil.toNVConfigList(NVC_KEEP), null, false,
+                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+
+        public EvolvedBadType() {
+            super(NVC_E);
+        }
+    }
+
+    /**
+     * Schema evolution: the first touch of a type runs one INFORMATION_SCHEMA.COLUMNS probe —
+     * a pre-existing table gets additive {@code ALTER TABLE ADD COLUMN IF NOT EXISTS} for added
+     * attributes (old rows read them at defaults, new rows round-trip), while a changed column
+     * type is rejected loudly (never auto-ALTERed). Per-store caches make the sync run once.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testSchemaEvolution() {
+        String url = "jdbc:h2:mem:h2p_evolution_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
+        String oldGuid;
+
+        H2PDataStore v1 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        try {
+            EvolvedV1 e1 = new EvolvedV1();
+            e1.setName("evolved-v1");
+            ((org.zoxweb.shared.util.NVBase<String>) e1.lookup("keep_me")).setValue("original");
+            v1.insert(e1);
+            oldGuid = e1.getGUID();
+        } finally {
+            v1.close();
+        }
+
+        // Reopen the same DB with the V2 meta (fresh store instance = fresh caches).
+        H2PDataStore v2 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        try {
+            // Read path first: tableExists -> one-time sync must ALTER in "added_later".
+            EvolvedV2 old = (EvolvedV2) v2.searchByID(EvolvedV2.NVC_E, oldGuid).get(0);
+            assertEquals("original", old.lookup("keep_me").getValue(),
+                    "pre-evolution data must survive the additive sync");
+            assertEquals(((org.zoxweb.shared.util.NVBase<Long>) new EvolvedV2().lookup("added_later")).getValue(),
+                    ((org.zoxweb.shared.util.NVBase<Long>) old.lookup("added_later")).getValue(),
+                    "an added attribute reads as default on pre-evolution rows (missing-key semantics)");
+
+            // Write path: the cached INSERT SQL includes the added column — must work now.
+            EvolvedV2 e2 = new EvolvedV2();
+            e2.setName("evolved-v2");
+            ((org.zoxweb.shared.util.NVBase<String>) e2.lookup("keep_me")).setValue("newer");
+            ((org.zoxweb.shared.util.NVBase<Long>) e2.lookup("added_later")).setValue(123L);
+            v2.insert(e2);
+            EvolvedV2 read = (EvolvedV2) v2.searchByID(EvolvedV2.NVC_E, e2.getGUID()).get(0);
+            assertEquals("newer", read.lookup("keep_me").getValue());
+            assertEquals(Long.valueOf(123L),
+                    ((org.zoxweb.shared.util.NVBase<Long>) read.lookup("added_later")).getValue(),
+                    "the added attribute must round-trip on new rows");
+        } finally {
+            v2.close();
+        }
+
+        // A changed column type (String -> Long) must be rejected loudly, never auto-ALTERed.
+        H2PDataStore bad = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        try {
+            EvolvedBadType b = new EvolvedBadType();
+            b.setName("evolved-bad");
+            org.zoxweb.shared.api.APIException mismatch = assertThrows(
+                    org.zoxweb.shared.api.APIException.class, () -> bad.insert(b),
+                    "a changed column type must be rejected");
+            assertTrue(mismatch.getMessage().contains("SCHEMA TYPE MISMATCH"),
+                    "the rejection must be explicit: " + mismatch.getMessage());
+        } finally {
+            bad.close();
+        }
+    }
+
+    /** Entity type whose name exceeds PostgreSQL's 63-byte identifier limit (must be REJECTED). */
     public static class LongNameDAO extends SetNameDescriptionDAO {
         public static final NVConfigEntity NVC_LONG_NAME_DAO = new NVConfigEntityPortable(
                 "regression_very_long_entity_type_name_that_exceeds_the_postgresql_identifier_limit",
@@ -219,6 +430,20 @@ public class H2PRegressionTest {
         }
     }
 
+    /** Entity type whose name contains non-ASCII characters (must be REJECTED). */
+    public static class NonAsciiNameDAO extends SetNameDescriptionDAO {
+        public static final NVConfigEntity NVC_NON_ASCII_NAME_DAO = new NVConfigEntityPortable(
+                "propriété_dao",
+                null, "NonAsciiNameDAO", true, false, false, false, NonAsciiNameDAO.class,
+                SharedUtil.toNVConfigList(), null, false,
+                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+
+        public NonAsciiNameDAO() {
+            super(NVC_NON_ASCII_NAME_DAO);
+        }
+    }
+
+    /** {@code sqlName} hashing still applies to COMPOSED identifiers (join tables, FK/index names). */
     @Test
     public void testSqlNameIdentifierLimit() {
         assertEquals("short_name", io.xlogistx.datastore.h2p.H2PUtil.sqlName("short_name"),
@@ -231,15 +456,38 @@ public class H2PRegressionTest {
         assertFalse(a.equals(b), "names differing only past the cut must not collide");
     }
 
+    /**
+     * User-controlled names are validated, never mangled: the datastore gate
+     * ({@code H2PUtil.checkNameForSQL}, run once per type from {@code attrInfos}) rejects an entity
+     * type name over PostgreSQL's 63-byte identifier limit or containing non-ASCII characters with
+     * an actionable IllegalArgumentException on first use — the caller fixes the name at its source.
+     * (zoxweb-core's NVConfigPortable.setName does not validate; this gate is the enforcement.)
+     */
     @Test
-    public void testLongEntityTypeNameRoundTrip() {
+    public void testIllegalEntityTypeNamesRejected() {
         LongNameDAO ln = new LongNameDAO();
         ln.setName("long-" + UUID.randomUUID());
-        ds.insert(ln); // table name is hashed to <=63 chars, consistently for DDL and DML
-        LongNameDAO read = (LongNameDAO) ds.searchByID(LongNameDAO.class.getName(), ln.getGUID()).get(0);
-        assertEquals(ln.getName(), read.getName());
+        IllegalArgumentException tooLong =
+                assertThrows(IllegalArgumentException.class, () -> ds.insert(ln),
+                        "an entity type name over 63 bytes must be rejected, not hashed");
+        assertTrue(tooLong.getMessage().contains("63"),
+                "the rejection must name the 63-byte limit: " + tooLong.getMessage());
+
+        NonAsciiNameDAO na = new NonAsciiNameDAO();
+        na.setName("non-ascii-" + UUID.randomUUID());
+        IllegalArgumentException nonAscii =
+                assertThrows(IllegalArgumentException.class, () -> ds.insert(na),
+                        "a non-ASCII entity type name must be rejected");
+        assertTrue(nonAscii.getMessage().contains("non-ASCII"),
+                "the rejection must name the ASCII requirement: " + nonAscii.getMessage());
     }
 
+    /**
+     * The valve caps only open-ended predicate searches. Guid-list reads — searchByID, nextBatch
+     * pages, and entity-collection resolution — are bounded by their id list and must NEVER be
+     * capped (a cap there silently drops rows/children, and a follow-up update would persist the
+     * loss by resyncing the join table from the truncated in-memory state).
+     */
     @Test
     public void testMaxSelectResultsValve() {
         org.zoxweb.shared.api.APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
@@ -247,13 +495,43 @@ public class H2PRegressionTest {
         cfg.getProperties().build(H2PDSCreator.H2PParam.MAX_SELECT_RESULTS.getName(), "2");
         H2PDataStore capped = new H2PDSCreator().createAPI(null, cfg);
         try {
+            String[] guids = new String[5];
             for (int i = 0; i < 5; i++) {
                 PropertyDAO pd = new PropertyDAO();
                 pd.setName("valve-" + i);
                 capped.insert(pd);
+                guids[i] = pd.getGUID();
             }
             List<PropertyDAO> found = capped.search(PropertyDAO.NVC_PROPERTY_DAO, null);
-            assertEquals(2, found.size(), "MAX_SELECT_RESULTS must cap the SELECT");
+            assertEquals(2, found.size(), "MAX_SELECT_RESULTS must cap the search SELECT");
+
+            // searchByID is a guid-list lookup — never capped.
+            assertEquals(5, capped.searchByID(PropertyDAO.NVC_PROPERTY_DAO, guids).size(),
+                    "searchByID must return every requested id despite the valve");
+
+            // batchSearch/nextBatch IS the pagination mechanism — the guid report must be complete
+            // and the id-list page fetches are never capped (the dump relies on both).
+            org.zoxweb.shared.api.APISearchResult<Object> report =
+                    capped.batchSearch(PropertyDAO.NVC_PROPERTY_DAO);
+            assertEquals(5, report.size(),
+                    "the batchSearch guid report must list every match despite the valve");
+            org.zoxweb.shared.api.APIBatchResult<org.zoxweb.shared.util.NVEntity> page =
+                    capped.nextBatch(report, 0, 5);
+            assertEquals(5, page.getBatch().size(),
+                    "a nextBatch page larger than the valve must not be truncated");
+
+            // Entity-collection resolution fetches children by guid list — never capped.
+            org.zoxweb.datastore.test.DSConst.ComplexTypes ct =
+                    org.zoxweb.datastore.test.DSConst.ComplexTypes.buildComplex("valve-collection");
+            capped.insert(ct); // buildComplex populates a 3-element entity collection (> valve)
+            org.zoxweb.datastore.test.DSConst.ComplexTypes read =
+                    (org.zoxweb.datastore.test.DSConst.ComplexTypes) capped
+                            .searchByID(org.zoxweb.datastore.test.DSConst.ComplexTypes.class.getName(),
+                                    ct.getGUID()).get(0);
+            assertEquals(3,
+                    ((org.zoxweb.shared.util.NVEntityReferenceList) read.lookup("array_of_all_types"))
+                            .values().length,
+                    "collection resolution must return every child despite the valve");
         } finally {
             capped.close();
         }

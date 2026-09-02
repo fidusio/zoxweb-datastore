@@ -12,10 +12,8 @@ package io.xlogistx.datastore.h2p;
 import org.zoxweb.shared.util.*;
 
 import java.io.File;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -49,17 +47,13 @@ public final class H2PUtil {
     /** Storage kind of an entity attribute. */
     public enum AttrKind {
         PK,               // the guid primary key
-        EXCLUDED,         // not persisted (reference_id)
+        EXCLUDED,         // not persisted (defensive: null NVConfig)
         SCALAR,           // typed column
         BLOB,             // bytea column
         ENTITY_REF,       // uuid FK column -> child table
         ENTITY_COLLECTION,// join table
         SCHEMALESS        // json (varchar) column
     }
-
-
-    public static final Set<String> META_INSERT_EXCLUSION = Collections.unmodifiableSet(
-            new HashSet<>(Arrays.asList(MetaToken.REFERENCE_ID.getName())));
 
     /**
      * Reserved-ID attributes persisted as native {@code uuid} columns — same set
@@ -82,10 +76,6 @@ public final class H2PUtil {
         return nvc != null && (RESERVED_UUID_NAMES.contains(nvc.getName()) || nvc.isTypeReferenceID());
     }
 
-    public static boolean excludeMeta(Set<String> exclusion, String name) {
-        return exclusion.contains(name);
-    }
-
     /** Quote an identifier (case preserved) — portable across H2 and PostgreSQL. */
     public static String q(String ident) {
         return "\"" + ident.replace("\"", "\"\"") + "\"";
@@ -95,11 +85,52 @@ public final class H2PUtil {
     public static final int MAX_IDENTIFIER_LENGTH = 63;
 
     /**
-     * Make an identifier safe for PostgreSQL's 63-byte limit: names within the limit pass through
-     * unchanged; longer ones are truncated and suffixed with a hash of the <b>full</b> name
-     * ({@code <54 chars>_<8-hex-crc32>}), so two long names that differ only past the cut can't
-     * silently collide the way server-side truncation would. Deterministic — the same long name
-     * always maps to the same identifier (DDL and DML stay consistent).
+     * Validate a <b>user-controlled</b> name (entity type / attribute) as a SQL identifier source.
+     * These names become SQL identifiers verbatim, so the datastore REJECTS bad ones instead of
+     * mangling them: they must be printable ASCII and at most {@link #MAX_IDENTIFIER_LENGTH} (63)
+     * bytes — PostgreSQL's identifier limit, the lowest of any mainstream engine and the one engine
+     * that silently TRUNCATES overlong identifiers instead of erroring (silent truncation lets two
+     * long names collide into one). ASCII guarantees chars == UTF-8 bytes, keeping every identifier
+     * computation in this module exact. Identifiers the datastore <b>composes itself</b> (join
+     * tables, FK/index names) are hashed by {@link #sqlName} instead — the caller can't shorten those.
+     *
+     * @param kind what the name is, for the error message (e.g. "entity type", "attribute")
+     * @param name the name to validate
+     * @throws IllegalArgumentException on violation, with an actionable message — fix the name at
+     *                                  its source (the NVConfigEntity / NVConfig definition)
+     */
+    public static void checkNameForSQL(String kind, String name) {
+        if (name == null || name.isEmpty()) {
+            throw new IllegalArgumentException("ILLEGAL SQL IDENTIFIER: " + kind + " name is null or empty");
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c < 0x20 || c > 0x7E) {
+                throw new IllegalArgumentException("ILLEGAL SQL IDENTIFIER: " + kind + " name '" + name
+                        + "' contains a non-ASCII or control character (index " + i + ", U+"
+                        + String.format("%04X", (int) c) + "). This datastore maps names to SQL identifiers"
+                        + " verbatim and requires printable ASCII."
+                        + " FIX YOUR CODE: rename it at the source (the NVConfigEntity/NVConfig definition).");
+            }
+        }
+        if (name.length() > MAX_IDENTIFIER_LENGTH) {
+            throw new IllegalArgumentException("ILLEGAL SQL IDENTIFIER: " + kind + " name '" + name + "' is "
+                    + name.length() + " bytes — the maximum is " + MAX_IDENTIFIER_LENGTH
+                    + " (PostgreSQL's identifier limit; the server would silently TRUNCATE it and two long"
+                    + " names could collide into the same identifier)."
+                    + " FIX YOUR CODE: shorten it at the source (the NVConfigEntity/NVConfig definition).");
+        }
+    }
+
+    /**
+     * Make a <b>composed</b> identifier (join table {@code <entity>__<attr>}, FK/index name) safe for
+     * PostgreSQL's 63-byte limit: names within the limit pass through unchanged; longer ones are
+     * truncated and suffixed with a hash of the <b>full</b> name ({@code <54 chars>_<8-hex-crc32>}),
+     * so two long names that differ only past the cut can't silently collide the way server-side
+     * truncation would. Deterministic — the same long name always maps to the same identifier (DDL
+     * and DML stay consistent). Inputs are compositions of {@link #checkNameForSQL}-validated names,
+     * so they are ASCII and {@code length()} equals the UTF-8 byte count; user-controlled names are
+     * never hashed — an over-limit or non-ASCII source name is rejected by the gate instead.
      */
     public static String sqlName(String name) {
         if (name == null || name.length() <= MAX_IDENTIFIER_LENGTH) {
@@ -116,12 +147,8 @@ public final class H2PUtil {
         if (nvc == null) {
             return AttrKind.EXCLUDED;
         }
-        String name = nvc.getName();
-        if (MetaToken.GUID.getName().equals(name)) {
+        if (MetaToken.GUID.getName().equals(nvc.getName())) {
             return AttrKind.PK;
-        }
-        if (META_INSERT_EXCLUSION.contains(name)) {
-            return AttrKind.EXCLUDED;
         }
         Class<?> mt = nvc.getMetaType();
         if (mt == byte[].class) {
@@ -164,6 +191,54 @@ public final class H2PUtil {
         if (mt == Number.class) return "varchar";
         if (mt != null && Enum.class.isAssignableFrom(mt)) return "varchar";
         return "varchar";
+    }
+
+    /**
+     * Normalize an {@code INFORMATION_SCHEMA.COLUMNS.DATA_TYPE} value (or a DDL type) to one
+     * canonical name so the schema type gate can compare what the database reports against what
+     * {@code classify}/{@code scalarColumnType} would emit — across both engines' spellings
+     * (H2 reports {@code CHARACTER VARYING}/{@code BINARY VARYING}, PostgreSQL
+     * {@code character varying}/{@code bytea}, plus the usual aliases).
+     */
+    public static String normalizeSqlType(String dbType) {
+        if (dbType == null) {
+            return "";
+        }
+        switch (dbType.trim().toLowerCase()) {
+            case "character varying":
+            case "varchar":
+            case "text":
+            case "clob":
+            case "character large object":
+                return "varchar";
+            case "binary varying":
+            case "varbinary":
+            case "blob":
+            case "binary large object":
+            case "bytea":
+                return "bytea";
+            case "int":
+            case "int4":
+            case "integer":
+                return "integer";
+            case "int8":
+            case "bigint":
+                return "bigint";
+            case "float4":
+            case "real":
+                return "real";
+            case "float8":
+            case "double precision":
+                return "double precision";
+            case "bool":
+            case "boolean":
+                return "boolean";
+            case "json":
+            case "jsonb":
+                return "jsonb";
+            default:
+                return dbType.trim().toLowerCase(); // uuid, ...
+        }
     }
 
     /** The referenced entity class for {@code ENTITY_REF} / {@code ENTITY_COLLECTION} attributes. */

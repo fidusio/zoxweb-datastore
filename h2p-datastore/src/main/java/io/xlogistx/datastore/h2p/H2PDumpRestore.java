@@ -256,13 +256,11 @@ final class H2PDumpRestore {
     /**
      * Pages through every stored row of the type ({@code batchSearch} guid report + {@code nextBatch}
      * — deterministic order, memory bounded by one batch) and feeds acyclic entities to {@code sink}.
-     * The page size is clamped to {@code MAX_SELECT_RESULTS} when that valve is set, otherwise the
-     * id-list fetch behind {@code nextBatch} would be silently LIMIT-truncated.
+     * {@code MAX_SELECT_RESULTS} needs no handling here: the valve caps only open-ended predicate
+     * searches, never the guid-list fetches behind {@code nextBatch}.
      */
     private void forEachStored(NVConfigEntity nvce, EntitySink sink, long[] counts) {
         int batch = DEFAULT_BATCH_SIZE;
-        int maxResults = ds.intParam(H2PDSCreator.H2PParam.MAX_SELECT_RESULTS, 0);
-        if (maxResults > 0) batch = Math.min(batch, maxResults);
         APISearchResult<Object> report = ds.batchSearch(nvce);
         for (int i = 0; i < report.size(); i += batch) {
             APIBatchResult<NVEntity> page = ds.nextBatch(report, i, batch);

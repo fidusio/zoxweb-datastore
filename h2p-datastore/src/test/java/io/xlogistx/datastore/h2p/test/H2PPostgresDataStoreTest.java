@@ -54,6 +54,11 @@ public class H2PPostgresDataStoreTest {
     /** Target database name; auto-created if missing. Override with -Dh2p.pg.db. */
     private static final String DB_NAME = System.getProperty("h2p.pg.db", "testpostgres");
 
+    // Kept for tests that need FRESH store instances against the same DB (schema evolution).
+    private static String pgTargetUrl;
+    private static String pgUser;
+    private static String pgPassword;
+
     @BeforeAll
     @SuppressWarnings("unused")
     public static void setup() throws Exception {
@@ -76,15 +81,22 @@ public class H2PPostgresDataStoreTest {
 
         ensureDatabase(maintenanceUrl, user, password, DB_NAME);
 
-        H2PDSCreator creator = new H2PDSCreator();
-        APIConfigInfo cfg = creator.toAPIConfigInfo(targetUrl, user, password);
-        cfg.getProperties().build(H2PDSCreator.H2PParam.DRIVER.getName(), "org.postgresql.Driver");
-
-        ds = new H2PDataStore();
-        ds.setAPIConfigInfo(cfg);
-        ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+        pgTargetUrl = targetUrl;
+        pgUser = user;
+        pgPassword = password;
+        ds = newStore();
         OPSecUtil.singleton();
         System.out.println("Live PostgreSQL target: " + targetUrl);
+    }
+
+    /** A fresh datastore instance (fresh caches) against the target database. */
+    private static H2PDataStore newStore() {
+        APIConfigInfo cfg = new H2PDSCreator().toAPIConfigInfo(pgTargetUrl, pgUser, pgPassword);
+        cfg.getProperties().build(H2PDSCreator.H2PParam.DRIVER.getName(), "org.postgresql.Driver");
+        H2PDataStore store = new H2PDataStore();
+        store.setAPIConfigInfo(cfg);
+        store.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
+        return store;
     }
 
     /** Create the test database if it does not already exist (CREATE DATABASE cannot run in a txn). */
@@ -335,9 +347,81 @@ public class H2PPostgresDataStoreTest {
         }
     }
 
-    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    /**
+     * Schema evolution on live PostgreSQL (same scenario as
+     * {@code H2PRegressionTest.testSchemaEvolution}, fixtures reused): V1 creates the table and
+     * writes; a fresh V2 store's first READ triggers the one-time additive sync (a real
+     * {@code ALTER TABLE ADD COLUMN IF NOT EXISTS} on PG), old data survives, the added attribute
+     * defaults on old rows and round-trips on new ones; a changed column type (String -> Long) is
+     * rejected with SCHEMA TYPE MISMATCH. The table is dropped first so re-runs are deterministic.
+     */
     @Test
     @Order(9)
+    @SuppressWarnings("unchecked")
+    public void schemaEvolutionOnLivePG() throws SQLException {
+        Connection c = ds.connect();
+        try (Statement s = c.createStatement()) {
+            s.execute("DROP TABLE IF EXISTS \"regression_evolved_dao\"");
+        } finally {
+            c.close(); // pooled: returns to the pool
+        }
+
+        String oldGuid;
+        H2PDataStore v1 = newStore();
+        try {
+            H2PRegressionTest.EvolvedV1 e1 = new H2PRegressionTest.EvolvedV1();
+            e1.setName("pg-evolved-v1");
+            ((org.zoxweb.shared.util.NVBase<String>) e1.lookup("keep_me")).setValue("original");
+            v1.insert(e1);
+            oldGuid = e1.getGUID();
+        } finally {
+            v1.close();
+        }
+
+        H2PDataStore v2 = newStore();
+        try {
+            H2PRegressionTest.EvolvedV2 old = (H2PRegressionTest.EvolvedV2)
+                    v2.searchByID(H2PRegressionTest.EvolvedV2.NVC_E, oldGuid).get(0);
+            assertEquals("original", old.lookup("keep_me").getValue(),
+                    "pre-evolution data must survive the additive sync on live PG");
+            assertEquals(
+                    ((org.zoxweb.shared.util.NVBase<Long>)
+                            new H2PRegressionTest.EvolvedV2().lookup("added_later")).getValue(),
+                    ((org.zoxweb.shared.util.NVBase<Long>) old.lookup("added_later")).getValue(),
+                    "an added attribute reads as default on pre-evolution rows");
+
+            H2PRegressionTest.EvolvedV2 e2 = new H2PRegressionTest.EvolvedV2();
+            e2.setName("pg-evolved-v2");
+            ((org.zoxweb.shared.util.NVBase<String>) e2.lookup("keep_me")).setValue("newer");
+            ((org.zoxweb.shared.util.NVBase<Long>) e2.lookup("added_later")).setValue(123L);
+            v2.insert(e2);
+            H2PRegressionTest.EvolvedV2 read = (H2PRegressionTest.EvolvedV2)
+                    v2.searchByID(H2PRegressionTest.EvolvedV2.NVC_E, e2.getGUID()).get(0);
+            assertEquals(Long.valueOf(123L),
+                    ((org.zoxweb.shared.util.NVBase<Long>) read.lookup("added_later")).getValue(),
+                    "the added attribute must round-trip on live PG");
+        } finally {
+            v2.close();
+        }
+
+        H2PDataStore bad = newStore();
+        try {
+            H2PRegressionTest.EvolvedBadType b = new H2PRegressionTest.EvolvedBadType();
+            b.setName("pg-evolved-bad");
+            org.zoxweb.shared.api.APIException mismatch = org.junit.jupiter.api.Assertions.assertThrows(
+                    org.zoxweb.shared.api.APIException.class, () -> bad.insert(b),
+                    "a changed column type must be rejected on live PG");
+            assertTrue(mismatch.getMessage().contains("SCHEMA TYPE MISMATCH"),
+                    "the rejection must be explicit: " + mismatch.getMessage());
+        } finally {
+            bad.close();
+        }
+        System.out.println("schema evolution verified on live PostgreSQL");
+    }
+
+    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    @Test
+    @Order(10)
     public void listAllTables() {
         java.util.List<String> tables = new java.util.ArrayList<>();
         Connection c = ds.connect();
