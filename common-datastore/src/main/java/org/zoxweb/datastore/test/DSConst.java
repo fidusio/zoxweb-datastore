@@ -9,7 +9,7 @@ import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
 import org.zoxweb.shared.security.SubjectIdentifier;
-import org.zoxweb.shared.security.shiro.RealmController;
+import org.zoxweb.shared.security.RealmController;
 import org.zoxweb.shared.util.*;
 
 import javax.crypto.SecretKey;

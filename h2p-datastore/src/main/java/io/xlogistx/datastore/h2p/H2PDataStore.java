@@ -276,6 +276,16 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return txConnection.get();
     }
 
+    /**
+     * True while an ambient transaction started by {@link #beginTransaction()} is bound to the
+     * calling thread. Callers use it to join an existing transaction instead of nesting one,
+     * which {@link #beginTransaction()} rejects.
+     */
+    @Override
+    public boolean isTransactionActive() {
+        return txConnection.get() != null;
+    }
+
     /** Run a DDL statement on its own auto-committed connection (never the ambient transaction connection). */
     private void execDDL(String sql) {
         Connection con = null;

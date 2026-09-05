@@ -26,16 +26,28 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for {@link DomainSecurityManager} backed by the real
+ * Integration tests for {@link DomainSecurityManager} backed by the real {@link H2PDataStore}
+ * (H2 or PostgreSQL, selected by one JDBC URL).
  * <p>
  * These mirror {@code DomainSecurityManagerDefaultTest} (which runs against a mock store) but
- * exercise the actual Mongo persistence path. Each test uses a fresh, unique principal / entity
- * name (UUID-suffixed) so the suite is safe to re-run against a persistent database. The tests
- * do not delete anything — all created data is left in the store for inspection.
+ * exercise the actual SQL persistence path: subjects, principals, credentials, permissions,
+ * roles, role groups, their grants, and transactional rollback.
+ * <p>
+ * The suite is auto-skipped unless {@code -Dds.url} is set. The URL is parsed with
+ * {@link H2PUtil#parseJdbcURL} and the setup branches on the engine:
+ * <ul>
+ *   <li>H2 (mem/file/tcp): {@code -Dds.url=jdbc:h2:mem:dsm;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}, or an
+ *       encrypted file DB with {@code ;CIPHER=AES} in the URL plus {@code -Dds.file_password}.</li>
+ *   <li>PostgreSQL: {@code -Dds.url=jdbc:postgresql://host:5432} (base endpoint); the target database
+ *       ({@code -Dds.db}, default {@code testdb}) is created if missing.</li>
+ * </ul>
+ * {@code -Dds.user} / {@code -Dds.password} apply to both engines.
+ * <p>
+ * Each test uses a fresh, unique principal / entity name (UUID-suffixed) so the suite is safe to
+ * re-run against a persistent database. The tests do not delete anything - all created data is
+ * left in the store for inspection.
  */
 public class H2PDomainSecurityManagerDBTest {
-    // replicaSet=rs0 targets the replica set (required for transactions).
-
 
     private static final String PASSWORD = "Secret123!";
     private static final String NEW_PASSWORD = "N3wSecret456$";
@@ -76,7 +88,7 @@ public class H2PDomainSecurityManagerDBTest {
             String host = parsed.getValue(H2PUtil.JDBC_HOST);
             Object port = parsed.getValue(H2PUtil.JDBC_PORT);
             String base = "jdbc:postgresql://" + host + (port != null ? ":" + port : "");
-            String targetDb = firstNonEmpty(parsed.getValue(H2PUtil.JDBC_DATABASE), DB_NAME, "testpostgres");
+            String targetDb = firstNonEmpty(parsed.getValue(H2PUtil.JDBC_DATABASE), DB_NAME, "testdb");
             ensureDatabase(base + "/postgres", user, password, targetDb);
             String targetUrl = base + "/" + targetDb;
             cfg = H2PDSCreator.toAPIConfigInfo(targetUrl, user, password); // auto-selects the postgres driver

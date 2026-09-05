@@ -12,7 +12,6 @@
     <artifactId>h2p-datastore</artifactId>
 
     <properties>
-        <h2.version>2.4.240</h2.version>
         <postgres.version>42.7.13</postgres.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <jdk.version>25</jdk.version>

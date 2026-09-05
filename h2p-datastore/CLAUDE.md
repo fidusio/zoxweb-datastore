@@ -540,6 +540,14 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   -Dds.url=jdbc:postgresql://host:5432 -Dds.user=… -Dds.password=…   # -Dds.db optional
   ```
 
+## Session log — 2026-09-02
+
+- **`isTransactionActive()`** implemented on `H2PDataStore` (true while the thread-local ambient
+  connection from `beginTransaction()` is bound). Backs the new `APIDataStore` default (false) added
+  in zoxweb-core; `xlogistx-shiro-ds`'s manager uses it to join a caller's transaction instead of
+  nesting (which `beginTransaction()` rejects). `H2PDomainSecurityManagerDBTest` class Javadoc
+  rewritten (it described the retired Mongo path). Both suites re-verified: 10/10 H2, 10/10 PG.
+
 ## Session log — 2026-09-01 (all tested: 68/68 local H2; PG suite 73/73 verified live on lax-2.xlogistx.io)
 
 1. **`MAX_SELECT_RESULTS` scoped to predicate searches only** (`capResults` flag on `select()`);
@@ -558,6 +566,25 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
 
 Next agreed work item: **performance Tier 1** (section above). The user provides SecurityController
 integration separately.
+
+## Pending design: encrypted fields and files (2026-09-04, not started)
+
+Design page section 6: https://claude.ai/code/artifact/61b80405-b4b9-48f6-a1b1-dd915e119f5e
+Once zoxweb-core's crypto rework is installed (`EncryptedData` `|`-joined GCM record,
+`EncapsulatedKey` with `wrapped_key` text column, VX file container in `AESCrypt`), this store owes:
+1. `FilterType.ENCRYPT`/`ENCRYPT_MASK` columns: write the `EncryptedData` canonical string into the
+   existing varchar column via `SecurityController.encryptValue`, decrypt on read; refuse indexes on
+   such columns (proposal K1/K4 on the page).
+2. Entity keys: create `EncapsulatedKey` rows lazily on first encrypted write, delete with the entity.
+   Key rows are looked up by (`reference_guid`, `subject_guid`) — unique index on that pair; the row
+   GUID takes no part in the crypto (core decision 2026-09-04). `EncapsulatedKey` extends
+   `EncryptedData` (typed columns, no text blob) with `key_guid` and `key_size`; inline records
+   carry no key pointer — the store resolves the key from the owning entity's subject and GUID.
+3. Secure files (`FileInfoDAO` `isSecure()`): content through `AESCrypt` VX into `sys_file_version`;
+   per-version bookkeeping is **this store's** (core deleted `EncryptedContentRef`): add columns for
+   `kid`, the 38-byte header (base64url, from `AESCrypt.getLastHeader()`), `cipher_length`,
+   `plain_length`; remote locations via `resource_locator`/`resource_id`/`remote_file_info_dao`.
+4. `DoNotExpose` enforcement point may land in this read layer (decision deferred in core).
 
 ## Ground rules for future sessions
 1. Keep the SQL PostgreSQL-portable; route every dialect difference through `H2PDialect`.

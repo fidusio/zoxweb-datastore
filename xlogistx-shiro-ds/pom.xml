@@ -1,111 +1,85 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
-        <groupId>io.xlogistx</groupId>
-        <artifactId>xlogistx-mvn</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <groupId>org.zoxweb</groupId>
+        <artifactId>zoxweb-datastore</artifactId>
+        <version>1.0.0</version>
     </parent>
 
-    <groupId>org.zoxweb</groupId>
-    <artifactId>zoxweb-datastore</artifactId>
-    <version>1.0.0</version>
-    <packaging>pom</packaging>
-
-
-    <modules>
-        <module>common-datastore</module>
-        <module>mongo-legacy</module>
-        <module>hibernate</module>
-        <module>mongo-sync</module>
-        <module>zoxweb-jdbc</module>
-        <module>xlogistx-datastore</module>
-
-        <module>h2p-datastore</module>
-        <module>xlogistx-shiro-ds</module>
-        <!--        <module>common</module>-->
-    </modules>
-
+    <artifactId>xlogistx-shiro-ds</artifactId>
 
     <properties>
-        <h2.version>2.4.240</h2.version>
+        <!-- Same target as h2p-datastore, which the integration tests run against. -->
+        <jdk.version>25</jdk.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <url>http://maven.apache.org</url>
-
-
     <dependencies>
-
-
+        <!-- DomainSecurityManager, APIDataStore, the security entities (SubjectIdentifier, CIPassword,
+             SubjectAPIKey, PermissionInfo/RoleInfo/RoleGroupInfo and the grants). -->
         <dependency>
             <groupId>org.zoxweb</groupId>
             <artifactId>zoxweb-core</artifactId>
             <version>${zoxweb-core.version}</version>
         </dependency>
-        <dependency>
 
-            <groupId>com.github.f4b6a3</groupId>
-            <artifactId>uuid-creator</artifactId>
-            <version>${uuid.gen.version}</version>
-        </dependency>
-
-
+        <!-- Existing Shiro integration reused as-is: DomainUsernamePasswordToken, DomainAuthenticationInfo,
+             DomainPrincipalCollection, CredentialsInfoMatcher, ShiroSecurityManager, ShiroUtil. -->
         <dependency>
             <groupId>io.xlogistx</groupId>
             <artifactId>xlogistx-shiro</artifactId>
             <version>${xlogistx.version}</version>
         </dependency>
-        <dependency>
-            <groupId>io.xlogistx</groupId>
-            <artifactId>xlogistx-opsec</artifactId>
-            <version>${xlogistx.version}</version>
-        </dependency>
 
+        <!-- Apache Shiro: AuthorizingRealm, SecurityManager, Subject, caches. -->
         <dependency>
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-core</artifactId>
             <version>${apache.shiro.version}</version>
         </dependency>
-
         <dependency>
             <groupId>javax.cache</groupId>
             <artifactId>cache-api</artifactId>
             <version>${javax-cache.version}</version>
         </dependency>
-
         <dependency>
             <groupId>org.ehcache</groupId>
             <artifactId>ehcache</artifactId>
             <version>${ehcache-org.version}</version>
         </dependency>
-
-
-        <!--       <dependency>-->
-        <!--            <groupId>com.google.code.gson</groupId>-->
-        <!--            <artifactId>gson</artifactId>-->
-        <!--        </dependency>-->
-
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
         </dependency>
-
         <dependency>
             <groupId>commons-logging</groupId>
             <artifactId>commons-logging</artifactId>
             <version>${common.logging.version}</version>
         </dependency>
+
+        <!-- Tests: the real store (H2 in-memory, or PostgreSQL via -Dds.url) and JUnit. -->
+        <dependency>
+            <groupId>org.zoxweb</groupId>
+            <artifactId>h2p-datastore</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>junit-jupiter-params</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-
-
     </dependencies>
 
 </project>
