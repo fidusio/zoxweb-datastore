@@ -5,6 +5,8 @@ zoxweb-core): persistence through **any** `APIDataStore`, authentication / autho
 through **Apache Shiro 1.13**. Package `io.xlogistx.shiro.ds`, JDK 25 (same as h2p-datastore, which
 the tests run against). Design page (architecture, decisions, phases):
 https://claude.ai/code/artifact/61b80405-b4b9-48f6-a1b1-dd915e119f5e
+Diagrams (module dependencies, runtime relationships, entity relationships):
+https://claude.ai/code/artifact/c07aba5f-1ad8-4f30-a6a2-67229c4514d9
 
 Nothing here imports h2p-datastore; only the test binds the manager to `H2PDataStore`.
 
@@ -428,3 +430,46 @@ encapsulated key ‖ sealed key, split at `key_size`; private key out of core's 
 `SubjectPublicKey`, but signing and wrapping keys should not share a table). Datastore side (H2P
 hooks incl. file bookkeeping, shiro-ds subject keys) still pending. Verified this repo against
 the reinstalled jars: build green, shiro-ds 36/36 on H2 and PostgreSQL, h2p 10/10.
+
+**2026-09-05 (design page revision)** — legacy `shared.security.shiro` package deleted from core
+(commit cd36d329, 2026-09-04; `APIAppManagerProvider` kept, cleanup step 5 open). **K20 / decision
+22:** `EncapsulatedKey` is **one-to-one** with the NVEntity it protects — `reference_guid` is that
+entity's GUID (the subject's own GUID for a subject key), exactly one row per entity, found by
+`reference_guid` alone, unique index on that column in H2P. Sharing is a permission grant, never a
+second key row; an ML-KEM row is the same single row wrapped for a private-key holder, and a device
+gets the *subject* key rather than one row per entity (the earlier "one row per recipient" wording
+was withdrawn). Decision 23: authorization must support **RBAC + ABAC**. Pending-work matrix added
+to the page (section 13, 23 items across zoxweb-core / io-xlogistx / h2p-datastore / shiro-ds /
+no-sneak); item 1 (`kid` selects the JWT key) goes first because it removes the last lookup by
+secret. `SecurityModel` reviewed: `Permission.USER_READ` maps to the update token, no role-group
+permissions, assign/remove missing from the enum, two placeholder enums, `AppPermission` carries
+app-specific `order:*` entries, no role→permission composition; no seeder into the manager exists.
+
+**2026-09-07 (authorization model, page section 12)** — three layers over the existing storage,
+Shiro the engine for all three: **RBAC** (type-level permission via `RoleGrant` → `RoleInfo` →
+`PermissionInfo`), **ACL** (instance-level `PermissionGrant` with `permission_guid` +
+`resource_guid`, flattened to `nventity:<verbs>:<guid>`), **ABAC** (conditions evaluated at check
+time; deny is the default, no deny rules). Shiro fit: a `ConditionalPermission` in
+`AuthorizationInfo.getObjectPermissions()` whose `implies()` matches the wildcard part then
+evaluates conditions against a request-side `ResourcePermission`; ownership becomes a default
+conditional permission every subject holds (`nventity:*` where `resource.owner == subject.guid`),
+so no `self` rows. Worked case "A shares a file with B": one ACL row, grantee in `subject_guid`,
+grantor in `broker_guid`, resource in `resource_guid`; revoke = delete the row. **Decision 24:**
+instance grants through `PermissionGrant.resource_guid`, catalog rows never contain an instance or
+placeholder. **Decision 25:** new **`share`** verb — holding `nventity:share:<guid>` or owning the
+entity permits `addPermissionGrant` on it. Gaps in this module today: `addPermissionGrant` sets
+only `subject_guid`/`permission_guid` (core interface has no resource overload); `GrantFlattener`
+ignores `resource_guid` — a row with the column set flattens to `nventity:read` = read on every
+entity, so **do not set the column before the flattener change**; no ownership-or-share check on
+assign; the tests work around it with one catalog row per file+action. Pending item 23 (small,
+independent): core `addPermissionGrant(grantee, permission, resourceGUID)` + grants-by-resource
+lookup for the delete cascade; shiro-ds sets `resource_guid`/`broker_guid` and enforces owner ∨
+`nventity:share:<r>` ∨ global assign; flattener emits `token + ":" + resourceGUID`;
+`SecurityModel.SHARE` + `NVE_SHARE`. Nothing in Shiro, the realm or the caches changes.
+`SecurityModel` bug matrix (10 rows) on the page — only row 4 is live: `AppPermission` rows seeded
+by `APIAppManagerProvider.createAppID` keep literal `$$resource_guid$$`/`$$subject_guid$$`
+placeholders (only `$$app_id$$` is substituted), so the per-resource and per-order grants on every
+app role can never match. Target shape: `Target × Action` enums (`SHARE` added), one `Token` enum,
+`Role` with declared permissions, idempotent seeder in shiro-ds. Open: A1 (conditions as
+`attribute operator value` rows on the grant entities, AND-ed), A2 (no deny rules), A3 (one catalog
+row per verb; comma lists stay legal as Shiro strings).

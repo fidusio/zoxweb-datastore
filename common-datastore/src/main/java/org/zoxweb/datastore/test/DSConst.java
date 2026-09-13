@@ -1,15 +1,9 @@
 package org.zoxweb.datastore.test;
 
 
-import org.apache.shiro.authz.AuthorizationInfo;
-import org.apache.shiro.subject.PrincipalCollection;
-
 import org.zoxweb.server.security.CryptoUtil;
-import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.util.MetaUtil;
 import org.zoxweb.shared.data.SetNameDescriptionDAO;
-import org.zoxweb.shared.security.SubjectIdentifier;
-import org.zoxweb.shared.security.RealmController;
 import org.zoxweb.shared.util.*;
 
 import javax.crypto.SecretKey;
@@ -386,15 +380,15 @@ public class DSConst {
     }
 
 
-    public static void createUser(RealmController<AuthorizationInfo, PrincipalCollection> rc, String subjectID, String password)
-    {
-        if(rc.lookupSubjectIdentifier(subjectID) == null) {
-            SubjectIdentifier subjectIdentifier = new SubjectIdentifier();
-            subjectIdentifier.setSubjectID(subjectID);
-            subjectIdentifier.setSubjectType(BaseSubjectID.SubjectType.USER);
-            rc.addSubjectIdentifier(subjectIdentifier,
-                    HashUtil.toBCryptPassword(password));
-        }
-    }
+//    public static void createUser(RealmController<AuthorizationInfo, PrincipalCollection> rc, String subjectID, String password)
+//    {
+//        if(rc.lookupSubjectIdentifier(subjectID) == null) {
+//            SubjectIdentifier subjectIdentifier = new SubjectIdentifier();
+//            subjectIdentifier.setSubjectID(subjectID);
+//            subjectIdentifier.setSubjectType(BaseSubjectID.SubjectType.USER);
+//            rc.addSubjectIdentifier(subjectIdentifier,
+//                    HashUtil.toBCryptPassword(password));
+//        }
+//    }
 
 }

@@ -659,7 +659,7 @@ public class ShiroDSDomainSecurityManager
 
     @Override
     public SubjectIdentifier createSubjectID(String principalID, CredentialInfo credentialInfo) {
-        enforce(SecurityModel.PERM_ADD_USER);
+        enforce(SecurityModel.PERM_ADD_SUBJECT);
         String pid = requirePrincipal(principalID);
         try {
             return inTransaction(() -> {
