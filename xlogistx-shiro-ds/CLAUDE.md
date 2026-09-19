@@ -8,15 +8,15 @@ https://claude.ai/code/artifact/61b80405-b4b9-48f6-a1b1-dd915e119f5e
 Diagrams (module dependencies, runtime relationships, entity relationships):
 https://claude.ai/code/artifact/c07aba5f-1ad8-4f30-a6a2-67229c4514d9
 
-Nothing here imports h2p-datastore; only the test binds the manager to `H2PDataStore`.
+The manager, realm, flattener, seeder and bootstrap import no store; only `tools.SecurityAdminTool` (and the tests) bind to `H2PDataStore` (h2p-datastore is an optional compile dependency since 2026-09-16).
 
 ## Dependencies (pom)
 
 Compile: zoxweb-core, xlogistx-shiro 1.0.0 (tokens incl. `APIKeyAuthenticationToken`,
 `CredentialsInfoMatcher`, `DomainAuthenticationInfo`, `DomainPrincipalCollection`,
 `ShiroSecurityManager`, `ShiroUtil`),
-shiro-core, cache-api, ehcache, slf4j-api, commons-logging. Test: h2p-datastore 1.0.0, h2
-(`${h2.version}` is defined in the parent pom since 2026-09-02), junit-jupiter-params. Version
+shiro-core, cache-api, ehcache, slf4j-api, commons-logging, h2p-datastore 1.0.0 (**optional**, for the
+admin CLI only). Test: h2 (`${h2.version}` is defined in the parent pom since 2026-09-02), junit-jupiter-params. Version
 properties (`xlogistx.version`, `apache.shiro.version`, `junit.version`, ...) come from the
 `io.xlogistx:xlogistx-mvn` grandparent, not from this repo.
 
@@ -28,7 +28,10 @@ properties (`xlogistx.version`, `apache.shiro.version`, `junit.version`, ...) co
 | `DSAuthorizingRealm` | `AuthorizingRealm` that reads through the manager. **No-arg constructor for shiro.ini** (defaults: name `shiro-ds`, `CredentialsInfoMatcher`, authn caching off, authz caching on); the manager is bound by the manager itself, by `setDomainSecurityManager`, or lazily on first use from the `APIDataStore` registered in `ResourceManager` under `dataStoreResource` (default `Resource.DATA_STORE` = `"DataStore"`), failing loudly otherwise. Supports `DomainUsernamePasswordToken`, `APIKeyAuthenticationToken` and xlogistx-shiro's `JWTAuthenticationToken`. Authentication caching **off**; authorization cached per **subject GUID**. `evictAuthorization(guid)` / `evictAllAuthorization()`. |
 | `io.xlogistx.shiro.authc.CredentialsInfoMatcher` (xlogistx-shiro; `DSCredentialsMatcher` was **merged into it** 2026-09-03) | Passwords (hash via `SecUtil.isPasswordValid`, `autoAuthenticationEnabled` skips the check). Raw API keys: constant-time compare + `isUsable(sak)` (status/expiry). JWTs: HMAC check with the key's secret (`SecUtil.decodeJWT`), `sub` == key ID, `exp`/`nbf` with `setClockSkewMillis` (default 1 min), key scope vs claims, and for `isTimeStampRequired()` keys an `iat` inside `setJWTTimestampWindowMillis` (default 5 min) plus optional `setJWTReplayCache(JWTTokenCache)`. All knobs are bean properties (INI-settable). |
 | `io.xlogistx.shiro.authc.APIKeyAuthenticationToken` (**in xlogistx-shiro since 2026-09-03**) | Raw key token; principal = subject GUID once the realm resolved it, `toString` never prints the key. |
-| `GrantFlattener` | subject GUID → roles + permission strings: PermissionGrant → token; RoleGrant → role name + its permission tokens; RoleGroupGrant → each role, **re-read by GUID** so nested permission refs resolve. Missing catalog rows are skipped. |
+| `GrantFlattener` | subject GUID → roles + permission strings: PermissionGrant → its inlined `permission_token`, else the catalog token, **+ `:<resource_guid>` when the grant embeds a `ResourceMap`** (lower-cased, no lookup); RoleGrant → role name + its permission tokens; RoleGroupGrant → each role, **re-read by GUID** so nested permission refs resolve. Missing catalog rows are skipped. **Login scope (2026-09-18):** `flatten(dsm, guid, AppIDDefault scope)` — the realm passes the login's domain+app (`DSAuthorizingRealm.loginScopeOf(principals)`); a null scope selects the **global grants only**, an app scope selects **only the grants whose `app_id` equals that app**; the super-admin's global grants apply in every scope. Strings are always plain tokens (never prefixed). **Drops any wildcard string for a non-super-admin subject** (WARNING logged) — defense in depth behind the manager guards. |
+| `SecurityCatalogSeeder` (2026-09-16) | `seed(dsm)` / `dsm.seedCatalog()`: materialises core `SecurityModel.Permission` / `Role` / `RoleGroup` as global rows, idempotent by `(appID=null, name)`, repairs drift (token, description, permission/role sets) in one transaction, never grants. `Report` counts created/updated/existing. `seedCatalog()` enforces `permission:create` + `role:create` even when nothing needs repair. |
+| `SecurityBootstrap` (2026-09-16) | `bootstrapSuperAdmin(dsm, password)`: seed → create the super-admin subject (`SubjectType.SYSTEM`, ARGON2) if missing → grant `super_admin` once → verify by login (when created) and by a realm probe of a random permission (`Result.wildcardVerified`). `resetSuperAdminPassword`. The only path that hands out the wildcard. |
+| `tools.SecurityAdminTool` (2026-09-16, dotted params since 2026-09-16 evening) | CLI, DMTool-style `key=value` args: `command=seed-catalog\|bootstrap-super-admin\|reset-super-admin-password\|create-subject\|grant-role\|reset-password\|list-catalog`, `db.url=` (→ env `XLOGISTX_SHIRO_DB_URL` → `-Dshiro.ds.db.url`), `db.user/db.password/db.enc-key` (H2 file password), **`store=<vault> store.password=`** (2026-09-17: an io-xlogistx opsec `SecretStore` BCFKS vault, or env `XLOGISTX_SECRET_STORE`; its `db.*` text secrets fill in whatever `db.*` is absent from the command line, command line wins; password prompted once on a console; vault closed before the store opens; missing file / wrong password / no password source → exit 1 with a message), `principal.id=` (the account the command works on; for the two super-admin commands it is that store's super-admin, default `super-admin@xlogistx.io`), `password` (or double console prompt), `role=`. `create-subject` makes the domain admins (`remote-admin`, `local-admin` on offline-H2 devices; `role=domain_admin`, ARGON2) and refuses `role=super_admin` before creating anything; idempotent like bootstrap. **Domain admins are domain-driven: `<domain-app-id>:*` at most, never a bare `*`** (user, 2026-09-16); `isWildcardToken` reserves only a token whose first part is `*`, so `mydomain:*` passes the guards. **App-scoped grants (2026-09-18):** `app.id=<domain>-<app>` (`AppIDDefault.create`; or `domain.id=` + bare `app.id=`) on `create-subject` / `grant-role` scopes the role grant to that app (idempotent per scope; it applies to logins made with that domain+app); `revoke-role principal.id= role= [app.id=]` deletes that grant, `revoke-app principal.id= app.id=` deletes every grant under the app (`revokeAppGrants`), `list-grants principal.id=` prints roles / groups / permissions with `[app …]` and `by <broker>`. `run(out, err, args)` returns 0/1/2 for tests. Needs `h2p-datastore` (now an **optional compile** dependency of this module) and registers BC via `OPSecUtil.singleton()`. |
 
 ## Wiring: self-managed vs shiro.ini
 
@@ -183,6 +186,109 @@ the row-lock below.
   `PERM_ASSIGN/REMOVE_ROLE`). No subject bound → `AccessException(UNAUTHORIZED)`. A subject acting on
   its **own** principals/credentials is always allowed (`enforceSelfOr`). Off by default because
   `DMTool` and no-sneak bootstrap run with nobody logged in.
+
+## Catalog, super-admin and the reserved wildcard (built 2026-09-16; design page item 20 + issue 1)
+
+Core `SecurityModel` was rebuilt: `Target × Action` enums, `Permission` entries with fixed tokens
+(`subject:create`, `permission:assign:permission`, `nventity:read:*`, … — no placeholders, no
+instance parts), `Role` now declares `Permission[]` (`SUPER_ADMIN{super_admin_all}`, `DOMAIN_ADMIN`,
+`APP_ADMIN`, `APP_SERVICE_PROVIDER`, `APP_USER{}`, `USER{}`), new `RoleGroup` enum
+(`domain_admins`, `app_admins`, `app_users`, `service_providers`; none contains `super_admin`),
+`isWildcardToken(token)`. The `PERM_*` String constants are unchanged (callers here, opsec, ShiroUtil);
+the resource/self/private/public constants and `AppPermission` are `@Deprecated` (dead:
+`APIAppManagerProvider` has no production caller). `PermissionToken` enum removed.
+
+**The wildcard `*` (`Permission.SUPER_ADMIN_ALL`, role `super_admin`) is reserved for one account**
+— the realm property `superAdminPrincipalID` (default `super-admin@xlogistx.io`, normalized by
+`SubjectIDFilter`, INI `dsRealm.superAdminPrincipalID = …`, manager `get/setSuperAdminPrincipalID`,
+`isSuperAdminSubject(guid)`, `lookupSuperAdminSubject()`). Guards (all re-read catalog rows by GUID,
+never trust the passed object):
+
+| Path | Rule |
+|---|---|
+| `createPermission` | a wildcard token only as global `super_admin_all`, only while none exists (`IllegalArgumentException`) |
+| `updatePermission` / `deletePermission` | reserved row immutable / undeletable; no row may acquire a wildcard token |
+| `createRole` / `updateRole` / `deleteRole` | a role embedding the reserved permission only as global `super_admin`, once; reserved role immutable through the public path (`updateRoleInternal` is the seeder's) |
+| `createRoleGroup` / `updateRoleGroup` | may never embed `super_admin` |
+| `addPermissionGrant` (global) / `addRoleGrant` / `addRoleGroupGrant` | reserved permission / role / group only to the super-admin subject (`AccessException`); scoped and inlined grants already reject `*` (`isInstanceScopable`, `NVEPermissionTokenFilter`) |
+| `GrantFlattener` | drops wildcard strings for any other subject (rows smuggled in through the store) |
+
+Bootstrap is **CLI only** (user decision): `SecurityAdminTool command=bootstrap-super-admin db.url=… principal.id=… password=…`
+(or console prompt). Nothing creates the account automatically. Enforcement stays off inside the
+tool. `deleteSubjectID(superAdmin)` is allowed; recovery = rerun bootstrap. Renaming the property
+after bootstrap leaves the old account's `*` rows in place, but the flattener drops them on the next
+authorization load (setter evicts all). Tests: `SecurityCatalogDBTest` (14).
+
+## Password reset (built 2026-09-16; issue 3)
+
+**The recovery channel is an email-shaped `PrincipalIdentifier`** (user decision): a subject may
+hold several principals; self-service reset needs at least one active principal that passes
+`FilterType.EMAIL.isValid`, and the token is meant for every such address. Username-only subjects
+are reset by an admin. Core: entity `PasswordResetToken` (table `password_reset_token`:
+`principal_id`, `token_hash` = base64url SHA-256 of the clear token, `expiry_ts`, `consumed_ts`,
+`status` ACTIVE/DEACTIVATED(consumed)/INACTIVE(superseded, cancelled), `channel` EMAIL/ADMIN,
+`broker_guid`; not a `CredentialInfo`), `PasswordResetRequest` (clear token returned once, masked
+`toString`), `NoRecoveryChannelException`, `PasswordResetTokenUtil` (32 random bytes, constant-time
+compare), `ResourceManager.Resource.DOMAIN_SECURITY_MANAGER`, and six `DomainSecurityManager`
+methods (`verifyPassword` promoted to the interface; `DomainSecurityManagerDefault` implements them
+unenforced, and its `login` still has no status gate).
+
+| Call | Enforcement | Effect |
+|---|---|---|
+| `requestPasswordReset(principal)` | none (anonymous) | any principal of the subject; supersedes outstanding tokens, inserts one (EMAIL TTL = `SecStatus.PENDING_RESET_PASSWORD.getValue()` = 2 d), subject → `PENDING_RESET_PASSWORD`, returns token + email principals. Unknown/inactive → generic `SecurityException`; no email principal → `NoRecoveryChannelException` |
+| `adminResetPassword(principal)` | `subject:update` (`*` implies) | same, channel ADMIN (TTL 4 h), `broker_guid` = bound subject, works for username-only subjects |
+| `completePasswordReset(principal, token, newPassword)` | none (the token is the authorization) | row lock on the subject, outstanding token whose hash matches, `FilterType.PASSWORD` policy (its message is the only non-generic error), replaces every PASSWORD row, marks the token consumed, subject → ACTIVE, evicts authz |
+| `cancelPasswordReset(principal)` | self-or-`subject:update` | supersedes tokens, restores ACTIVE |
+| `purgeExpiredResetTokens()` | none | deletes every non-outstanding row |
+
+Realm: a `PENDING_RESET_PASSWORD` subject with **no outstanding token** (expired, all cancelled) is
+restored to ACTIVE at its next login (`activeSubject`), so an unclaimed request locks an account for
+the token lifetime only; `verifyPassword` tolerates PENDING throughout. `setResetTokenTTL(channel,
+ms)` / `getResetTokenTTL`. `deleteSubjectID` cascades the token rows. `installAsGlobal()` and
+`attach(...)` register the manager under `Resource.DOMAIN_SECURITY_MANAGER` when the slot is empty
+— that is how io-xlogistx opsec `services.PasswordReset` (endpoints `POST /opsec/password/reset-request`
+[NONE, always 202, mail sent async via `SMTPSender` from the `reset-mailer-config` property and the
+`reset-url` template], `/opsec/password/reset-confirm` [NONE, 204 / 400], `/opsec/password/admin-reset`
+[ALL + `subject:update`, returns the token]) finds it through the core interface only. Rate limiting
+is a deployment concern in front of the two anonymous endpoints. CLI: `SecurityAdminTool
+command=reset-password principal.id=<principal>` prints an ADMIN token. no-sneak `Session.changePassword`
+now calls `verifyPassword` instead of `login`. Tests: 13 `reset_*` tests here, one round trip in the
+h2p default-manager suite, `PasswordResetTokenUtilTest` in core.
+
+## Instance grants and sharing (built 2026-09-15; design page section 12, item 23)
+
+A `PermissionGrant` is **either** catalog-backed (`permission_guid`; `resource_map` optional) **or**
+inlined (`permission_token` + mandatory `resource_map`) — never both, never neither. This is a hard
+precondition (user, 2026-09-15): `PermissionGrant.validateShape()` (core) runs first in every add
+path, before any store access or enforcement. Core side (zoxweb-core, 2026-09-15): `SecurityModel.NVENTITY`,
+`NVE_SHARE_ALL`, `toNVEToken(verbs...)`, `isInstanceScopable(token)`, the
+`SecurityModel.NVEPermissionTokenFilter` `ValueFilter` wired on `PermissionGrant.permission_token`
+(normalizes to lower-case `nventity:<verbs>` with verbs ⊆ {read, update, share, delete}; no create,
+no wildcard, no instance part; rejects everything else), accessors renamed
+`get/setPermissionToken`, `ResourceMap(NVEntity)` ctor, and four `DomainSecurityManager` methods
+(also implemented in `DomainSecurityManagerDefault` without enforcement).
+
+| Call | Shape written | Enforcement (when on) |
+|---|---|---|
+| `addPermissionGrant(subject, perm)` | global catalog grant | global `permission:assign:permission` |
+| `addPermissionGrant(subject, perm, ResourceMap)` | catalog grant scoped to one entity; the catalog token must be 2-part `<ns>:<verbs>` (`isInstanceScopable`) | caller owns the resource, **or** holds `nventity:share:<guid>`, **or** global assign |
+| `addPermissionGrant(subject, ResourceMap, token)` | inlined share; token validated by the filter | caller **owns** the resource (a share holder may not inline) |
+| `deletePermissionGrant(grant)` | reloads by GUID, deletes grant **then its map row** | global `permission:remove:permission`, **or** caller is the grantor (`broker_guid`), **or** owns the resource |
+| `getPermissionGrantsByResource(guid)` | two queries: `resource_map` rows by `resource_guid`, then grants `resource_map IN (…)` | none (read) |
+| `deletePermissionGrantsByResource(guid)` | all of the above in one transaction | per grant as for delete |
+
+Common to every add path: the resource must exist (`ds.searchByID(resource_type, resource_guid)`;
+unknown class / missing row → `IllegalArgumentException`), `broker_guid` = bound subject GUID or
+null when nobody is bound (regardless of enforcement), map row + grant row are written in one
+`inTransaction`, the grantee's authorization entry is evicted. Flattened form (see `GrantFlattener`):
+`nventity:read,share:<guid>` — one Shiro string per grant; `ShiroSecurityController` checks
+`nventity:<verb>:<guid>`, Shiro's `WildcardPermission` handles the comma list. `deleteSubjectID`
+keeps grantee scope (grants *received*) and now also removes their map rows; grants the subject
+*issued* stay. H2P specifics: `resource_map` is a child table + FK column (`uuid`, indexed) — never
+`delete(grant, true)` (it would chase `app_id` too); the H2P formatter now binds a String/NVEntity
+criterion on an `ENTITY_REF` column as `uuid` (needed for the `IN` query on PostgreSQL).
+Store requirement added: grants must load `resource_map` eagerly (H2P does), otherwise map rows leak.
+Not done (still pending): ABAC conditions (A1), `SecurityModel` rework/seeder (item 20).
 
 ## What a store must provide (for "works with any APIDataStore")
 
@@ -473,3 +579,133 @@ app role can never match. Target shape: `Target × Action` enums (`SHARE` added)
 `Role` with declared permissions, idempotent seeder in shiro-ds. Open: A1 (conditions as
 `attribute operator value` rows on the grant entities, AND-ed), A2 (no deny rules), A3 (one catalog
 row per verb; comma lists stay legal as Shiro strings).
+
+**2026-09-15 (instance grants + sharing, pending item 23 — built)** — user decisions: edit core
+directly; owner-or-share check gated by `enforcePermissions`; accessors renamed
+`get/setPermissionToken`; `deleteSubjectID` keeps grantee scope + map cleanup; no schema-migration
+concerns (DB recreated); **grant = catalog XOR inlined, hard precondition**. zoxweb-core (uncommitted,
+jar reinstalled 12:27 via `mvn -o clean install -Dgpg.skip=true` — plain `mvn clean install` fails
+at the GPG sign step from this shell): `SecurityModel` (`NVENTITY`, `NVE_SHARE_ALL`, NVE_* literals
+replaced, `toNVEToken`, `isInstanceScopable`, nested `NVEPermissionTokenFilter`), `PermissionGrant`
+(filter on `permission_token`, rename, `validateShape()`), `ResourceMap(NVEntity)`,
+`DomainSecurityManager` +4 methods, `DomainSecurityManagerDefault` impl + map cleanup;
+`PermissionGrantTest` 60/60 (+13, run through the offline launcher — surefire's junit provider is
+not cached offline). h2p: `H2PQueryFormatter.normalize` public + ENTITY_REF → uuid binding;
+`H2PRegressionTest.testEntityRefCriterionBindsUUID` (24/24). shiro-ds: manager helpers
+(`currentSubjectGUID`, `holds`, `enforceGrantOnResource`, `enforceRevoke`, `insertGrant`,
+`deleteGrantAndMap`, `loadResource`, `checkCatalogTokenForScope`, `mapGUIDsForResource`), the four
+new public methods, `deletePermissionGrant` reload-by-GUID, `GrantFlattener.permissionString`.
+13 `share_*` tests: **49/49 on H2 and 49/49 on PostgreSQL** (lax-2.xlogistx.io / testdb, which is the run that proves the uuid binding fix); h2p DSM suite 10/10 on both. Runner
+`cp*.txt` bumped to JUnit 6.1.3 (`junit-platform-launcher` 6.1.2 is gone from `.m2`).
+Nothing committed.
+
+**2026-09-16 (Stream A: catalog + super-admin, issues 1+2)** — core `SecurityModel` rebuilt
+(`Target`/`Action`/`Permission`/`Role` with permissions/`RoleGroup`, `isWildcardToken`;
+`PermissionToken` removed, `AppPermission` + resource constants deprecated, `PPEncoder` overload
+dropped, `APIAppManagerProvider` renames, `SecurityModelTest` rewritten as JUnit 9/9,
+`PermissionGrantTest` 60/60). shiro-ds: realm property `superAdminPrincipalID`, manager guards on
+every catalog and grant path, flattener wildcard drop, package-private
+`createSubjectID(pid, credential, SubjectType)` / `inTransaction` / `updateRoleInternal`,
+`seedCatalog()` (enforces `permission:create` + `role:create`), `SecurityCatalogSeeder`,
+`SecurityBootstrap`, `tools.SecurityAdminTool` (h2p-datastore became an optional compile
+dependency). `SecurityCatalogDBTest` 13/13 on H2 and PostgreSQL (lax-2/testdb); existing suite
+49/49 on both. Encrypted fields (issue 4) deferred by the user. Nothing committed.
+
+**2026-09-16 (Stream B: password reset, issue 3)** — core: `PasswordResetToken`,
+`PasswordResetRequest`, `NoRecoveryChannelException`, `PasswordResetTokenUtil` (+ test 4/4),
+`ResourceManager.Resource.DOMAIN_SECURITY_MANAGER`, `DomainSecurityManager` +6 methods
+(`verifyPassword`, `requestPasswordReset`, `adminResetPassword`, `completePasswordReset`,
+`cancelPasswordReset`, `purgeExpiredResetTokens`), `DomainSecurityManagerDefault` implementations +
+token cascade; jar reinstalled (`-Dgpg.skip=true`). shiro-ds: `replacePassword` extracted from
+`updateCredential`, unenforced internal writers, `issueResetToken`, realm lazy lift of an expired
+PENDING lock, `installAsGlobal`/`attach` register the ResourceManager slot, token cascade on subject
+delete, `SecurityAdminTool reset-password`. io-xlogistx opsec `services.PasswordReset` (compiles;
+not exercised by a test). no-sneak `Session.changePassword` → `verifyPassword`. Existing test
+`verifyPassword_allowsPendingReset_whileLoginDeniesIt` now issues a real token (a bare status flip
+is lifted at login by design). Suite **62/62 on H2 and PostgreSQL**; `SecurityCatalogDBTest` 13/13
+on both; h2p default-manager suite +1 (`passwordReset_roundTrip_throughDefaultManager`). Nothing
+committed.
+
+**2026-09-16 (evening: CLI parameters)** — user decisions: no separate setup CLI; `SecurityAdminTool`
+keeps the job with **dotted parameters** `db.url`, `db.user`, `db.password`, `db.enc-key` (H2 file
+password), `principal.id`, `password`, `role`. `principal.id` is the account every command works
+on (replaces `super-admin=` and `subject=`): for `bootstrap-super-admin` / `reset-super-admin-password`
+it is that store's super-admin (the serving realm must set the same `superAdminPrincipalID`). New
+command **`create-subject`** (`principal.id=`, `password=` or prompt, optional `role=`) creates the
+domain admins — `remote-admin`, and `local-admin` for devices running an offline H2 store — with
+`role=domain_admin` (ARGON2, idempotent, role granted once). **User clarification the same
+evening: these admins are domain-driven, `<domain-app-id>:*` at most, and can never hold a bare
+`*` by themselves**; the super-admin remains the single `*` holder per store, and the guards already
+admit a domain-prefixed wildcard because `isWildcardToken` reserves only a leading `*`. Open:
+`create-subject` grants global catalog roles only (`lookupRole(null, name)`); a per-domain role
+or `<domain-app-id>:*` permission row still needs an `app.id`-scoped path.
+it refuses `role=super_admin` **before** creating the subject (the first draft created the row and
+then failed on the grant guard, leaking the account). `SecurityCatalogDBTest` 14/14 (new
+`tool_createSubject_remoteAdminWithDomainAdminRole_neverSuperAdmin`), suite 62/62, both on H2.
+Nothing committed.
+
+**2026-09-16 (late evening: live bootstrap)** — `bootstrap-super-admin` run against lax-2/testdb:
+account created, `login=verified wildcard=verified`, catalog 24/6/4 already present from the test
+runs; rerun without `password=` reported `(existing) … password unchanged`, exit 0; `list-catalog`
+also shows the many leftover test rows (`smuggled-*` wildcard permissions and role groups embedding
+`super_admin`, written straight to the store by the tests — the manager guards never allowed them
+and the flattener drops them). The account holds a throwaway password until the user resets it.
+
+**2026-09-17 (vault wiring)** — `SecurityAdminTool` resolves `db.*` from an opsec `SecretStore`
+vault: `store=<file>` (or env `XLOGISTX_SECRET_STORE`) + `store.password=` (or one console prompt);
+resolution order for `db.url` is param → vault → `XLOGISTX_SHIRO_DB_URL` → `-Dshiro.ds.db.url`, for
+`db.user/db.password/db.enc-key` param → vault. Helpers `loadVault` / `dbSetting` /
+`resolveDbUrl(param, vaultEntry, env, property)`; `store.password` hidden from logs; only the
+copied `db.*` values outlive the vault handle. Test `tool_run_dbSettingsFromSecretStore`
+(missing file, wrong password, no password source, command line beats vault, vault alone);
+`SecurityCatalogDBTest` 15/15 on H2. Operator flow smoke-tested through both `main`s
+(`SecretStore create/put/list` → `SecurityAdminTool seed-catalog store=…`). Server starters
+still resolve nothing from the vault: the realm takes its store from `ResourceManager`, and the
+code that registers it lives outside these repos. Nothing committed.
+
+## App-scoped grants and login scope (built 2026-09-18; user decisions 2026-09-17/18)
+
+**A subject's assignment to an app is one or more grants with `app_id` set** (the `AuthzInfo`
+field every grant inherits, an `AppIDDefault` = domain + app, persisted by H2P as a referenced
+row and resolved on read); removing the assignment is deleting those grants. No membership entity.
+The grantor is recorded as `broker_guid` (normally the app's admin) and may revoke what it granted.
+
+**The login decides which grants apply (user, 2026-09-18):** `loginSubject(principal, pw, domainID,
+appID)` (and the API-key / JWT logins, whose scope comes from the key) with domain+app loads
+**only the grants scoped to that app**; a login without domain/app loads **only the global grants**.
+Loaded grants flatten as plain tokens — `domain_admin`, `subject:create` — so every existing
+checker (`ShiroSecurityController`'s `nventity:<verb>:<guid>`, `ShiroUtil.isPermitted`) works
+unchanged inside an app login. **Exception: the super-admin's global grants (its `*`) apply in
+every login.** Realm: `loginScopeOf(principals)` (both `DomainPrincipalCollection` domain and app
+set; an invalid pair is logged and treated as global), authorization cache key `<guid>` for a
+global login and `<guid>|<domain-app>` for an app login, `evictAuthorization(guid)` clears every
+scope of the subject. `appScope(app)` = lower-cased `<domain>-<app>` is a label (cache keys, logs,
+CLI), never a token prefix (the prefix design of 2026-09-17 was replaced the next day).
+
+Manager extras (not on the core interface): `addRoleGrant(subject, role, AppIDDefault)`,
+`addRoleGroupGrant(subject, group, AppIDDefault)`, `addPermissionGrant(subject, permission, AppIDDefault)`
+(null app = the global grant; the `@Override` two-arg forms delegate), `getRoleGrants(guid, app)`,
+`revokeAppGrants(guid, app)` (every role / group / permission grant under the app, one transaction,
+returns the count). `deleteRoleGrant` / `deleteRoleGroupGrant` reload the row by GUID (a shell with
+a GUID suffices; unknown → false).
+
+| Rule | Where |
+|---|---|
+| Scope needs both domain and app (`IllegalArgumentException`) | `requireApp` |
+| Enforcement of an add: caller holds the assign permission **in its current login**, and `scopeAllows(app)`: a global login may grant anywhere, an app login only into that same app, never globally; the super-admin from any login | `enforceScoped`, `scopeAllows` |
+| Revoke of a role / group grant: caller is `broker_guid`, or holds `permission:remove:role` with `scopeAllows(grant app)` | `enforceRevokeRole` |
+| Revoke of a permission grant: as before (global remove holder, broker, resource owner), the remove holder additionally needs `scopeAllows` | `enforceRevoke` |
+| `super_admin`, a group embedding it, and the wildcard permission are **never app-scoped**, not even for the super-admin subject (`AccessSecurityException`) | the three scoped adds |
+
+Consequence: an `app_admin` scoped to app A must **log in with A** to hold `permission:assign:role`;
+from that login it assigns roles inside A only, and a bystander logged into A can neither revoke nor
+grant. Tests: `appGrant_loginScopeSelectsGrants_andRevokeAppRemovesThem`,
+`appGrant_scopedRoleGroup_appliesInThatAppLoginOnly`,
+`appGrant_enforcement_appAdminActsInsideItsAppLoginOnly_andBrokerRevokes` (manager suite 65/65);
+`appGrant_reservedRoleAndPermission_neverScoped_superAdminAppliesEverywhere` +
+`tool_appScopedGrants_createSubject_grantRole_revoke` (`SecurityCatalogDBTest` 17/17); **both suites green on H2 and on PostgreSQL**
+(lax-2/testdb, 2026-09-18), which proves the `app_id` reference column on the three grant tables.
+
+**Previously pending (now done):** run
+`java -cp "$(cat cp-shiro.txt)" io.xlogistx.shiro.ds.tools.SecurityAdminTool command=bootstrap-super-admin db.url=jdbc:postgresql://lax-2.xlogistx.io:5432/testdb db.user=dbuser db.password=… principal.id=… password=…`
+from `.claude/test-runner` (the super-admin password was not supplied yet), expect `wildcard=verified`, rerun without `password=` to confirm idempotency, then `command=list-catalog`.

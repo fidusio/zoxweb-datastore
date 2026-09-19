@@ -61,12 +61,13 @@
             <version>${common.logging.version}</version>
         </dependency>
 
-        <!-- Tests: the real store (H2 in-memory, or PostgreSQL via -Dds.url) and JUnit. -->
+        <!-- The H2/PostgreSQL store: compile scope only for the admin CLI (io.xlogistx.shiro.ds.tools),
+             optional so the manager/realm remain store-agnostic for consumers; the tests run against it. -->
         <dependency>
             <groupId>org.zoxweb</groupId>
             <artifactId>h2p-datastore</artifactId>
             <version>1.0.0</version>
-            <scope>test</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>

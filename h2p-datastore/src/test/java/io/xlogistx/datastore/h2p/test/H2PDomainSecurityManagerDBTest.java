@@ -165,8 +165,8 @@ public class H2PDomainSecurityManagerDBTest {
 
         assertEquals(subject.getGUID(), domainSecurityManager.login(principal, PASSWORD).getGUID());
 
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(principal, "wrong-password"));
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(uniquePrincipal(), PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(principal, "wrong-password"));
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(uniquePrincipal(), PASSWORD));
     }
 
     @Test
@@ -199,7 +199,7 @@ public class H2PDomainSecurityManagerDBTest {
         domainSecurityManager.updateCredential(subject, updated);
 
         // Old password rejected, new password accepted.
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD),
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD),
                 "old password must no longer authenticate");
         assertEquals(subject.getGUID(), domainSecurityManager.login(principal, NEW_PASSWORD).getGUID(),
                 "new password must authenticate");
@@ -343,7 +343,7 @@ public class H2PDomainSecurityManagerDBTest {
             }
         };
 
-        assertThrows(SecurityException.class,
+        assertThrows(AccessSecurityException.class,
                 () -> domainSecurityManager.createSubjectID(principal, badCredential),
                 "createSubjectID must fail when the credential cannot be persisted");
 
@@ -354,5 +354,36 @@ public class H2PDomainSecurityManagerDBTest {
                 "principal must be rolled back");
         assertEquals(0, domainSecurityManager.lookupAllPrincipalCredentials(principal).length,
                 "no credential must persist");
+    }
+
+    @Test
+    public void passwordReset_roundTrip_throughDefaultManager() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = domainSecurityManager.createSubjectID(principal, HashUtil.toBCryptPassword(PASSWORD));
+        assertTrue(domainSecurityManager.verifyPassword(principal, PASSWORD));
+
+        org.zoxweb.shared.security.PasswordResetRequest req = domainSecurityManager.requestPasswordReset(principal);
+        assertNotNull(req.getToken());
+        assertArrayEquals(new String[]{principal}, req.getDeliveryPrincipalIDs());
+        assertEquals(SecConst.SecStatus.PENDING_RESET_PASSWORD,
+                domainSecurityManager.lookupSubjectID(principal).getSubjectStatus());
+
+        String fresh = "N3w-Secret-456$";
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.completePasswordReset(principal, "bogus", fresh));
+        domainSecurityManager.completePasswordReset(principal, req.getToken(), fresh);
+        assertEquals(SecConst.SecStatus.ACTIVE, domainSecurityManager.lookupSubjectID(principal).getSubjectStatus());
+        assertEquals(subject.getGUID(), domainSecurityManager.login(principal, fresh).getGUID());
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.completePasswordReset(principal, req.getToken(), fresh), "single use");
+
+        String username = "user-" + UUID.randomUUID().toString().replace("-", "");
+        domainSecurityManager.createSubjectID(username, HashUtil.toBCryptPassword(PASSWORD));
+        assertThrows(org.zoxweb.shared.security.NoRecoveryChannelException.class,
+                () -> domainSecurityManager.requestPasswordReset(username));
+        org.zoxweb.shared.security.PasswordResetRequest admin = domainSecurityManager.adminResetPassword(username);
+        assertEquals(org.zoxweb.shared.security.PasswordResetToken.Channel.ADMIN, admin.getChannel());
+        domainSecurityManager.completePasswordReset(username, admin.getToken(), fresh);
+        assertNotNull(domainSecurityManager.login(username, fresh));
+        assertTrue(domainSecurityManager.purgeExpiredResetTokens() >= 2);
     }
 }

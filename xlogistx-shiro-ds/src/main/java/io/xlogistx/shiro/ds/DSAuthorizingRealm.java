@@ -1,6 +1,7 @@
 package io.xlogistx.shiro.ds;
 
 import io.xlogistx.shiro.DomainPrincipalCollection;
+import org.zoxweb.shared.app.AppIDDefault;
 import io.xlogistx.shiro.authc.*;
 import org.apache.shiro.authc.*;
 import org.apache.shiro.authc.pam.UnsupportedTokenException;
@@ -40,6 +41,7 @@ public class DSAuthorizingRealm
     private volatile ShiroDSDomainSecurityManager dsm;
     private volatile String dataStoreResource = ResourceManager.Resource.DATA_STORE.getName();
     private volatile boolean eagerAuthorization = false;
+    private volatile String superAdminPrincipalID = ShiroDSDomainSecurityManager.DEFAULT_SUPER_ADMIN_PRINCIPAL_ID;
 
     /**
      * INI / bean constructor. Defaults: name {@link ShiroDSDomainSecurityManager#REALM_NAME},
@@ -88,6 +90,27 @@ public class DSAuthorizingRealm
      */
     public void setEagerAuthorization(boolean eagerAuthorization) {
         this.eagerAuthorization = eagerAuthorization;
+    }
+
+    /** Normalized principal ID of the one account allowed to hold the wildcard permission. */
+    public String getSuperAdminPrincipalID() {
+        return superAdminPrincipalID;
+    }
+
+    /**
+     * Names the super-admin account. INI: {@code dsRealm.superAdminPrincipalID = admin@example.com}.
+     * The value is normalized through {@link SecConst.SubjectIDFilter}; every cached authorization is
+     * evicted so a former super-admin loses the wildcard on its next authorization load.
+     *
+     * @throws IllegalArgumentException if the value is not a valid principal ID
+     */
+    public void setSuperAdminPrincipalID(String principalID) {
+        try {
+            this.superAdminPrincipalID = SecConst.SubjectIDFilter.SINGLETON.validate(principalID);
+        } catch (NullPointerException | IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid super-admin principal ID: " + e.getMessage(), e);
+        }
+        evictAllAuthorization();
     }
 
     public String getDataStoreResource() {
@@ -245,11 +268,19 @@ public class DSAuthorizingRealm
         }
     }
 
-    /** Subject by GUID; unknown or non-ACTIVE subjects are rejected. */
+    /**
+     * Subject by GUID; unknown or non-ACTIVE subjects are rejected. A subject locked in
+     * {@code PENDING_RESET_PASSWORD} whose reset token has expired is restored to ACTIVE here, so an
+     * unclaimed reset request locks an account only for the token's lifetime.
+     */
     private SubjectIdentifier activeSubject(String subjectGUID) {
         SubjectIdentifier subject = SUS.isEmpty(subjectGUID) ? null : dsm().lookupSubjectByGUID(subjectGUID);
         if (subject == null) {
             throw new UnknownAccountException("Unknown subject");
+        }
+        if (subject.getSubjectStatus() == SecConst.SecStatus.PENDING_RESET_PASSWORD
+                && !dsm().hasOutstandingResetToken(subjectGUID)) {
+            dsm().restoreActiveAfterExpiredReset(subject);
         }
         if (subject.getSubjectStatus() != SecConst.SecStatus.ACTIVE) {
             throw new DisabledAccountException("Subject is not active");
@@ -291,6 +322,11 @@ public class DSAuthorizingRealm
         return getAuthorizationInfo(principals);
     }
 
+    /**
+     * Authorization for the login scope carried by the principals: a login with domain and app
+     * loads only the grants scoped to that app, a login without loads only the global grants
+     * (the super-admin's global grants apply in either), see {@link GrantFlattener}.
+     */
     @Override
     protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
         String subjectGUID = subjectGUIDOf(principals);
@@ -298,24 +334,64 @@ public class DSAuthorizingRealm
         if (subjectGUID == null) {
             return info;
         }
-        GrantFlattener.Result flat = GrantFlattener.flatten(dsm(), subjectGUID);
+        AppIDDefault scope = loginScopeOf(principals);
+        GrantFlattener.Result flat = GrantFlattener.flatten(dsm(), subjectGUID, scope);
         info.setRoles(flat.roles);
         info.setStringPermissions(flat.permissions);
-        if (log.isEnabled()) log.getLogger().info("authz " + subjectGUID + " roles=" + flat.roles + " perms=" + flat.permissions);
+        if (log.isEnabled()) log.getLogger().info("authz " + subjectGUID + " scope=" + ShiroDSDomainSecurityManager.appScope(scope)
+                + " roles=" + flat.roles + " perms=" + flat.permissions);
         return info;
     }
 
+    /** Cache key: the subject GUID for a global login, {@code <guid>|<domain-app>} for an app login. */
     @Override
     protected Object getAuthorizationCacheKey(PrincipalCollection principals) {
         String subjectGUID = subjectGUIDOf(principals);
-        return subjectGUID != null ? subjectGUID : super.getAuthorizationCacheKey(principals);
+        if (subjectGUID == null) {
+            return super.getAuthorizationCacheKey(principals);
+        }
+        AppIDDefault scope = loginScopeOf(principals);
+        return scope == null ? subjectGUID : subjectGUID + SCOPE_SEP + ShiroDSDomainSecurityManager.appScope(scope);
     }
 
-    /** Drop the cached authorization info of one subject (no-op when caching is off). */
+    private static final String SCOPE_SEP = "|";
+
+    /** Drop the cached authorization info of one subject in every login scope (no-op when caching is off). */
     public void evictAuthorization(String subjectGUID) {
         Cache<Object, AuthorizationInfo> cache = getAuthorizationCache();
-        if (cache != null && subjectGUID != null) {
-            cache.remove(subjectGUID);
+        if (cache == null || subjectGUID == null) {
+            return;
+        }
+        cache.remove(subjectGUID);
+        String prefix = subjectGUID + SCOPE_SEP;
+        java.util.Set<Object> keys = cache.keys();
+        if (keys != null) {
+            for (Object key : new java.util.ArrayList<>(keys)) {
+                if (key instanceof String && ((String) key).startsWith(prefix)) {
+                    cache.remove(key);
+                }
+            }
+        }
+    }
+
+    /**
+     * The login scope of a principal collection produced by this realm: the
+     * {@link DomainPrincipalCollection} domain and app when both are set, else null (global).
+     * A scope whose domain or app fails validation counts as global, with a warning.
+     */
+    public static AppIDDefault loginScopeOf(PrincipalCollection principals) {
+        if (!(principals instanceof DomainPrincipalCollection)) {
+            return null;
+        }
+        DomainPrincipalCollection dpc = (DomainPrincipalCollection) principals;
+        if (SUS.isEmpty(dpc.getDomainID()) || SUS.isEmpty(dpc.getAppID())) {
+            return null;
+        }
+        try {
+            return new AppIDDefault(dpc.getDomainID(), dpc.getAppID());
+        } catch (RuntimeException e) {
+            log.getLogger().warning("invalid login scope " + dpc.getDomainID() + "/" + dpc.getAppID() + " treated as global: " + e);
+            return null;
         }
     }
 

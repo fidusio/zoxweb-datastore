@@ -15,6 +15,7 @@ import java.io.File;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -24,7 +25,8 @@ import java.util.Set;
  * storage kind ({@link #classify}):
  * <ul>
  *   <li>{@code SCALAR} — a typed column ({@code varchar}/{@code bigint}/{@code integer}/
- *       {@code real}/{@code double precision}/{@code boolean}/{@code uuid} for reserved/ref-id)</li>
+ *       {@code real}/{@code double precision}/{@code boolean}/{@code uuid} for every {@code *guid}
+ *       attribute and ref-id flagged ones)</li>
  *   <li>{@code BLOB} — a {@code bytea} column (raw {@code byte[]} field data)</li>
  *   <li>{@code ENTITY_REF} — a {@code uuid} column with a FOREIGN KEY to the referenced type's table</li>
  *   <li>{@code ENTITY_COLLECTION} — a join table (no column on the parent)</li>
@@ -56,24 +58,35 @@ public final class H2PUtil {
     }
 
     /**
-     * Reserved-ID attributes persisted as native {@code uuid} columns — same set
-     * as {@code xlogistx-datastore.ReservedID}. Membership here is what makes these
-     * names UUID-stored; their zoxweb-core NVConfigs are not flagged isTypeReferenceID.
+     * Suffix that marks a GUID attribute. Rule (user, 2026-09-15): <b>every attribute whose name
+     * ends in {@code guid} is persisted as a native {@code uuid} column</b> — {@code guid},
+     * {@code subject_guid}, {@code broker_guid}, {@code permission_guid}, {@code role_guid},
+     * {@code role_group_guid}, {@code reference_guid}, {@code resource_guid}, {@code key_guid},
+     * {@code app_guid}, and any future one. This replaces the former fixed reserved-name set
+     * (which mirrored {@code xlogistx-datastore.ReservedID}); zoxweb-core's NVConfigs are not
+     * flagged isTypeReferenceID, so the name is the contract. Values must be UUID strings; an
+     * empty string binds as NULL.
      */
-    private static final Set<String> RESERVED_UUID_NAMES;
-    static {
-        Set<String> s = new LinkedHashSet<>();
-        for (GetName gn : new GetName[]{
-                MetaToken.BROKER_GUID, MetaToken.GUID, MetaToken.PERMISSION_GUID,
-                MetaToken.ROLE_GROUP_GUID, MetaToken.ROLE_GUID, MetaToken.SUBJECT_GUID}) {
-            s.add(gn.getName());
-        }
-        RESERVED_UUID_NAMES = Collections.unmodifiableSet(s);
-    }
+    public static final String GUID_SUFFIX = "guid";
 
-    /** True if this attribute must be persisted as a native uuid (reserved-ID member or ref-ID flag). */
+    /**
+     * True if this attribute must be persisted as a native uuid: a String attribute whose name
+     * ends in {@link #GUID_SUFFIX} (case-insensitive), or one flagged isTypeReferenceID.
+     * Entity-typed attributes are never uuid scalars here even if so named; they are references.
+     */
     public static boolean isUUIDField(NVConfig nvc) {
-        return nvc != null && (RESERVED_UUID_NAMES.contains(nvc.getName()) || nvc.isTypeReferenceID());
+        if (nvc == null) {
+            return false;
+        }
+        if (nvc.isTypeReferenceID()) {
+            return true;
+        }
+        String name = nvc.getName();
+        if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(GUID_SUFFIX)) {
+            return false;
+        }
+        Class<?> base = nvc.getMetaTypeBase();
+        return !nvc.isArray() && (base == null || !NVEntity.class.isAssignableFrom(base));
     }
 
     /** Quote an identifier (case preserved) — portable across H2 and PostgreSQL. */

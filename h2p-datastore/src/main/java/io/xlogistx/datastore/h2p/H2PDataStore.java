@@ -38,7 +38,7 @@ import org.zoxweb.shared.data.FileInfoDAO;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
-import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
 
@@ -1092,7 +1092,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public <V extends NVEntity> V insert(V nve)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", nve);
         Connection con = null;
         try {
@@ -1700,7 +1700,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     @Override
     @SuppressWarnings("unchecked")
     public <V extends NVEntity> boolean delete(V nve, boolean withReference)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         if (nve == null) return false;
         Connection con = null;
         try {
@@ -1844,7 +1844,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public <V extends NVEntity> boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("nvce and queryCriteria can not be null", nvce, queryCriteria);
         if (queryCriteria.length == 0) {
             throw new IllegalArgumentException("queryCriteria can not be empty; use a full-table delete explicitly");
@@ -1871,14 +1871,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     @Override
     public <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return innerSearch(nvce, null, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> search(String className, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return innerSearch(resolveNVCE(className), null, fieldNames, queryCriteria);
     }
 
@@ -1927,7 +1927,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public <V extends NVEntity> List<V> searchByID(NVConfigEntity nvce, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         Connection con = null;
         try {
             con = acquire();
@@ -1939,7 +1939,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public <V extends NVEntity> List<V> searchByID(String className, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         Connection con = null;
         try {
             con = acquire();
@@ -1999,20 +1999,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, NVConfigEntity nvce,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return innerSearch(nvce, userID, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, String className,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return innerSearch(resolveNVCE(className), userID, fieldNames, queryCriteria);
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearchByID(String userID, NVConfigEntity nvce, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         Connection con = null;
         try {
             con = acquire();
@@ -2079,7 +2079,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("NVConfigEntity is null.", nvce);
         List<T> list = new ArrayList<>();
         Connection con = null;
@@ -2121,7 +2121,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         NVConfigEntity nvce = resolveNVCE(className);
         if (nvce == null) throw new IllegalArgumentException("Class " + className + " not supported.");
         return batchSearch(nvce, queryCriteria);
@@ -2131,7 +2131,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     @SuppressWarnings("unchecked")
     public <T, V extends NVEntity> APIBatchResult<V> nextBatch(APISearchResult<T> reportResults,
                                                                int startIndex, int batchSize)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         APIBatchResult<V> batch = new APIBatchResult<>();
         batch.setReportID(reportResults.getReportID());
         batch.setTotalMatches(reportResults.size());
@@ -2259,7 +2259,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public List<DynamicEnumMap> getAllDynamicEnumMap(String domainID, String userID)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         List<DynamicEnumMap> ret = new ArrayList<>();
         Connection con = null;
         Statement stmt = null;
@@ -2307,13 +2307,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public LongSequence createSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return createSequence(sequenceName, 0, 1);
     }
 
     @Override
     public LongSequence createSequence(String sequenceName, long startValue, long defaultIncrement)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         String seq = sequenceName.toLowerCase();
         // Sequences are non-transactional: always run on a dedicated auto-commit connection, never the
@@ -2365,7 +2365,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public void deleteSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         Connection con = null;
         PreparedStatement ps = null;
@@ -2385,7 +2385,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public long currentSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         Connection con = null;
         PreparedStatement ps = null;
@@ -2407,14 +2407,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     @Override
     public long nextSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         return incrementSequence(sequenceName.toLowerCase(), null);
     }
 
     @Override
     public long nextSequenceValue(String sequenceName, long increment)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null sequence name", sequenceName);
         return incrementSequence(sequenceName.toLowerCase(), increment);
     }
@@ -2530,7 +2530,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     @Override
     public APIFileInfoMap createFile(String folderID, APIFileInfoMap file, InputStream is, boolean closeStream)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", file, is);
         FileInfoDAO info = file.getOriginalFileInfo();
         SUS.checkIfNulls("Null file info", info);
@@ -2575,7 +2575,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Streams the file's current (head) version. */
     @Override
     public APIFileInfoMap readFile(APIFileInfoMap map, OutputStream os, boolean closeStream)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map, os);
         try {
             writeVersionTo(map, null, os);
@@ -2588,7 +2588,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Streams one specific stored version of the file. */
     @Override
     public APIFileInfoMap readFile(APIFileInfoMap map, long version, OutputStream os, boolean closeStream)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map, os);
         try {
             writeVersionTo(map, version, os);
@@ -2640,7 +2640,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Overwrites the file: stores the stream as the next version and moves the head to it. */
     @Override
     public APIFileInfoMap updateFile(APIFileInfoMap map, InputStream is, boolean closeStream)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         // createFile already versions + repoints the head — the versioned equivalent of the
         // Mongo stores' delete-then-recreate.
         return createFile(null, map, is, closeStream);
@@ -2649,7 +2649,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Deletes the file: metadata row + (via FK ON DELETE CASCADE) every version row and the head. */
     @Override
     public void deleteFile(APIFileInfoMap map)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map);
         FileInfoDAO info = map.getOriginalFileInfo();
         fileGuid(map); // validates presence of a GUID
@@ -2660,7 +2660,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Lists the stored versions of a file, newest first (version, length, created_ts, current). */
     @Override
     public List<NVGenericMap> fileVersions(APIFileInfoMap map)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         UUID guid = fileGuid(map);
         List<NVGenericMap> ret = new ArrayList<>();
         Connection con = null;
@@ -2700,7 +2700,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     @Override
     public APIFileInfoMap rollbackFile(APIFileInfoMap map, long version)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map);
         FileInfoDAO info = map.getOriginalFileInfo();
         UUID guid = fileGuid(map);
@@ -2749,20 +2749,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Not implemented — parity with the Mongo document stores (folders are FULL_PATH_NAME strings). */
     @Override
     public APIFileInfoMap createFolder(String folderFullPath)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         return null;
     }
 
     /** Not implemented — parity with the Mongo document stores. */
     @Override
-    public Map<String, APIFileInfoMap> discover() throws IOException, AccessException, APIException {
+    public Map<String, APIFileInfoMap> discover() throws IOException, AccessSecurityException, APIException {
         return null;
     }
 
     /** Not implemented — parity with the Mongo document stores. */
     @Override
     public List<APIFileInfoMap> search(String... args)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         return null;
     }
 

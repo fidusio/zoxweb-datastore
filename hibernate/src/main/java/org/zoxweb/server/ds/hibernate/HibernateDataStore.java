@@ -25,7 +25,7 @@ import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
-import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.util.*;
 
 import java.util.List;
@@ -149,7 +149,7 @@ public class HibernateDataStore
 
     @Override
     public <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
@@ -170,7 +170,7 @@ public class HibernateDataStore
 
     @Override
     public <V extends NVEntity> List<V> search(String className, List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
@@ -191,7 +191,7 @@ public class HibernateDataStore
 
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
@@ -202,49 +202,49 @@ public class HibernateDataStore
 
     @Override
     public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <T, V extends NVEntity> APIBatchResult<V> nextBatch(APISearchResult<T> results, int startIndex, int batchSize)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, NVConfigEntity nvce, List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, String className, List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> searchByID(NVConfigEntity nvce, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> searchByID(String className, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> userSearchByID(String userID, NVConfigEntity nvce, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 
     @Override
     public <V extends NVEntity> V insert(V nve)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
@@ -279,7 +279,7 @@ public class HibernateDataStore
 
     @Override
     public boolean delete(NVEntity nve, boolean withReference)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("NVEntity is null.", nve);
 
         Session session = null;
@@ -304,7 +304,7 @@ public class HibernateDataStore
 
     @Override
     public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return false;
     }
 
@@ -412,7 +412,7 @@ public class HibernateDataStore
 
     @Override
     public List<DynamicEnumMap> getAllDynamicEnumMap(String domainID, String userID)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return null;
     }
 

@@ -25,7 +25,7 @@ One table per `NVConfigEntity` type (table name = `nvce.getName()`). Every row h
 
 | `AttrKind` | Storage |
 |---|---|
-| `SCALAR` | typed column — `varchar`/`integer`/`bigint`/`real`/`double precision`/`boolean`; reserved/reference-id → `uuid`; `Enum` → `varchar` (name); `Date` → `bigint`; `NVNumber` → `varchar` with a `int:/long:/float:/double:/bigdec:` type tag |
+| `SCALAR` | typed column — `varchar`/`integer`/`bigint`/`real`/`double precision`/`boolean`; **any attribute whose name ends in `guid`** (`H2PUtil.GUID_SUFFIX`, case-insensitive; user rule 2026-09-15, replaces the old reserved-name set) or flagged reference-id → `uuid` (values must be UUID strings, empty binds NULL); `Enum` → `varchar` (name); `Date` → `bigint`; `NVNumber` → `varchar` with a `int:/long:/float:/double:/bigdec:` type tag |
 | `BLOB` | `bytea` column (`byte[]` field data) |
 | `ENTITY_REF` (single `NVEntityReference`) | `uuid` column **+ `FOREIGN KEY` → child type's table** |
 | `ENTITY_COLLECTION` (`NVEntityReferenceList`/`GetNameMap`/`ReferenceIDMap`) | **join table** `<table>__<attr>(parent_guid, child_guid, ord)` with FK constraints + `ON DELETE CASCADE` |
@@ -45,7 +45,7 @@ this session). Databases created before the catalog existed only have rows for t
 
 `ensureTable` also emits `CREATE INDEX IF NOT EXISTS` (portable to both engines) via `createIndex`:
 join tables get `(parent_guid, ord)` + `(child_guid)`, `ENTITY_REF` columns get one, and non-unique
-uuid scalars (`subject_guid`, reference ids) get one. **A FOREIGN KEY indexes only the referenced
+uuid scalars (every `*guid` attribute, reference ids) get one. **A FOREIGN KEY indexes only the referenced
 side** — on PostgreSQL *and* H2 the referencing column needs its own index or every collection read
 and cascade delete is a full scan.
 
@@ -473,7 +473,11 @@ validated — without grouping, `a AND b OR c` silently parses as `(a AND b) OR 
 `Const.LogicalOperator`. Any other `QueryMarker` is REJECTED with `IllegalArgumentException` —
 silently skipping an unknown criterion would widen the result set on version skew. Typing: a
 null-valued `=`/`!=` `QueryMatch` renders as `IS NULL`/`IS NOT NULL` (a bound null parameter can
-never match, and pgjdbc rejects untyped nulls); `Date` values bind as epoch millis (columns are
+never match, and pgjdbc rejects untyped nulls); a criterion on a single entity-reference column
+(`AttrKind.ENTITY_REF`, stored as `uuid`) binds a GUID String **or the child entity itself** as
+`UUID` (`H2PQueryFormatter.normalize`, public; added 2026-09-15 for `permission_grant.resource_map
+IN (…)` — H2 in PG mode coerced the varchar silently, native PostgreSQL does not; regression
+`H2PRegressionTest.testEntityRefCriterionBindsUUID`); `Date` values bind as epoch millis (columns are
 `bigint`); values against `Number`-typed (NVNumber) attributes bind through `H2PUtil.encodeNumber`
 — equality only. Regression: `testGroupedCriteria`/`testInCriteria`/`testLikeCriteria`/
 `testMalformedCriteriaRejected`.
@@ -540,6 +544,20 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   -Dds.url=jdbc:postgresql://host:5432 -Dds.user=… -Dds.password=…   # -Dds.db optional
   ```
 
+## Session log — 2026-09-15
+
+- **`*guid` ⇒ `uuid` rule** (user): `H2PUtil.isUUIDField` now matches any non-entity attribute whose
+  name ends in `guid` (case-insensitive) or is ref-id flagged; the fixed reserved-name set is gone.
+  Newly uuid-typed: `resource_guid` (`resource_map`), `reference_guid`/`key_guid`
+  (`encapsulated_key`), `app_guid` (`subject_preference`). `permission_grant` + `resource_map` were
+  dropped and recreated on lax-2 testdb (the only pre-rule varchar `*guid` column there).
+- **Entity-reference criteria bind as uuid**: `H2PQueryFormatter.normalize` (now public) decodes a
+  GUID String or the child `NVEntity` for `AttrKind.ENTITY_REF` columns — needed by shiro-ds's
+  `permission_grant."resource_map" IN (…)` on PostgreSQL.
+- Tests: `H2PRegressionTest` +2 (`testEntityRefCriterionBindsUUID`, `testGuidSuffixedAttributesAreUUIDColumns`),
+  25/25; `H2PDataStoreTest` 26/26; `H2PDumpRestoreTest` 12/12; DSM suite 10/10 on H2 and PG;
+  shiro-ds 49/49 on H2 and PG. Runner cp files moved to JUnit 6.1.3.
+
 ## Session log — 2026-09-02
 
 - **`isTransactionActive()`** implemented on `H2PDataStore` (true while the thread-local ambient
@@ -587,6 +605,10 @@ Once zoxweb-core's crypto rework is installed (`EncryptedData` `|`-joined GCM re
 4. `DoNotExpose` enforcement point may land in this read layer (decision deferred in core).
 
 ## Ground rules for future sessions
+0. **Every attribute named `*guid` is a `uuid` column** (user rule 2026-09-15, `H2PUtil.isUUIDField`):
+   never store a non-UUID string in one; a pre-rule table with a varchar `*guid` column trips the
+   schema type gate — drop and recreate it (the DB is not in production). Regression:
+   `H2PRegressionTest.testGuidSuffixedAttributesAreUUIDColumns`.
 1. Keep the SQL PostgreSQL-portable; route every dialect difference through `H2PDialect`.
 2. `currentDSType` is resolved once in `setAPIConfigInfo` — don't re-detect per call.
 3. When adding an NV type, update `H2PUtil.classify` + `scalarColumnType` and the five paths in

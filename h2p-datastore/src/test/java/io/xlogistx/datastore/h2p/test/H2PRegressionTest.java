@@ -620,6 +620,68 @@ public class H2PRegressionTest {
     }
 
     @Test
+    public void testEntityRefCriterionBindsUUID() {
+        // A criterion on a single entity-reference column (stored as uuid) must bind a UUID, whether
+        // the caller passes the child's GUID string or the child itself. H2 in PostgreSQL mode
+        // silently coerces a varchar parameter; native PostgreSQL rejects it, so the type is asserted.
+        CyclicDAO a = new CyclicDAO();
+        a.setName("ref-crit-parent-" + UUID.randomUUID());
+        CyclicDAO b = new CyclicDAO();
+        b.setName("ref-crit-child-" + UUID.randomUUID());
+        a.setPeer(b);
+        ds.insert(a);
+
+        assertTrue(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(CyclicDAO.NVC_PEER, b.getGUID()) instanceof UUID,
+                "GUID string against an entity-ref column must bind as UUID");
+        assertTrue(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(CyclicDAO.NVC_PEER, b) instanceof UUID,
+                "child entity against an entity-ref column must bind as its UUID");
+        assertNull(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(CyclicDAO.NVC_PEER, ""),
+                "empty string binds as NULL");
+
+        List<CyclicDAO> byGuid = ds.search(CyclicDAO.NVC_CYCLIC_DAO, null,
+                new org.zoxweb.shared.db.QueryMatch<>("peer", b.getGUID(), RelationalOperator.EQUAL));
+        assertEquals(1, byGuid.size());
+        assertEquals(a.getGUID(), byGuid.get(0).getGUID());
+
+        List<CyclicDAO> byIn = ds.search(CyclicDAO.NVC_CYCLIC_DAO, null,
+                new QueryMatchIn<>("peer", List.of(b.getGUID(), UUID.randomUUID().toString())));
+        assertEquals(1, byIn.size());
+        assertEquals(a.getGUID(), byIn.get(0).getGUID());
+    }
+
+    @Test
+    public void testGuidSuffixedAttributesAreUUIDColumns() {
+        // Rule (2026-09-15): every attribute whose name ends in "guid" is a native uuid column,
+        // not only the historical reserved set. resource_map.resource_guid is the first field the
+        // rule reaches beyond that set.
+        NVConfig resourceGuid = org.zoxweb.shared.security.ResourceMap.Param.RESOURCE_GUID.getNVConfig();
+        assertTrue(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(resourceGuid));
+        assertTrue(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(
+                NVConfigManager.createNVConfig("anything_guid", null, "X", false, false, String.class)));
+        assertTrue(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(
+                NVConfigManager.createNVConfig("MixedCaseGUID", null, "X", false, false, String.class)));
+        assertFalse(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(
+                NVConfigManager.createNVConfig("guide", null, "X", false, false, String.class)), "suffix must be the whole word");
+        assertFalse(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(CyclicDAO.NVC_PEER), "an entity reference is not a uuid scalar even if so named");
+        assertEquals("uuid", io.xlogistx.datastore.h2p.H2PUtil.scalarColumnType(resourceGuid));
+
+        // Round trip through the store: written as uuid, searchable by its String form, decoded on read.
+        String target = IDGs.UUIDV7.genID();
+        org.zoxweb.shared.security.ResourceMap rm = new org.zoxweb.shared.security.ResourceMap(target, PropertyDAO.class.getName());
+        rm = ds.insert(rm);
+        assertTrue(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(resourceGuid, target) instanceof UUID);
+        List<org.zoxweb.shared.security.ResourceMap> found = ds.search(org.zoxweb.shared.security.ResourceMap.NVC_RESOURCE_MAP, null,
+                new org.zoxweb.shared.db.QueryMatch<>(MetaToken.RESOURCE_GUID.getName(), target, RelationalOperator.EQUAL));
+        assertEquals(1, found.size());
+        assertEquals(rm.getGUID(), found.get(0).getGUID());
+        assertEquals(target, found.get(0).getResourceGUID(), "read back as the canonical String form");
+
+        // A non-UUID value cannot be stored in a guid-suffixed attribute.
+        org.zoxweb.shared.security.ResourceMap bad = new org.zoxweb.shared.security.ResourceMap("not-a-uuid", PropertyDAO.class.getName());
+        assertThrows(RuntimeException.class, () -> ds.insert(bad));
+    }
+
+    @Test
     public void testDeleteWithReferenceCascadesFromDbState() {
         CyclicDAO a = new CyclicDAO();
         a.setName("del-parent-" + UUID.randomUUID());

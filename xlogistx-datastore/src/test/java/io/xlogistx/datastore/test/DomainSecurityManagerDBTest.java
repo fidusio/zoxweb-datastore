@@ -94,8 +94,8 @@ public class DomainSecurityManagerDBTest {
 
         assertEquals(subject.getGUID(), domainSecurityManager.login(principal, PASSWORD).getGUID());
 
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(principal, "wrong-password"));
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(uniquePrincipal(), PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(principal, "wrong-password"));
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(uniquePrincipal(), PASSWORD));
     }
 
     @Test
@@ -128,7 +128,7 @@ public class DomainSecurityManagerDBTest {
         domainSecurityManager.updateCredential(subject, updated);
 
         // Old password rejected, new password accepted.
-        assertThrows(SecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD),
+        assertThrows(AccessSecurityException.class, () -> domainSecurityManager.login(principal, PASSWORD),
                 "old password must no longer authenticate");
         assertEquals(subject.getGUID(), domainSecurityManager.login(principal, NEW_PASSWORD).getGUID(),
                 "new password must authenticate");
@@ -272,7 +272,7 @@ public class DomainSecurityManagerDBTest {
             }
         };
 
-        assertThrows(SecurityException.class,
+        assertThrows(AccessSecurityException.class,
                 () -> domainSecurityManager.createSubjectID(principal, badCredential),
                 "createSubjectID must fail when the credential cannot be persisted");
 

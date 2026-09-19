@@ -44,7 +44,7 @@ import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.LowerCaseFilter;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.io.SharedIOUtil;
-import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.Const.RelationalOperator;
@@ -1816,7 +1816,7 @@ public class SyncMongoDS
     }
 
     public boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, APIException, AccessException {
+            throws NullPointerException, IllegalArgumentException, APIException, AccessSecurityException {
         Document query = MongoQueryFormatter.formatQuery(nvce, queryCriteria);
         MongoCollection<Document> collection = lookupCollection(nvce.toCanonicalID());
         return collection.deleteMany(query).wasAcknowledged();
@@ -2465,7 +2465,7 @@ public class SyncMongoDS
 
     @Override
     public APIFileInfoMap createFolder(String folderFullPath)
-            throws NullPointerException, IllegalArgumentException, IOException, AccessException {
+            throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException {
         return null;
     }
 
@@ -2476,7 +2476,7 @@ public class SyncMongoDS
                                                        String... ids)
             throws NullPointerException,
             IllegalArgumentException,
-            AccessException,
+            AccessSecurityException,
             APIException {
         List<V> retNVEs = new ArrayList<>();
         List<UUID> refIdsToLookFor = new ArrayList<>();
@@ -2506,7 +2506,7 @@ public class SyncMongoDS
     public <V extends NVEntity> List<V> userSearch(String userID,
                                                    NVConfigEntity nvce, List<String> fieldNames,
                                                    QueryMarker... queryCriteria) throws NullPointerException,
-            IllegalArgumentException, AccessException, APIException {
+            IllegalArgumentException, AccessSecurityException, APIException {
         List<V> list = new ArrayList<V>();
 
 
@@ -2545,7 +2545,7 @@ public class SyncMongoDS
     public <V extends NVEntity> List<V> userSearch(String userID,
                                                    String className, List<String> fieldNames,
                                                    QueryMarker... queryCriteria) throws NullPointerException,
-            IllegalArgumentException, AccessException, APIException {
+            IllegalArgumentException, AccessSecurityException, APIException {
         NVConfigEntity nvce = null;
         SUS.checkIfNulls("null class name", className);
         try {
@@ -2593,7 +2593,7 @@ public class SyncMongoDS
     @SuppressWarnings("unchecked")
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("NVConfigEntity is null.", nvce);
         List<T> list = new ArrayList<T>();
 
@@ -2639,7 +2639,7 @@ public class SyncMongoDS
 
     @Override
     public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         NVEntity nve = null;
 
         try {
@@ -2655,7 +2655,7 @@ public class SyncMongoDS
     @SuppressWarnings("unchecked")
     @Override
     public <T, V extends NVEntity> APIBatchResult<V> nextBatch(APISearchResult<T> reportResults, int startIndex, int batchSize)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         APIBatchResult<V> batch = new APIBatchResult<V>();
         batch.setReportID(reportResults.getReportID());
         batch.setTotalMatches(reportResults.size());
@@ -2698,7 +2698,7 @@ public class SyncMongoDS
 
     @Override
     public LongSequence createSequence(String sequenceName, long startValue, long defaultIncrement)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         sequenceName = LowerCaseFilter.SINGLETON.validate(sequenceName);
         SUS.checkIfNulls("Null sequence name", sequenceName);
         if (startValue < 0)
@@ -2726,7 +2726,7 @@ public class SyncMongoDS
 
     @Override
     public long currentSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(),
                 LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
         if (result == null || result.size() != 1) {
@@ -2737,18 +2737,18 @@ public class SyncMongoDS
 
     @Override
     public long nextSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return localNextSequenceValue(sequenceName, 0, true);
     }
 
     @Override
     public synchronized long nextSequenceValue(String sequenceName, long increment)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return localNextSequenceValue(sequenceName, increment, false);
     }
 
     private synchronized long localNextSequenceValue(String sequenceName, long increment, boolean defaultIncrement)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         if (!defaultIncrement && increment < 1)
             throw new IllegalArgumentException("wrong increment");
         List<LongSequence> result = search(LongSequence.NVC_LONG_SEQUENCE, null, new QueryMatchString(DataParam.NAME.getNVConfig(),
@@ -2770,13 +2770,13 @@ public class SyncMongoDS
 
     @Override
     public LongSequence createSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         return createSequence(sequenceName, 0, 1);
     }
 
     @Override
     public synchronized void deleteSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         delete(LongSequence.NVC_LONG_SEQUENCE, new QueryMatchString(DataParam.NAME.getNVConfig(),
                 LowerCaseFilter.SINGLETON.validate(sequenceName), RelationalOperator.EQUAL));
     }

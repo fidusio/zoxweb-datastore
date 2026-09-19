@@ -11,6 +11,7 @@ import io.xlogistx.shiro.authc.CredentialsInfoMatcher;
 import io.xlogistx.shiro.authc.JWTAuthenticationToken;
 
 import io.xlogistx.shiro.ds.DSAuthorizingRealm;
+import io.xlogistx.shiro.ds.GrantFlattener;
 import io.xlogistx.shiro.ds.ShiroDSDomainSecurityManager;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.AuthorizationInfo;
@@ -32,8 +33,11 @@ import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
+import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.security.*;
+import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.util.Const;
+import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.NVGenericMap;
 import org.zoxweb.shared.util.ResourceManager;
 
@@ -205,7 +209,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void createSubject_duplicatePrincipal_isRejected() {
         String principal = uniquePrincipal();
         newSubject(principal);
-        SecurityException e = assertThrows(SecurityException.class, () -> newSubject(principal));
+        AccessSecurityException e = assertThrows(AccessSecurityException.class, () -> newSubject(principal));
         assertTrue(e.getMessage().contains("already exists"), e.getMessage());
     }
 
@@ -215,9 +219,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectIdentifier subject = newSubject(principal);
 
         assertEquals(subject.getGUID(), dsm.login(principal, PASSWORD).getGUID());
-        assertThrows(SecurityException.class, () -> dsm.login(principal, "wrong-password"));
-        assertThrows(SecurityException.class, () -> dsm.login(uniquePrincipal(), PASSWORD));
-        assertThrows(SecurityException.class, () -> dsm.login(principal, null));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, "wrong-password"));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(uniquePrincipal(), PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, null));
     }
 
     @Test
@@ -240,16 +244,16 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(subject.getGUID(), dsm.login(normalized, PASSWORD).getGUID());
 
         // a non-email handle must meet the minimum length; an invisible character is rejected
-        String reason = assertThrows(SecurityException.class, () -> newSubject("short1")).getMessage();
+        String reason = assertThrows(AccessSecurityException.class, () -> newSubject("short1")).getMessage();
         assertTrue(reason.startsWith("Invalid principal ID"), reason);
-        assertThrows(SecurityException.class, () -> newSubject("ma​rio-" + UUID.randomUUID()));
-        assertThrows(SecurityException.class, () -> dsm.addPrincipalID(subject, "   "));
+        assertThrows(AccessSecurityException.class, () -> newSubject("ma​rio-" + UUID.randomUUID()));
+        assertThrows(AccessSecurityException.class, () -> dsm.addPrincipalID(subject, "   "));
 
         // a rejected identifier can match nothing: lookups return null and login fails, never throw
         assertNull(dsm.lookupPrincipalID("short1"));
         assertNull(dsm.lookupSubjectID("short1"));
         assertEquals(0, dsm.lookupAllPrincipalCredentials("short1").length);
-        assertThrows(SecurityException.class, () -> dsm.login("short1", PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login("short1", PASSWORD));
 
         // a plain handle of valid length works end to end
         String handle = "handle" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -276,7 +280,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         CIPassword updated = hasher.update(current, PASSWORD, NEW_PASSWORD);
         dsm.updateCredential(subject, updated);
 
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
         assertEquals(subject.getGUID(), dsm.login(principal, NEW_PASSWORD).getGUID());
         assertEquals(1, dsm.lookupAllPrincipalCredentials(principal).length);
         assertEquals(current.getGUID(), ((CIPassword) dsm.lookupCredential(principal, CredentialInfo.Type.PASSWORD)).getGUID());
@@ -293,7 +297,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.updateCredential(subject, HashUtil.toBCryptPassword(NEW_PASSWORD)); // no GUID -> replacement path
         assertEquals(1, dsm.lookupCredentialsBySubjectGUID(subject.getGUID(), CredentialInfo.Type.PASSWORD).length);
         assertEquals(subject.getGUID(), dsm.login(principal, NEW_PASSWORD).getGUID());
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
     }
 
     @Test
@@ -360,7 +364,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             public void setCredentialStatus(SecConst.SecStatus status) { }
             public NVGenericMap getProperties() { return new NVGenericMap(); }
         };
-        assertThrows(SecurityException.class, () -> dsm.createSubjectID(principal, badCredential));
+        assertThrows(AccessSecurityException.class, () -> dsm.createSubjectID(principal, badCredential));
         assertNull(dsm.lookupSubjectID(principal));
         assertNull(dsm.lookupPrincipalID(principal));
         assertEquals(0, dsm.lookupAllPrincipalCredentials(principal).length);
@@ -377,7 +381,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
         subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
         dsm.updateSubjectID(subject);
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD), "deactivated subject must not log in");
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD), "deactivated subject must not log in");
 
         subject.setSubjectStatus(SecConst.SecStatus.ACTIVE);
         dsm.updateSubjectID(subject);
@@ -392,7 +396,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
         pw.setCredentialStatus(SecConst.SecStatus.DEACTIVATED);
         dsm.updateCredential(subject, pw);
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
 
         pw.setCredentialStatus(SecConst.SecStatus.ACTIVE);
         dsm.updateCredential(subject, pw);
@@ -406,7 +410,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         PrincipalIdentifier pid = dsm.lookupPrincipalID(principal);
         pid.setStatus(SecConst.SecStatus.INACTIVE);
         ds.update(pid);
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
         pid.setStatus(SecConst.SecStatus.ACTIVE);
         ds.update(pid);
         assertEquals(subject.getGUID(), dsm.login(principal, PASSWORD).getGUID());
@@ -424,12 +428,17 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertFalse(dsm.verifyPassword(null, PASSWORD));
         assertFalse(dsm.verifyPassword(uniquePrincipal(), PASSWORD), "unknown principal");
 
-        subject.setSubjectStatus(SecConst.SecStatus.PENDING_RESET_PASSWORD);
-        dsm.updateSubjectID(subject);
-        assertThrows(SecurityException.class, () -> dsm.login(principal, PASSWORD), "login denies PENDING_RESET_PASSWORD");
+        // a pending reset backed by an outstanding token locks login; a bare status flip without a
+        // token is lifted by the realm on the next login (bounded lockout), so issue a real one
+        dsm.requestPasswordReset(principal);
+        subject = dsm.lookupSubjectByGUID(subject.getGUID());
+        assertEquals(SecConst.SecStatus.PENDING_RESET_PASSWORD, subject.getSubjectStatus());
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD), "login denies PENDING_RESET_PASSWORD");
         assertTrue(dsm.verifyPassword(principal, PASSWORD), "verifyPassword accepts PENDING_RESET_PASSWORD");
         assertFalse(dsm.verifyPassword(principal, "wrong-" + PASSWORD));
+        assertTrue(dsm.cancelPasswordReset(principal));
 
+        subject = dsm.lookupSubjectByGUID(subject.getGUID());
         subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
         dsm.updateSubjectID(subject);
         assertFalse(dsm.verifyPassword(principal, PASSWORD), "deactivated subject cannot verify");
@@ -450,11 +459,11 @@ public class ShiroDSDomainSecurityManagerDBTest {
         CIPassword pwA = (CIPassword) dsm.lookupCredential(principalA, CredentialInfo.Type.PASSWORD);
 
         // entity says A, caller says B
-        assertThrows(SecurityException.class, () -> dsm.updateCredential(b, pwA));
+        assertThrows(AccessSecurityException.class, () -> dsm.updateCredential(b, pwA));
 
         // entity claims B but the stored row belongs to A
         pwA.setSubjectGUID(b.getGUID());
-        assertThrows(SecurityException.class, () -> dsm.updateCredential(b, pwA));
+        assertThrows(AccessSecurityException.class, () -> dsm.updateCredential(b, pwA));
 
         assertEquals(a.getGUID(), dsm.login(principalA, PASSWORD).getGUID(), "A's password must be untouched");
     }
@@ -559,7 +568,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(0, dsm.lookupCredentialsBySubjectGUID(subject.getGUID(), null).length);
         assertNull(dsm.lookupSubjectAPIKey(key));
         assertEquals(0, dsm.getPermissionGrants(subject.getGUID()).length);
-        assertThrows(SecurityException.class, () -> dsm.loginApiKey(key));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key));
     }
 
     @Test
@@ -569,17 +578,17 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectAPIKey sak = newAPIKey(subject, key);
 
         assertEquals(subject.getGUID(), dsm.loginApiKey(key).getGUID());
-        assertThrows(SecurityException.class, () -> dsm.loginApiKey("key-" + UUID.randomUUID()));
-        assertThrows(SecurityException.class, () -> dsm.loginApiKey(null));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey("key-" + UUID.randomUUID()));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(null));
 
         sak.setStatus(Const.Status.SUSPENDED);
         dsm.updateCredential(subject, sak);
-        assertThrows(SecurityException.class, () -> dsm.loginApiKey(key), "suspended key must not log in");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key), "suspended key must not log in");
 
         sak.setStatus(Const.Status.ACTIVE);
         sak.setExpiryDate(System.currentTimeMillis() - 1000);
         dsm.updateCredential(subject, sak);
-        assertThrows(SecurityException.class, () -> dsm.loginApiKey(key), "expired key must not log in");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key), "expired key must not log in");
 
         sak.setExpiryDate(System.currentTimeMillis() + 60_000);
         dsm.updateCredential(subject, sak);
@@ -601,36 +610,36 @@ public class ShiroDSDomainSecurityManagerDBTest {
         byte[] other = new byte[32];
         new SecureRandom().nextBytes(other);
         forged.setAPIKeyAsBytes(other);
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(signedJWT(forged, sak.getSubjectID(), "xlogistx.io", "shirods")), "forged signature");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(signedJWT(forged, sak.getSubjectID(), "xlogistx.io", "shirods")), "forged signature");
 
         // right secret, claims outside the key's scope
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), "other.io", "shirods")), "wrong domain");
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), "xlogistx.io", "other-app")), "wrong app");
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), null, null)), "scope claims missing");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), "other.io", "shirods")), "wrong domain");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), "xlogistx.io", "other-app")), "wrong app");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), null, null)), "scope claims missing");
         assertEquals(subject.getGUID(), dsm.loginJWT(signedJWT(sak, sak.getSubjectID(), "XLOGISTX.IO", "SHIRODS")).getGUID(), "scope is case-insensitive");
 
         // sub names another key ID
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(signedJWT(sak, "kid-" + UUID.randomUUID(), "xlogistx.io", "shirods")), "unknown key ID");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(signedJWT(sak, "kid-" + UUID.randomUUID(), "xlogistx.io", "shirods")), "unknown key ID");
 
         // expired / not yet valid
         JWT expired = JWT.createJWT(CryptoConst.JWTAlgo.HS256, sak.getSubjectID(), "xlogistx.io", "shirods");
         expired.getPayload().setExpirationTime(new Date(System.currentTimeMillis() - 10 * 60_000));
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(expired.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "expired");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(expired.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "expired");
         JWT future = JWT.createJWT(CryptoConst.JWTAlgo.HS256, sak.getSubjectID(), "xlogistx.io", "shirods");
         future.getPayload().setNotBefore(new Date(System.currentTimeMillis() + 10 * 60_000));
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(future.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "not yet valid");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(future.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "not yet valid");
 
         // garbage
-        assertThrows(SecurityException.class, () -> dsm.loginJWT("not.a.jwt"));
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(""));
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(null));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT("not.a.jwt"));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(""));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(null));
         String[] parts = token.split("\\.");
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(parts[0] + "." + parts[1] + ".AAAA"), "bad signature segment");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(parts[0] + "." + parts[1] + ".AAAA"), "bad signature segment");
 
         // key status
         sak.setStatus(Const.Status.SUSPENDED);
         dsm.updateCredential(subject, sak);
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(token), "suspended key");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(token), "suspended key");
         sak.setStatus(Const.Status.ACTIVE);
         dsm.updateCredential(subject, sak);
         assertEquals(subject.getGUID(), dsm.loginJWT(token).getGUID());
@@ -638,7 +647,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         // subject status
         subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
         dsm.updateSubjectID(subject);
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(token), "deactivated subject");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(token), "deactivated subject");
         subject.setSubjectStatus(SecConst.SecStatus.ACTIVE);
         dsm.updateSubjectID(subject);
 
@@ -647,7 +656,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.updateCredential(subject, sak);
         JWT stale = JWT.createJWT(CryptoConst.JWTAlgo.HS256, sak.getSubjectID(), "xlogistx.io", "shirods");
         stale.getPayload().setIssuedAt(new Date(System.currentTimeMillis() - 10 * 60_000));
-        assertThrows(SecurityException.class, () -> dsm.loginJWT(stale.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "stale iat");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(stale.hash(sak.getAPIKeyAsBytes(), JWTProvider.SINGLETON)), "stale iat");
         String fresh = ShiroDSDomainSecurityManager.mintJWT(sak, null, 0);
         assertEquals(subject.getGUID(), dsm.loginJWT(fresh).getGUID());
 
@@ -656,7 +665,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         try {
             String once = ShiroDSDomainSecurityManager.mintJWT(sak, null, 0);
             assertEquals(subject.getGUID(), dsm.loginJWT(once).getGUID());
-            assertThrows(SecurityException.class, () -> dsm.loginJWT(once), "replayed token");
+            assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(once), "replayed token");
             assertEquals(subject.getGUID(), dsm.loginJWT(ShiroDSDomainSecurityManager.mintJWT(sak, null, 0)).getGUID(), "a new token still works");
         } finally {
             dsm.getCredentialsMatcher().setJWTReplayCache(null);
@@ -687,8 +696,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(subject.getGUID(), DSAuthorizingRealm.subjectGUIDOf(viaKey.getPrincipals()));
         assertTrue(viaKey.isPermitted(permToken));
         dsm.logout();
-        assertThrows(SecurityException.class, () -> dsm.loginSubjectApiKey("key-" + UUID.randomUUID(), null, null));
-        assertThrows(SecurityException.class, () -> dsm.loginSubjectJWT("nope", null));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectApiKey("key-" + UUID.randomUUID(), null, null));
+        assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectJWT("nope", null));
         assertNull(org.apache.shiro.util.ThreadContext.getSubject(), "failed logins must not leave a binding");
     }
 
@@ -748,7 +757,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             SecurityUtils.getSubject().logout();
             ThreadContext.remove();
 
-            assertThrows(AccessException.class, () -> ShiroUtil.login(new APIKeyAuthenticationToken("key-" + UUID.randomUUID())));
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.login(new APIKeyAuthenticationToken("key-" + UUID.randomUUID())));
             ThreadContext.remove();
 
             // loginSubject(subjectID, credentials, domainID, appID, autoLogin=false) + loginBySessionID
@@ -767,7 +776,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertFalse(ShiroUtil.loginBySessionID("no-such-session"));
             ThreadContext.remove();
 
-            assertThrows(AccessException.class, () -> ShiroUtil.loginSubject(principal, "wrong-" + PASSWORD, null, null, false));
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.loginSubject(principal, "wrong-" + PASSWORD, null, null, false));
             ThreadContext.remove();
 
             // autoLogin=true is the trusted-caller path: password not checked, status rules still apply
@@ -778,7 +787,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             ThreadContext.remove();
             subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
             dsm.updateSubjectID(subject);
-            assertThrows(AccessException.class, () -> ShiroUtil.loginSubject(principal, null, null, null, true), "auto-login must not bypass status gating");
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.loginSubject(principal, null, null, null, true), "auto-login must not bypass status gating");
         } finally {
             ThreadContext.remove();
         }
@@ -826,7 +835,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             String principal = uniquePrincipal();
             SubjectIdentifier subject = newSubject(principal); // same database, either manager sees it
             assertEquals(subject.getGUID(), iniDsm.login(principal, PASSWORD).getGUID(), "authenticator-only login through the INI security manager");
-            assertThrows(SecurityException.class, () -> iniDsm.login(principal, "wrong-" + PASSWORD));
+            assertThrows(AccessSecurityException.class, () -> iniDsm.login(principal, "wrong-" + PASSWORD));
 
             String token = "ini:" + UUID.randomUUID().toString().replace("-", "") + ":read";
             PermissionInfo perm = iniDsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), token));
@@ -924,7 +933,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertTrue(cached.getStringPermissions().contains(token));
 
             dsm.getRealm().evictAuthorization(subject.getGUID());
-            assertThrows(SecurityException.class, () -> dsm.login(principal, "wrong-" + PASSWORD));
+            assertThrows(AccessSecurityException.class, () -> dsm.login(principal, "wrong-" + PASSWORD));
             assertNull(cache.get(subject.getGUID()), "a failed login must not load grants");
 
             Subject s = dsm.loginSubject(principal, PASSWORD, null, null);
@@ -1021,19 +1030,790 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
         dsm.setEnforcePermissions(true);
         try {
-            assertThrows(AccessException.class,
+            assertThrows(AccessSecurityException.class,
                     () -> dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "n:o")),
                     "no bound subject -> denied");
 
             dsm.loginSubject(adminPrincipal, PASSWORD, null, null);
             assertNotNull(dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "y:es")).getGUID());
-            assertThrows(AccessException.class, () -> dsm.createRole(new RoleInfo()), "role:create not granted");
+            assertThrows(AccessSecurityException.class, () -> dsm.createRole(new RoleInfo()), "role:create not granted");
 
             // self-service stays open: the bound subject may change its own credential
             CIPassword mine = (CIPassword) dsm.lookupCredential(adminPrincipal, CredentialInfo.Type.PASSWORD);
             dsm.updateCredential(admin, mine);
         } finally {
             dsm.setEnforcePermissions(false);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // app-scoped grants: a grant with app_id is the subject's assignment to that app; the login
+    // (domain + app) decides which grants apply (user decisions 2026-09-17/18)
+    // ------------------------------------------------------------------
+
+    private static final String DOMAIN = "xlogistx.io";
+
+    private static AppIDDefault app(String name) {
+        return new AppIDDefault(DOMAIN, name);
+    }
+
+    private static Subject loginApp(String principal, String appName) {
+        dsm.logout();
+        return dsm.loginSubject(principal, PASSWORD, DOMAIN, appName);
+    }
+
+    @Test
+    public void appGrant_loginScopeSelectsGrants_andRevokeAppRemovesThem() {
+        dsm.seedCatalog();
+        RoleInfo domainAdmin = dsm.lookupRole(null, SecurityModel.Role.DOMAIN_ADMIN.getName());
+        RoleInfo userRole = dsm.lookupRole(null, SecurityModel.Role.USER.getName());
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        AppIDDefault a = app("appa");
+        RoleGrant grant = dsm.addRoleGrant(subject, domainAdmin, a);
+        dsm.addRoleGrant(subject, userRole); // global
+        assertNotNull(grant.getGUID());
+        assertNull(grant.getBrokerGUID(), "nobody bound -> no broker");
+        RoleGrant[] scoped = dsm.getRoleGrants(subject.getGUID(), a);
+        assertEquals(1, scoped.length);
+        assertEquals(a, scoped[0].getAppIdDAO(), "app_id round-trips through the store");
+        assertEquals(0, dsm.getRoleGrants(subject.getGUID(), app("other")).length);
+        assertEquals("xlogistx.io-appa", ShiroDSDomainSecurityManager.appScope(a));
+
+        // global login: global grants only
+        dsm.logout();
+        Subject global = dsm.loginSubject(principal, PASSWORD, null, null);
+        assertTrue(global.hasRole("user"));
+        assertFalse(global.hasRole("domain_admin"), "the app grant needs an app login");
+        assertFalse(global.isPermitted("subject:create"));
+
+        // app login: that app's grants only, as plain tokens
+        Subject inA = loginApp(principal, "appa");
+        assertTrue(inA.hasRole("domain_admin"));
+        assertTrue(inA.isPermitted("subject:create"));
+        assertTrue(inA.isPermitted("nventity:read:" + UUID.randomUUID()));
+        assertFalse(inA.hasRole("user"), "global grants stay out of an app login");
+
+        // another app: nothing
+        Subject inOther = loginApp(principal, "other");
+        assertFalse(inOther.hasRole("domain_admin"));
+        assertFalse(inOther.isPermitted("subject:create"));
+        assertFalse(inOther.hasRole("user"));
+
+        Subject again = loginApp(principal, "appa");
+        assertTrue(again.isPermitted("subject:create"));
+        assertEquals(1, dsm.revokeAppGrants(subject.getGUID(), a));
+        assertFalse(again.isPermitted("subject:create"), "the app-scoped cache entry is evicted on revoke");
+        assertFalse(again.hasRole("domain_admin"));
+        assertEquals(0, dsm.revokeAppGrants(subject.getGUID(), a), "nothing left");
+        dsm.logout();
+        assertTrue(dsm.loginSubject(principal, PASSWORD, null, null).hasRole("user"), "global grant untouched");
+        dsm.logout();
+    }
+
+    @Test
+    public void appGrant_scopedRoleGroup_appliesInThatAppLoginOnly() {
+        dsm.seedCatalog();
+        RoleGroupInfo appUsers = dsm.lookupRoleGroup(null, SecurityModel.RoleGroup.APP_USERS.getName());
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        AppIDDefault b = app("appb");
+        RoleGroupGrant g = dsm.addRoleGroupGrant(subject, appUsers, b);
+        assertEquals(b, g.getAppIdDAO());
+        Subject inB = loginApp(principal, "appb");
+        assertTrue(inB.hasRole("app_user"));
+        assertTrue(inB.hasRole("user"), "every role of the group, plain");
+        dsm.logout();
+        Subject global = dsm.loginSubject(principal, PASSWORD, null, null);
+        assertFalse(global.hasRole("app_user"));
+        assertFalse(global.hasRole("user"));
+        dsm.logout();
+        assertTrue(dsm.deleteRoleGroupGrant(g));
+        assertFalse(dsm.deleteRoleGroupGrant(g), "already gone");
+        assertFalse(loginApp(principal, "appb").hasRole("app_user"));
+        dsm.logout();
+    }
+
+    @Test
+    public void appGrant_enforcement_appAdminActsInsideItsAppLoginOnly_andBrokerRevokes() {
+        dsm.seedCatalog();
+        RoleInfo appAdmin = dsm.lookupRole(null, SecurityModel.Role.APP_ADMIN.getName());
+        RoleInfo appUser = dsm.lookupRole(null, SecurityModel.Role.APP_USER.getName());
+        AppIDDefault a = app("appc");
+        AppIDDefault b = app("appd");
+        String adminPrincipal = uniquePrincipal();
+        String bystanderPrincipal = uniquePrincipal();
+        SubjectIdentifier admin = newSubject(adminPrincipal);
+        SubjectIdentifier user = newSubject(uniquePrincipal());
+        newSubject(bystanderPrincipal);
+        dsm.addRoleGrant(admin, appAdmin, a); // app admin of a: permission:assign:role / :remove:role inside a
+
+        dsm.setEnforcePermissions(true);
+        try {
+            assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, appUser, a), "nobody bound");
+
+            dsm.loginSubject(adminPrincipal, PASSWORD, null, null);
+            assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, appUser, a), "a global login holds none of the app grants");
+            dsm.logout();
+
+            loginApp(adminPrincipal, "appc");
+            RoleGrant granted = dsm.addRoleGrant(user, appUser, a);
+            assertEquals(admin.getGUID(), granted.getBrokerGUID(), "the grantor is recorded as broker");
+            assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, appUser, b), "another app");
+            assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, appUser), "an app login never grants globally");
+            dsm.logout();
+
+            loginApp(bystanderPrincipal, "appc");
+            assertThrows(AccessSecurityException.class, () -> dsm.deleteRoleGrant(granted), "not broker, no permission");
+            assertThrows(AccessSecurityException.class, () -> dsm.revokeAppGrants(user.getGUID(), a));
+            assertEquals(1, dsm.getRoleGrants(user.getGUID(), a).length, "nothing was deleted");
+            dsm.logout();
+
+            loginApp(adminPrincipal, "appc");
+            assertEquals(1, dsm.revokeAppGrants(user.getGUID(), a), "the broker revokes what it granted");
+            assertEquals(0, dsm.getRoleGrants(user.getGUID(), a).length);
+            dsm.logout();
+        } finally {
+            dsm.setEnforcePermissions(false);
+            dsm.logout();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // instance grants and sharing (design page section 12, item 23)
+    // ------------------------------------------------------------------
+
+    /** A "file": any persisted entity with a subject_guid owner; PropertyDAO is the lightest. */
+    private static PropertyDAO newResource(SubjectIdentifier owner) {
+        PropertyDAO p = new PropertyDAO();
+        p.setName("file-" + UUID.randomUUID());
+        p.setSubjectGUID(owner.getGUID());
+        return ds.insert(p);
+    }
+
+    private static ResourceMap mapOf(NVEntity resource) {
+        return new ResourceMap(resource);
+    }
+
+    private static String nve(String verb, String guid) {
+        return SecurityModel.NVENTITY + ":" + verb + ":" + guid;
+    }
+
+    private static Subject login(String principal) {
+        dsm.logout();
+        return dsm.loginSubject(principal, PASSWORD, null, null);
+    }
+
+    private static boolean mapRowExists(String mapGUID) {
+        return !ds.searchByID(ResourceMap.NVC_RESOURCE_MAP, mapGUID).isEmpty();
+    }
+
+    @Test
+    public void share_inlinedGrant_permitsGranteeOnThatResourceOnly() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        assertEquals(a.getGUID(), x.getSubjectGUID(), "resource must carry its owner");
+
+        Subject shiroB = login(pb);
+        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())));
+
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
+        assertEquals("nventity:read,share", grant.getPermissionToken());
+        assertNull(grant.getPermissionGUID());
+        assertEquals(b.getGUID(), grant.getSubjectGUID());
+        assertNotNull(grant.getResourceMap().getGUID(), "map row gets its own GUID");
+        assertEquals(x.getGUID(), grant.getResourceMap().getResourceGUID());
+        assertEquals(PropertyDAO.class.getName(), grant.getResourceMap().getResourceType());
+        assertTrue(mapRowExists(grant.getResourceMap().getGUID()));
+
+        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())), "read on X granted");
+        assertTrue(shiroB.isPermitted(nve("share", x.getGUID())), "share on X granted");
+        assertFalse(shiroB.isPermitted(nve("update", x.getGUID())), "update on X not granted");
+        assertFalse(shiroB.isPermitted(nve("delete", x.getGUID())));
+        assertFalse(shiroB.isPermitted(nve("read", y.getGUID())), "Y not shared");
+        assertFalse(shiroB.isPermitted("nventity:read"), "no global read");
+
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:read,share:" + x.getGUID()));
+
+        PermissionGrant[] stored = dsm.getPermissionGrants(b.getGUID());
+        assertEquals(1, stored.length);
+        assertNotNull(stored[0].getResourceMap(), "map must load eagerly with the grant");
+        assertEquals(x.getGUID(), stored[0].getResourceMap().getResourceGUID());
+    }
+
+    @Test
+    public void share_tokenNormalized() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), " NVEntity:Read , Share ");
+        assertEquals("nventity:read,share", grant.getPermissionToken());
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
+        assertTrue(shiroB.isPermitted("NVENTITY:READ:" + x.getGUID().toUpperCase()), "ShiroUtil lower-cases checks; direct checks are case-insensitive by Shiro");
+    }
+
+    @Test
+    public void share_invalidTokensRejected() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+
+        String[] bad = {"nventity:create", "nventity:*", "nventity:read:" + x.getGUID(), "doc:read", "nventity:",
+                "nventity:read,,share", "nventity:read,bogus", "nventity", "", null};
+        for (String token : bad) {
+            assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, mapOf(x), token),
+                    "token must be rejected: " + token);
+        }
+        assertEquals(0, dsm.getPermissionGrants(b.getGUID()).length, "nothing persisted");
+        assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length, "no map rows either");
+    }
+
+    @Test
+    public void share_missingResourceRejected() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> dsm.addPermissionGrant(b, new ResourceMap(UUID.randomUUID().toString(), PropertyDAO.class.getName()), "nventity:read"),
+                "unknown GUID");
+        assertThrows(IllegalArgumentException.class,
+                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), "com.example.NoSuchClass"), "nventity:read"),
+                "unknown class");
+        assertThrows(IllegalArgumentException.class,
+                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), null), "nventity:read"),
+                "blank type");
+        assertThrows(IllegalArgumentException.class,
+                () -> dsm.addPermissionGrant(b, new ResourceMap(null, PropertyDAO.class.getName()), "nventity:read"),
+                "blank guid");
+        assertEquals(0, dsm.getPermissionGrants(b.getGUID()).length);
+    }
+
+    @Test
+    public void share_catalogScopedGrant_flattensWithGuid() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+
+        PermissionGrant grant = dsm.addPermissionGrant(b, update, mapOf(x));
+        assertEquals(update.getGUID(), grant.getPermissionGUID());
+        assertNull(grant.getPermissionToken());
+        assertEquals(x.getGUID(), grant.getResourceMap().getResourceGUID());
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("update", x.getGUID())));
+        assertFalse(shiroB.isPermitted(nve("update", y.getGUID())));
+        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())));
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:update:" + x.getGUID()));
+
+        PermissionInfo scoped = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read:abc"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, scoped, mapOf(x)),
+                "a token that already has an instance part cannot be scoped");
+        PermissionInfo onePart = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, onePart, mapOf(x)));
+        PermissionInfo unsaved = new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read");
+        unsaved.setGUID(UUID.randomUUID().toString());
+        assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, unsaved, mapOf(x)), "unknown catalog row");
+    }
+
+    @Test
+    public void share_globalCatalogGrant_unchanged() {
+        String pb = uniquePrincipal();
+        SubjectIdentifier b = newSubject(pb);
+        PermissionInfo read = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read"));
+
+        dsm.logout();
+        PermissionGrant grant = dsm.addPermissionGrant(b, read);
+        assertNull(grant.getResourceMap());
+        assertNull(grant.getPermissionToken());
+        assertNull(grant.getBrokerGUID(), "nobody bound -> no grantor recorded");
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("read", UUID.randomUUID().toString())), "global read implies every instance");
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:read"));
+
+        // exclusivity: a grant carrying both forms is refused before anything is written
+        PermissionGrant both = new PermissionGrant(read.getGUID(), mapOf(newResource(b)));
+        both.setPermissionToken("nventity:read");
+        assertThrows(IllegalArgumentException.class, both::validateShape);
+    }
+
+    @Test
+    public void share_revoke_evictsAndDeletesMapRow() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        String mapGUID = grant.getResourceMap().getGUID();
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
+
+        assertTrue(dsm.deletePermissionGrant(grant));
+        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())), "revocation must evict the cached authorization");
+        assertFalse(mapRowExists(mapGUID), "map row deleted with the grant");
+        assertTrue(ds.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
+        assertFalse(dsm.deletePermissionGrant(grant), "second revoke finds nothing");
+
+        // a shell with only the GUID still cascades to the stored map
+        PermissionGrant again = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        PermissionGrant shell = new PermissionGrant();
+        shell.setGUID(again.getGUID());
+        assertTrue(dsm.deletePermissionGrant(shell));
+        assertFalse(mapRowExists(again.getResourceMap().getGUID()));
+    }
+
+    @Test
+    public void share_enforcement_nonOwnerCannotInlineShare() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
+        PropertyDAO x = newResource(a);
+
+        dsm.setEnforcePermissions(true);
+        try {
+            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"), "nobody bound");
+            login(pb);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"), "B does not own X");
+            assertEquals(0, dsm.getPermissionGrants(c.getGUID()).length);
+
+            login(pa);
+            PermissionGrant grant = dsm.addPermissionGrant(c, mapOf(x), "nventity:read");
+            assertEquals(a.getGUID(), grant.getBrokerGUID(), "grantor recorded");
+            assertEquals(c.getGUID(), grant.getSubjectGUID());
+        } finally {
+            dsm.setEnforcePermissions(false);
+        }
+        Subject shiroC = login(pc);
+        assertTrue(shiroC.isPermitted(nve("read", x.getGUID())));
+    }
+
+    @Test
+    public void share_enforcement_shareHolderCanCatalogGrant_notInline() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        // A shares X with B including the share verb (enforcement off: nobody needs to be bound)
+        dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
+
+        dsm.setEnforcePermissions(true);
+        try {
+            login(pb);
+            PermissionGrant grant = dsm.addPermissionGrant(c, update, mapOf(x));
+            assertEquals(b.getGUID(), grant.getBrokerGUID());
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"),
+                    "a share holder may not create an inlined grant");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, update, mapOf(y)),
+                    "no share on Y and no global assign");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, update), "global grant needs the assign permission");
+        } finally {
+            dsm.setEnforcePermissions(false);
+        }
+        Subject shiroC = login(pc);
+        assertTrue(shiroC.isPermitted(nve("update", x.getGUID())));
+        assertFalse(shiroC.isPermitted(nve("update", y.getGUID())));
+    }
+
+    @Test
+    public void share_enforcement_grantorOrOwnerCanRevoke() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), padmin = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), admin = newSubject(padmin);
+        PropertyDAO x = newResource(a);
+        PermissionInfo canRemove = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), SecurityModel.PERM_REMOVE_PERMISSION));
+        dsm.addPermissionGrant(admin, canRemove);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+
+        login(pa);
+        PermissionGrant aToB = dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
+        assertEquals(a.getGUID(), aToB.getBrokerGUID());
+
+        dsm.setEnforcePermissions(true);
+        try {
+            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "nobody bound");
+            login(pc);
+            assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "C is nobody here");
+            login(pb);
+            assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "the grantee cannot revoke its own grant");
+            login(pa);
+            assertTrue(dsm.deletePermissionGrant(aToB), "the grantor revokes");
+
+            // B (share holder) grants C; the owner A, not the grantor, revokes
+            PermissionGrant aToB2 = dsm.addPermissionGrant(b, mapOf(x), "nventity:share");
+            login(pb);
+            PermissionGrant bToC = dsm.addPermissionGrant(c, update, mapOf(x));
+            login(pa);
+            assertTrue(dsm.deletePermissionGrant(bToC), "the resource owner revokes");
+
+            // global remove permission revokes anything
+            login(pb);
+            PermissionGrant bToC2 = dsm.addPermissionGrant(c, update, mapOf(x));
+            login(padmin);
+            assertTrue(dsm.deletePermissionGrant(bToC2));
+            assertTrue(dsm.deletePermissionGrant(aToB2));
+        } finally {
+            dsm.setEnforcePermissions(false);
+        }
+        assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+    }
+
+    @Test
+    public void share_deleteSubjectID_cleansGranteeMapRows() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        String mapGUID = grant.getResourceMap().getGUID();
+        assertEquals(1, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+
+        assertTrue(dsm.deleteSubjectID(b));
+        assertTrue(ds.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
+        assertFalse(mapRowExists(mapGUID), "map row must not be orphaned");
+        assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+    }
+
+    @Test
+    public void share_getAndDeletePermissionGrantsByResource() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        PermissionGrant gb = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        PermissionGrant gc = dsm.addPermissionGrant(c, mapOf(x), "nventity:read,update");
+        PermissionGrant gd = dsm.addPermissionGrant(d, mapOf(y), "nventity:read");
+
+        PermissionGrant[] onX = dsm.getPermissionGrantsByResource(x.getGUID());
+        assertEquals(2, onX.length);
+        for (PermissionGrant g : onX) {
+            assertEquals(x.getGUID(), g.getResourceMap().getResourceGUID());
+        }
+        assertEquals(0, dsm.getPermissionGrantsByResource(UUID.randomUUID().toString()).length);
+        assertEquals(0, dsm.getPermissionGrantsByResource(null).length);
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
+
+        assertEquals(2, dsm.deletePermissionGrantsByResource(x.getGUID()));
+        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())), "grantee evicted");
+        assertFalse(mapRowExists(gb.getResourceMap().getGUID()));
+        assertFalse(mapRowExists(gc.getResourceMap().getGUID()));
+        assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+        assertEquals(1, dsm.getPermissionGrantsByResource(y.getGUID()).length, "Y untouched");
+        assertTrue(mapRowExists(gd.getResourceMap().getGUID()));
+        assertEquals(0, dsm.deletePermissionGrantsByResource(x.getGUID()), "idempotent");
+    }
+
+    @Test
+    public void share_flattenerSkipsGrantWithMissingCatalogRow() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        dsm.addPermissionGrant(b, update, mapOf(x));
+
+        Subject shiroB = login(pb);
+        assertTrue(shiroB.isPermitted(nve("update", x.getGUID())));
+
+        assertTrue(dsm.deletePermission(update));
+        Subject again = login(pb);
+        assertTrue(again.isAuthenticated(), "a dangling grant must not break login");
+        assertFalse(again.isPermitted(nve("update", x.getGUID())));
+        assertEquals(1, dsm.getPermissionGrants(b.getGUID()).length, "the grant row itself stays");
+    }
+
+    // ------------------------------------------------------------------
+    // password reset (email principal = recovery channel; admin path for the rest)
+    // ------------------------------------------------------------------
+
+    private static String uniqueUsername() {
+        return "user-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static PasswordResetToken[] tokensOf(String subjectGUID) {
+        java.util.List<PasswordResetToken> list = ds.search(PasswordResetToken.NVC_PASSWORD_RESET_TOKEN, null,
+                new org.zoxweb.shared.db.QueryMatch<>(org.zoxweb.shared.util.MetaToken.SUBJECT_GUID.getName(), subjectGUID,
+                        Const.RelationalOperator.EQUAL));
+        return list.toArray(new PasswordResetToken[0]);
+    }
+
+    private static void expireOutstanding(String subjectGUID) {
+        for (PasswordResetToken t : tokensOf(subjectGUID)) {
+            if (t.getStatus() == SecConst.SecStatus.ACTIVE) {
+                t.setExpiryTS(System.currentTimeMillis() - 1);
+                ds.update(t);
+            }
+        }
+    }
+
+    @Test
+    public void reset_request_emailPrincipal_issuesTokenAndLocksLogin() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        long before = System.currentTimeMillis();
+
+        PasswordResetRequest req = dsm.requestPasswordReset("  " + principal.toUpperCase() + " ");
+        assertNotNull(req.getToken());
+        assertEquals(43, req.getToken().length());
+        assertEquals(principal, req.getPrincipalID(), "normalized");
+        assertEquals(subject.getGUID(), req.getSubjectGUID());
+        assertArrayEquals(new String[]{principal}, req.getDeliveryPrincipalIDs());
+        assertEquals(PasswordResetToken.Channel.EMAIL, req.getChannel());
+        long ttl = dsm.getResetTokenTTL(PasswordResetToken.Channel.EMAIL);
+        assertTrue(req.getExpiryTS() >= before + ttl && req.getExpiryTS() <= System.currentTimeMillis() + ttl);
+        assertFalse(req.toString().contains(req.getToken()), "toString masks the token");
+
+        assertEquals(SecConst.SecStatus.PENDING_RESET_PASSWORD, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD), "login denied while pending");
+        assertTrue(dsm.verifyPassword(principal, PASSWORD), "verifyPassword still works while pending");
+        PasswordResetToken[] rows = tokensOf(subject.getGUID());
+        assertEquals(1, rows.length);
+        assertNotEquals(req.getToken(), rows[0].getTokenHash(), "only the hash is stored");
+        assertEquals(SecConst.SecStatus.ACTIVE, rows[0].getStatus());
+        assertNull(rows[0].getBrokerGUID());
+    }
+
+    @Test
+    public void reset_complete_withValidToken_replacesPasswordOnce() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        PasswordResetRequest req = dsm.requestPasswordReset(principal);
+
+        dsm.completePasswordReset(principal, req.getToken(), NEW_PASSWORD);
+        assertEquals(SecConst.SecStatus.ACTIVE, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+        assertNotNull(dsm.login(principal, NEW_PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD), "old password gone");
+        assertEquals(1, dsm.lookupCredentialsBySubjectGUID(subject.getGUID(), CredentialInfo.Type.PASSWORD).length);
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, req.getToken(), NEW_PASSWORD), "single use");
+        PasswordResetToken[] rows = tokensOf(subject.getGUID());
+        assertEquals(1, rows.length);
+        assertEquals(SecConst.SecStatus.DEACTIVATED, rows[0].getStatus());
+        assertTrue(rows[0].getConsumedTS() > 0);
+    }
+
+    @Test
+    public void reset_complete_rejectsWrongToken_andExpiredToken() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        PasswordResetRequest req = dsm.requestPasswordReset(principal);
+
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, req.getToken() + "x", NEW_PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, "", NEW_PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, null, NEW_PASSWORD));
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(uniquePrincipal(), req.getToken(), NEW_PASSWORD), "token of another subject");
+        assertEquals(SecConst.SecStatus.PENDING_RESET_PASSWORD, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+
+        expireOutstanding(subject.getGUID());
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, req.getToken(), NEW_PASSWORD), "expired");
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, NEW_PASSWORD));
+    }
+
+    @Test
+    public void reset_complete_rejectsWeakPassword_andKeepsToken() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        PasswordResetRequest req = dsm.requestPasswordReset(principal);
+        assertThrows(IllegalArgumentException.class, () -> dsm.completePasswordReset(principal, req.getToken(), "weak"));
+        assertEquals(SecConst.SecStatus.PENDING_RESET_PASSWORD, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+        dsm.completePasswordReset(principal, req.getToken(), NEW_PASSWORD);
+        assertNotNull(dsm.login(principal, NEW_PASSWORD));
+    }
+
+    @Test
+    public void reset_secondRequest_supersedesFirst() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        PasswordResetRequest first = dsm.requestPasswordReset(principal);
+        PasswordResetRequest second = dsm.requestPasswordReset(principal);
+        assertNotEquals(first.getToken(), second.getToken());
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, first.getToken(), NEW_PASSWORD));
+        dsm.completePasswordReset(principal, second.getToken(), NEW_PASSWORD);
+        int active = 0, inactive = 0, consumed = 0;
+        for (PasswordResetToken t : tokensOf(subject.getGUID())) {
+            if (t.getStatus() == SecConst.SecStatus.ACTIVE) active++;
+            if (t.getStatus() == SecConst.SecStatus.INACTIVE) inactive++;
+            if (t.getStatus() == SecConst.SecStatus.DEACTIVATED) consumed++;
+        }
+        assertEquals(0, active);
+        assertEquals(1, inactive);
+        assertEquals(1, consumed);
+    }
+
+    @Test
+    public void reset_request_usernameOnlySubject_throwsNoRecoveryChannel_adminPathWorks() {
+        String username = uniqueUsername();
+        SubjectIdentifier subject = newSubject(username);
+        assertThrows(NoRecoveryChannelException.class, () -> dsm.requestPasswordReset(username));
+        assertEquals(SecConst.SecStatus.ACTIVE, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus(), "nothing issued");
+        assertEquals(0, tokensOf(subject.getGUID()).length);
+
+        long before = System.currentTimeMillis();
+        PasswordResetRequest req = dsm.adminResetPassword(username);
+        assertEquals(PasswordResetToken.Channel.ADMIN, req.getChannel());
+        assertEquals(0, req.getDeliveryPrincipalIDs().length);
+        long ttl = dsm.getResetTokenTTL(PasswordResetToken.Channel.ADMIN);
+        assertEquals(4L * Const.TimeInMillis.HOUR.MILLIS, ttl);
+        assertTrue(req.getExpiryTS() >= before + ttl && req.getExpiryTS() <= System.currentTimeMillis() + ttl);
+        assertThrows(AccessSecurityException.class, () -> dsm.login(username, PASSWORD));
+        dsm.completePasswordReset(username, req.getToken(), NEW_PASSWORD);
+        assertNotNull(dsm.login(username, NEW_PASSWORD));
+    }
+
+    @Test
+    public void reset_request_byUsername_whenSubjectAlsoHasEmails_deliversToAllEmails() {
+        String username = uniqueUsername();
+        String email1 = uniquePrincipal();
+        String email2 = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(username);
+        dsm.addPrincipalID(subject, email1);
+        dsm.addPrincipalID(subject, email2);
+
+        PasswordResetRequest req = dsm.requestPasswordReset(username);
+        assertEquals(username, req.getPrincipalID());
+        java.util.Set<String> delivery = new java.util.HashSet<>(java.util.Arrays.asList(req.getDeliveryPrincipalIDs()));
+        assertEquals(new java.util.HashSet<>(java.util.Arrays.asList(email1, email2)), delivery);
+        // any principal of the subject completes the reset
+        dsm.completePasswordReset(email2, req.getToken(), NEW_PASSWORD);
+        assertNotNull(dsm.login(username, NEW_PASSWORD));
+        assertNotNull(dsm.login(email1, NEW_PASSWORD));
+    }
+
+    @Test
+    public void reset_request_deactivatedOrUnknown_refused() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
+        dsm.updateSubjectID(subject);
+        assertThrows(AccessSecurityException.class, () -> dsm.requestPasswordReset(principal));
+        assertFalse(assertThrows(AccessSecurityException.class, () -> dsm.requestPasswordReset(principal)) instanceof NoRecoveryChannelException);
+        assertEquals(SecConst.SecStatus.DEACTIVATED, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+        assertThrows(AccessSecurityException.class, () -> dsm.adminResetPassword(principal));
+
+        AccessSecurityException unknown = assertThrows(AccessSecurityException.class, () -> dsm.requestPasswordReset(uniquePrincipal()));
+        assertFalse(unknown instanceof NoRecoveryChannelException, "unknown principals are not distinguishable from channel-less ones by type? they are: generic");
+        assertThrows(AccessSecurityException.class, () -> dsm.adminResetPassword(uniquePrincipal()));
+    }
+
+    @Test
+    public void reset_expiredPending_isLiftedOnLogin() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        dsm.requestPasswordReset(principal);
+        assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
+        expireOutstanding(subject.getGUID());
+        assertNotNull(dsm.login(principal, PASSWORD), "old password works again once the token expired");
+        assertEquals(SecConst.SecStatus.ACTIVE, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+    }
+
+    @Test
+    public void reset_cancel_restoresActiveAndKillsToken() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        PasswordResetRequest req = dsm.requestPasswordReset(principal);
+        assertTrue(dsm.cancelPasswordReset(principal));
+        assertEquals(SecConst.SecStatus.ACTIVE, dsm.lookupSubjectByGUID(subject.getGUID()).getSubjectStatus());
+        assertThrows(AccessSecurityException.class, () -> dsm.completePasswordReset(principal, req.getToken(), NEW_PASSWORD));
+        assertNotNull(dsm.login(principal, PASSWORD));
+        assertFalse(dsm.cancelPasswordReset(principal), "nothing left to cancel");
+        assertFalse(dsm.cancelPasswordReset(uniquePrincipal()));
+    }
+
+    @Test
+    public void reset_enforcement_adminNeedsSubjectUpdate_selfServiceNeedsNobody() {
+        String target = uniquePrincipal();
+        newSubject(target);
+        String adminPrincipal = uniquePrincipal();
+        SubjectIdentifier admin = newSubject(adminPrincipal);
+        String plainPrincipal = uniquePrincipal();
+        newSubject(plainPrincipal);
+        PermissionInfo canUpdate = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), SecurityModel.PERM_UPDATE_SUBJECT));
+
+        dsm.setEnforcePermissions(true);
+        try {
+            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.adminResetPassword(target), "nobody bound");
+            dsm.loginSubject(plainPrincipal, PASSWORD, null, null);
+            assertThrows(AccessSecurityException.class, () -> dsm.adminResetPassword(target), "no subject:update");
+            dsm.logout();
+
+            // grant outside enforcement, then the admin path works
+            dsm.setEnforcePermissions(false);
+            dsm.addPermissionGrant(admin, canUpdate);
+            dsm.setEnforcePermissions(true);
+            dsm.loginSubject(adminPrincipal, PASSWORD, null, null);
+            PasswordResetRequest adminReq = dsm.adminResetPassword(target);
+            assertEquals(admin.getGUID(), tokensOf(adminReq.getSubjectGUID())[0].getBrokerGUID(), "broker recorded");
+            dsm.logout();
+
+            // self-service paths need nobody bound
+            PasswordResetRequest req = dsm.requestPasswordReset(target);
+            dsm.completePasswordReset(target, req.getToken(), NEW_PASSWORD);
+        } finally {
+            dsm.setEnforcePermissions(false);
+        }
+        assertNotNull(dsm.login(target, NEW_PASSWORD));
+    }
+
+    @Test
+    public void reset_deleteSubject_cascadesTokens_andPurgeKeepsOutstanding() {
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+        dsm.requestPasswordReset(principal);
+        assertEquals(1, tokensOf(subject.getGUID()).length);
+        assertTrue(dsm.deleteSubjectID(subject));
+        assertEquals(0, tokensOf(subject.getGUID()).length, "tokens deleted with the subject");
+
+        String p2 = uniquePrincipal();
+        SubjectIdentifier s2 = newSubject(p2);
+        PasswordResetRequest first = dsm.requestPasswordReset(p2);   // superseded below
+        PasswordResetRequest second = dsm.requestPasswordReset(p2);  // outstanding
+        String p3 = uniquePrincipal();
+        SubjectIdentifier s3 = newSubject(p3);
+        PasswordResetRequest third = dsm.requestPasswordReset(p3);
+        expireOutstanding(s3.getGUID());                              // expired
+        int purged = dsm.purgeExpiredResetTokens();
+        assertTrue(purged >= 2, "superseded + expired removed, got " + purged);
+        PasswordResetToken[] left = tokensOf(s2.getGUID());
+        assertEquals(1, left.length);
+        assertEquals(SecConst.SecStatus.ACTIVE, left[0].getStatus());
+        assertEquals(0, tokensOf(s3.getGUID()).length);
+        assertNotNull(first);
+        assertNotNull(third);
+        dsm.completePasswordReset(p2, second.getToken(), NEW_PASSWORD);
+    }
+
+    @Test
+    public void reset_managerIsRegisteredAsResource_onInstallAsGlobal() {
+        Object previous = ResourceManager.lookupResource(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER);
+        org.apache.shiro.mgt.SecurityManager previousSM = null;
+        try {
+            previousSM = SecurityUtils.getSecurityManager();
+        } catch (RuntimeException ignore) {
+            // none installed
+        }
+        try {
+            ResourceManager.SINGLETON.unregister(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER);
+            assertNull(ResourceManager.lookupResource(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER));
+            ShiroDSDomainSecurityManager local = new ShiroDSDomainSecurityManager(ds);
+            local.installAsGlobal();
+            DomainSecurityManager found = ResourceManager.lookupResource(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER);
+            assertSame(local, found, "installAsGlobal fills the empty slot");
+            // an occupied slot is left alone
+            new ShiroDSDomainSecurityManager(ds).installAsGlobal();
+            assertSame(local, ResourceManager.lookupResource(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER));
+            assertFalse(found.verifyPassword(uniquePrincipal(), PASSWORD), "reachable through the core interface");
+        } finally {
+            ResourceManager.SINGLETON.unregister(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER);
+            if (previous != null) {
+                ResourceManager.SINGLETON.register(ResourceManager.Resource.DOMAIN_SECURITY_MANAGER, previous);
+            }
+            if (previousSM != null) {
+                SecurityUtils.setSecurityManager(previousSM);
+            }
         }
     }
 }

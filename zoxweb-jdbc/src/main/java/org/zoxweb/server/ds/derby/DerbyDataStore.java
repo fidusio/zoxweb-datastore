@@ -9,7 +9,7 @@ import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.io.SharedIOUtil;
-import org.zoxweb.shared.security.AccessException;
+import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.util.*;
 
 import java.io.IOException;
@@ -375,7 +375,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <V extends NVEntity> List<V> search(NVConfigEntity nvce, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return search(nvce.getMetaType().getName(), fieldNames, queryCriteria);
     }
@@ -383,7 +383,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <V extends NVEntity> List<V> search(String className, List<String> fieldNames,
                                                QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
 
         PreparedStatement stmt = null;
         ResultSet rs = null;
@@ -438,14 +438,14 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public <T> APISearchResult<T> batchSearch(String className, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
@@ -453,7 +453,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <T, V extends NVEntity> APIBatchResult<V> nextBatch(APISearchResult<T> results,
                                                                int startIndex, int batchSize)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
@@ -461,7 +461,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, NVConfigEntity nvce,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
@@ -469,14 +469,14 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <V extends NVEntity> List<V> userSearch(String userID, String className,
                                                    List<String> fieldNames, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public <V extends NVEntity> List<V> searchByID(NVConfigEntity nvce, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return searchByID(nvce.getMetaType().getName(), ids);
     }
@@ -484,7 +484,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public <V extends NVEntity> List<V> searchByID(String className, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         Connection con = null;
         try {
@@ -498,7 +498,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @SuppressWarnings("unchecked")
     private <V extends NVEntity> List<V> innerSearchByID(Connection con, String className, String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
 
         Statement stmt = null;
@@ -571,14 +571,14 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     @Override
     public <V extends NVEntity> List<V> userSearchByID(String userID, NVConfigEntity nvce,
                                                        String... ids)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public <V extends NVEntity> V insert(V nve)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         Connection con = null;
         try {
             con = connect();
@@ -595,7 +595,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
     }
 
     private <V extends NVEntity> V innerInsert(Connection con, V nve)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
 
         PreparedStatement stmt = null;
 
@@ -720,7 +720,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public <V extends NVEntity> boolean delete(V nve, boolean withReference)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
 
         if (nve == null)
             return false;
@@ -745,7 +745,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public <V extends NVEntity> boolean delete(NVConfigEntity nvce, QueryMarker... queryCriteria)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         SUS.checkIfNulls("nvce and queryCriteria can not be null", nvce, queryCriteria);
         if (queryCriteria.length == 0) {
             throw new IllegalArgumentException("queryCriteria can not be empty");
@@ -916,7 +916,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public List<DynamicEnumMap> getAllDynamicEnumMap(String domainID, String userID)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
@@ -937,42 +937,42 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
 
     @Override
     public LongSequence createSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public LongSequence createSequence(String sequenceName, long startValue, long defaultIncrement)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public void deleteSequence(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
 
     }
 
     @Override
     public long currentSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return 0;
     }
 
     @Override
     public long nextSequenceValue(String sequenceName)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return 0;
     }
 
     @Override
     public long nextSequenceValue(String sequenceName, long increment)
-            throws NullPointerException, IllegalArgumentException, AccessException, APIException {
+            throws NullPointerException, IllegalArgumentException, AccessSecurityException, APIException {
         // TODO Auto-generated method stub
         return 0;
     }

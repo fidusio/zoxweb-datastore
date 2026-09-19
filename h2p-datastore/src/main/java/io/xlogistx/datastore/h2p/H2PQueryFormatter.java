@@ -17,6 +17,7 @@ import org.zoxweb.shared.db.QueryMatchIn;
 import org.zoxweb.shared.util.Const;
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVConfigEntity;
+import org.zoxweb.shared.util.NVEntity;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -103,7 +104,9 @@ public final class H2PQueryFormatter {
 
     /**
      * Binds each QueryMatch/QueryMatchIn value starting at {@code startIndex}; returns the next
-     * free parameter index. Reserved-ID / reference-ID fields decode String → UUID.
+     * free parameter index. Reserved-ID / reference-ID fields and single entity-reference columns
+     * ({@code AttrKind.ENTITY_REF}, stored as {@code uuid}) decode String → UUID; an entity-reference
+     * criterion may also carry the child entity itself, in which case its GUID is bound.
      */
     public static int bindWhere(PreparedStatement ps, int startIndex, NVConfigEntity nvce,
                                 QueryMarker... queryCriteria) throws SQLException {
@@ -142,16 +145,23 @@ public final class H2PQueryFormatter {
                 || qMatch.getOperator() == Const.RelationalOperator.NOT_EQUAL);
     }
 
-    /** Convert a query value into what the column type stores. */
-    static Object normalize(NVConfig nvc, Object value) {
+    /**
+     * Convert a query value into what the column type stores. Public so tests can assert the
+     * bound type: H2 in PostgreSQL mode coerces a varchar against a {@code uuid} column, native
+     * PostgreSQL does not.
+     */
+    public static Object normalize(NVConfig nvc, Object value) {
         if (value == null) {
             return null;
         }
-        if (H2PUtil.isUUIDField(nvc)) {
+        if (H2PUtil.isUUIDField(nvc) || H2PUtil.classify(nvc) == H2PUtil.AttrKind.ENTITY_REF) {
             if (value instanceof UUID) {
                 return value;
             }
-            String s = value.toString();
+            if (value instanceof NVEntity) {
+                value = ((NVEntity) value).getGUID();
+            }
+            String s = value == null ? "" : value.toString();
             return s.isEmpty() ? null : IDGs.UUIDV7.decode(s);
         }
         if (value instanceof Enum) {
