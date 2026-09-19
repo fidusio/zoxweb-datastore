@@ -6,7 +6,6 @@ import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.server.logging.LogWrapper;
 import org.zoxweb.shared.util.DataEncoder;
 import org.zoxweb.shared.util.SUS;
-import org.zoxweb.shared.util.SharedStringUtil;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -125,7 +124,7 @@ public final class GrantFlattener {
         if (permissions != null) {
             for (PermissionInfo p : permissions) {
                 if (p != null) {
-                    addPermission(ret, SharedStringUtil.toLowerCase(p.getPermissionToken()), wildcardOK, subjectGUID);
+                    addPermission(ret, SUS.toLowerCase(p.getPermissionToken()), wildcardOK, subjectGUID);
                 }
             }
         }

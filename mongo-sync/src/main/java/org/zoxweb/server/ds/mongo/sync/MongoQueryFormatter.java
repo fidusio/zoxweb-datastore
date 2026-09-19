@@ -23,7 +23,7 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.SharedStringUtil;
+import org.zoxweb.shared.util.SUS;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -117,7 +117,7 @@ public class MongoQueryFormatter {
             return new ObjectId((String) queryMatch.getValue());
         }
 
-        if (nvc == null && MongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == MongoUtil.ReservedID.REFERENCE_ID
+        if (nvc == null && MongoUtil.ReservedID.lookupByName(SUS.valueAfterRightToken(queryMatch.getName(), ".")) == MongoUtil.ReservedID.REFERENCE_ID
                 && queryMatch.getValue() instanceof String) {
             return new ObjectId((String) queryMatch.getValue());
         }

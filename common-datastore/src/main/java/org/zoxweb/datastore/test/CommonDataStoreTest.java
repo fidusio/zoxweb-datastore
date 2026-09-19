@@ -51,7 +51,7 @@ public class CommonDataStoreTest<P,S> {
 
         httpMessageConfig = (HTTPMessageConfig) ((APIDataStore<?,?>)APIRegistrar.SINGLETON.getDefault()).searchByID(HTTPMessageConfig.class.getName(), httpMessageConfig.getGUID()).get(0);
 
-        System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
+        System.out.println(SUS.toString(httpMessageConfig.getContent()));
 
         String json = GSONUtil.toJSONDefault(hmci);
         String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);

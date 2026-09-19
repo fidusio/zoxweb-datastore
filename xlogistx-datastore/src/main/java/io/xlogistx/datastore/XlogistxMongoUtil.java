@@ -187,7 +187,7 @@ public class XlogistxMongoUtil {
                         , int.class, Integer.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVNumber) nvb).setValue((Number) doc.get(nvc.getName()))
                         , Number.class)
-                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVEnum) nvb).setValue(SharedUtil.enumValue(nvc.getMetaType(), doc.getString(nvc.getName()))),
+                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVEnum) nvb).setValue(SUS.enumValue(nvc.getMetaType(), doc.getString(nvc.getName()))),
                         Enum.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
                             List<Long> values = new ArrayList<Long>();
@@ -251,14 +251,14 @@ public class XlogistxMongoUtil {
                             List<Enum<?>> listOfEnums = new ArrayList<Enum<?>>();
 
                             for (String enumValue : listOfEnumValues) {
-                                listOfEnums.add(SharedUtil.enumValue(nvc.getMetaTypeBase(), enumValue));
+                                listOfEnums.add(SUS.enumValue(nvc.getMetaTypeBase(), enumValue));
                             }
 
                             ((NVEnumList) nvb).setValue(listOfEnums);
                         },
                         Enum[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
-                            boolean isFixed = doc.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), false);
+                            boolean isFixed = doc.getBoolean(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), false);
 
                             List<Document> list = (List<Document>) doc.get(nvc.getName());
 

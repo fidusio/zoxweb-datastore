@@ -126,9 +126,9 @@ public class SyncMongoDS
 
                     //		try
                     //		{
-                    //			setDBAddress(new DBAddress(SharedUtil.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.HOST.getName())),
-                    //					Integer.valueOf(SharedUtil.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.PORT.getName()))),
-                    //							SharedUtil.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName()))));
+                    //			setDBAddress(new DBAddress(SUS.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.HOST.getName())),
+                    //					Integer.valueOf(SUS.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.PORT.getName()))),
+                    //							SUS.lookupValue(configInfo.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName()))));
                     //		}
                     //		catch (NumberFormatException | UnknownHostException e)
                     //		{
@@ -637,7 +637,7 @@ public class SyncMongoDS
                 String filterTypeName = (String) valueFilterValue;
 
                 if (!SUS.isEmpty(filterTypeName)) {
-                    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(filterTypeName, FilterType.values()));
+                    return ((ValueFilter<String, String>) SUS.lookupEnum(filterTypeName, FilterType.values()));
                 }
             }
 
@@ -670,7 +670,7 @@ public class SyncMongoDS
 
         for (String key : dbNVGM.keySet()) {
             Object value = dbNVGM.get(key);
-            NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
+            NVBase<?> possibleNVB = SUS.toNVBasePrimitive(key, value);
             if (possibleNVB != null) {
                 if (possibleNVB.getValue() instanceof String && MetaToken.CLASS_TYPE.getName().equalsIgnoreCase(key)) {
                     try {
@@ -693,7 +693,7 @@ public class SyncMongoDS
                         e.printStackTrace();
                     }
                     if (subClass.isEnum()) {
-                        NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass, (String) ((Document) value).get(MetaToken.VALUE.getName())));
+                        NVEnum nvEnum = new NVEnum(key, SUS.enumValue(subClass, (String) ((Document) value).get(MetaToken.VALUE.getName())));
                         nvgm.add(nvEnum);
                         continue;
                     }
@@ -1049,7 +1049,7 @@ public class SyncMongoDS
         }
 
         if (nve instanceof TimeStampInterface) {
-            SharedUtil.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
+            SUS.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
         }
 
         for (NVConfig nvc : nvce.getAttributes()) {
@@ -1071,11 +1071,11 @@ public class SyncMongoDS
 
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
@@ -1222,7 +1222,7 @@ public class SyncMongoDS
 
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         if (nve instanceof TimeStampInterface) {
-            SharedUtil.touch((TimeStampInterface) nve, CRUD.UPDATE);
+            SUS.touch((TimeStampInterface) nve, CRUD.UPDATE);
         }
         if (embed) {
             doc.put(MetaToken.CLASS_TYPE.getName(), nve.getClass().getName());
@@ -1232,11 +1232,11 @@ public class SyncMongoDS
 
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);
@@ -1393,7 +1393,7 @@ public class SyncMongoDS
 //			NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
 //			if (nve instanceof TimeStampInterface)
 //			{
-//				SharedUtil.touch((TimeStampInterface) nve, CRUD.UPDATE);
+//				SUS.touch((TimeStampInterface) nve, CRUD.UPDATE);
 //			}
 //			
 //			for (NVConfig nvc : nvce.getAttributes())
@@ -1403,7 +1403,7 @@ public class SyncMongoDS
 //				if (nvb instanceof NVPairList)
 //				{
 //					if ( ((NVPairList) nvb).isFixed())
-//						updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+//						updatedDoc.append(SUS.toCanonicalID('_', nvc.getName(),MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 //					
 //					updatedDoc.put(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
 //				}
@@ -1590,7 +1590,7 @@ public class SyncMongoDS
 
             NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
             if (updateTS && nve instanceof TimeStampInterface) {
-                SharedUtil.touch((TimeStampInterface) nve, CRUD.UPDATE);
+                SUS.touch((TimeStampInterface) nve, CRUD.UPDATE);
             }
 
             boolean patchMode = true;
@@ -1640,12 +1640,12 @@ public class SyncMongoDS
 
                 if (nvb instanceof NVPairList) {
                     if (((NVPairList) nvb).isFixed())
-                        updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                        updatedDoc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 
                     updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
                 } else if (nvb instanceof NVGetNameValueList) {
                     if (((NVGetNameValueList) nvb).isFixed())
-                        updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                        updatedDoc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                     updatedDoc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
                 } else if (nvb instanceof NVPairGetNameMap) {
                     updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
@@ -2326,7 +2326,7 @@ public class SyncMongoDS
     public DynamicEnumMap searchDynamicEnumMapByName(String name, Class<? extends DynamicEnumMap> clazz)
             throws NullPointerException, IllegalArgumentException, APIException {
         if (!name.startsWith(DynamicEnumMap.NAME_PREFIX + ":")) {
-            name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
+            name = SUS.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
         Document doc = null;
@@ -2367,7 +2367,7 @@ public class SyncMongoDS
     public void deleteDynamicEnumMap(String name, Class<? extends DynamicEnumMap> clazz)
             throws NullPointerException, IllegalArgumentException, APIException {
         if (!name.startsWith(DynamicEnumMap.NAME_PREFIX + ":")) {
-            name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
+            name = SUS.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
         MongoCollection<Document> collection = null;
@@ -2460,7 +2460,7 @@ public class SyncMongoDS
     private static ServerAddress getDBAddress(APIConfigInfo aci) throws NumberFormatException, UnknownHostException {
         return new ServerAddress((String) aci.getProperties().getValue(SyncMongoDSCreator.MongoParam.HOST),
                 aci.getProperties().getValue(SyncMongoDSCreator.MongoParam.PORT));
-        //SharedUtil.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName())));
+        //SUS.lookupValue(aci.getConfigParameters().get(MongoDataStoreCreator.MongoParam.DB_NAME.getName())));
     }
 
     @Override

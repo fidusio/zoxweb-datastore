@@ -26,7 +26,7 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.SharedStringUtil;
+import org.zoxweb.shared.util.SUS;
 
 import java.util.Date;
 
@@ -207,7 +207,7 @@ public class MongoQueryFormatter
 			return toRet;
 		}
 		
-		if (nvc == null && ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) == ReservedID.REFERENCE_ID 
+		if (nvc == null && ReservedID.lookupByName(SUS.valueAfterRightToken(queryMatch.getName(), ".")) == ReservedID.REFERENCE_ID 
 			&& queryMatch.getValue() instanceof String)
 		{
 			ObjectId toRet = new ObjectId((String)queryMatch.getValue());

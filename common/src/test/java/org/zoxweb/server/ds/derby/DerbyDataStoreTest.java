@@ -346,7 +346,7 @@ public class DerbyDataStoreTest {
 
         httpMessageConfig = (HTTPMessageConfig) dataStore.searchByID(HTTPMessageConfig.class.getName(), httpMessageConfig.getGUID()).get(0);
 
-        System.out.println(SharedStringUtil.toString(httpMessageConfig.getContent()));
+        System.out.println(SUS.toString(httpMessageConfig.getContent()));
 
         String json = GSONUtil.toJSONDefault(hmci);
         String jsonFromDB = GSONUtil.toJSONDefault(httpMessageConfig);

@@ -1443,7 +1443,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
         if (nvb instanceof NVNumber) ((NVNumber) nvb).setValue(H2PUtil.decodeNumber(col.toString()));
         else if (nvb instanceof NVEnum)
-            ((NVEnum) nvb).setValue(SharedUtil.enumValue(ai.nvc.getMetaType(), col.toString()));
+            ((NVEnum) nvb).setValue(SUS.enumValue(ai.nvc.getMetaType(), col.toString()));
         else if (nvb instanceof NVBoolean) ((NVBoolean) nvb).setValue((Boolean) col);
         else if (nvb instanceof NVInt) ((NVInt) nvb).setValue(((Number) col).intValue());
         else if (nvb instanceof NVLong) ((NVLong) nvb).setValue(((Number) col).longValue());
@@ -1467,7 +1467,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             String[] names = GSONUtil.fromJSONDefault(json, String[].class);
             NVEnumList el = (NVEnumList) target;
             for (String nm : names) {
-                el.getValue().add((Enum<?>) SharedUtil.enumValue(ai.nvc.getMetaTypeBase(), nm));
+                el.getValue().add((Enum<?>) SUS.enumValue(ai.nvc.getMetaTypeBase(), nm));
             }
             return;
         }

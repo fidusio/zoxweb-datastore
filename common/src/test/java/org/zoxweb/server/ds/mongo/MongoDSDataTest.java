@@ -218,7 +218,7 @@ public class MongoDSDataTest {
     @Test
     public void testEncryptedKeyDOA() throws InvalidKeyException, NullPointerException, IllegalArgumentException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidAlgorithmParameterException, IllegalBlockSizeException, BadPaddingException, IOException
     {
-      EncryptedData ed = CryptoUtil.encryptData(new EncryptedKey(), SharedStringUtil.getBytes("PASSWORD"), null, 1);
+      EncryptedData ed = CryptoUtil.encryptData(new EncryptedKey(), SUS.getBytes("PASSWORD"), null, 1);
       //ed.getSubjectProperties().add(new NVPair("mario", "taza"));
       ed.getAlgoProperties().add(new NVPair("taza", "mario"));
       ed.getAlgoProperties().add(new NVInt("int", -2));

@@ -848,7 +848,7 @@ public class XlogistxMongoDataStore
                 String filterTypeName = (String) valueFilterValue;
 
                 if (!SUS.isEmpty(filterTypeName)) {
-                    return ((ValueFilter<String, String>) SharedUtil.lookupEnum(filterTypeName, FilterType.values()));
+                    return ((ValueFilter<String, String>) SUS.lookupEnum(filterTypeName, FilterType.values()));
                 }
             }
 
@@ -877,7 +877,7 @@ public class XlogistxMongoDataStore
 
         for (String key : dbNVGM.keySet()) {
             Object value = dbNVGM.get(key);
-            NVBase<?> possibleNVB = SharedUtil.toNVBasePrimitive(key, value);
+            NVBase<?> possibleNVB = SUS.toNVBasePrimitive(key, value);
             if (possibleNVB != null) {
                 if (possibleNVB.getValue() instanceof String && MetaToken.CLASS_TYPE.getName().equalsIgnoreCase(key)) {
                     try {
@@ -911,7 +911,7 @@ public class XlogistxMongoDataStore
                         continue;
                     }
                     if (subClass.isEnum()) {
-                        NVEnum nvEnum = new NVEnum(key, SharedUtil.enumValue(subClass, (String) ((Document) value).get(MetaToken.VALUE.getName())));
+                        NVEnum nvEnum = new NVEnum(key, SUS.enumValue(subClass, (String) ((Document) value).get(MetaToken.VALUE.getName())));
                         nvgm.add(nvEnum);
                         continue;
                     }
@@ -1214,7 +1214,7 @@ public class XlogistxMongoDataStore
 //        }
 
         if (nve instanceof TimeStampInterface) {
-            SharedUtil.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
+            SUS.touch((TimeStampInterface) nve, CRUD.CREATE, CRUD.UPDATE);
         }
 
         for (NVConfig nvc : nvce.getAttributes()) {
@@ -1240,11 +1240,11 @@ public class XlogistxMongoDataStore
 
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 List<Document> vals = serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false);
@@ -1350,7 +1350,7 @@ public class XlogistxMongoDataStore
 
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         if (nve instanceof TimeStampInterface) {
-            SharedUtil.touch((TimeStampInterface) nve, CRUD.UPDATE);
+            SUS.touch((TimeStampInterface) nve, CRUD.UPDATE);
         }
         if (embed) {
             doc.put(MetaToken.CLASS_TYPE.getName(), nve.getClass().getName());
@@ -1360,11 +1360,11 @@ public class XlogistxMongoDataStore
 
             if (nvb instanceof NVPairList) {
                 if (((NVPairList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
             } else if (nvb instanceof NVGetNameValueList) {
                 if (((NVGetNameValueList) nvb).isFixed())
-                    doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                    doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                 doc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
             } else if (nvb instanceof NVPairGetNameMap) {
                 ArrayList<Document> vals = serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync);
@@ -1489,7 +1489,7 @@ public class XlogistxMongoDataStore
             Document updatedDoc = new Document();
 
             if (updateTS && nve instanceof TimeStampInterface) {
-                SharedUtil.touch((TimeStampInterface) nve, CRUD.UPDATE);
+                SUS.touch((TimeStampInterface) nve, CRUD.UPDATE);
             }
 
             boolean patchMode = true;
@@ -1539,12 +1539,12 @@ public class XlogistxMongoDataStore
 
                 if (nvb instanceof NVPairList) {
                     if (((NVPairList) nvb).isFixed())
-                        updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+                        updatedDoc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 
                     updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
                 } else if (nvb instanceof NVGetNameValueList) {
                     if (((NVGetNameValueList) nvb).isFixed())
-                        updatedDoc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+                        updatedDoc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
                     updatedDoc.append(nvc.getName(), serArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
                 } else if (nvb instanceof NVPairGetNameMap) {
                     updatedDoc.put(nvc.getName(), serArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, sync));
@@ -2239,7 +2239,7 @@ public class XlogistxMongoDataStore
     public DynamicEnumMap searchDynamicEnumMapByName(String name, Class<? extends DynamicEnumMap> clazz)
             throws NullPointerException, IllegalArgumentException, APIException {
         if (!name.startsWith(DynamicEnumMap.NAME_PREFIX + ":")) {
-            name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
+            name = SUS.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
         Document doc = null;
@@ -2280,7 +2280,7 @@ public class XlogistxMongoDataStore
     public void deleteDynamicEnumMap(String name, Class<? extends DynamicEnumMap> clazz)
             throws NullPointerException, IllegalArgumentException, APIException {
         if (!name.startsWith(DynamicEnumMap.NAME_PREFIX + ":")) {
-            name = SharedUtil.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
+            name = SUS.toCanonicalID(':', DynamicEnumMap.NAME_PREFIX, name);
         }
 
         MongoCollection<Document> collection = null;

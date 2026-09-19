@@ -197,10 +197,10 @@ public class MongoUtil {
                         , int.class, Integer.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVNumber) nvb).setValue((Number) doc.get(nvc.getName()))
                         , Number.class)
-                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVEnum) nvb).setValue(SharedUtil.enumValue(nvc.getMetaType(), doc.getString(nvc.getName()))),
+                .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> ((NVEnum) nvb).setValue(SUS.enumValue(nvc.getMetaType(), doc.getString(nvc.getName()))),
                         Enum.class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
-                            boolean isFixed = doc.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
+                            boolean isFixed = doc.getBoolean(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
                             List<Document> docList = (List<Document>) doc.get(nvc.getName());
 
                             if (nvb instanceof NVGetNameValueList) {
@@ -272,14 +272,14 @@ public class MongoUtil {
                             List<Enum<?>> listOfEnums = new ArrayList<Enum<?>>();
 
                             for (String enumValue : listOfEnumValues) {
-                                listOfEnums.add(SharedUtil.enumValue(nvc.getMetaTypeBase(), enumValue));
+                                listOfEnums.add(SUS.enumValue(nvc.getMetaTypeBase(), enumValue));
                             }
 
                             ((NVEnumList) nvb).setValue(listOfEnums);
                         },
                         Enum[].class)
                 .map((mds, subjectGUID, db, doc, container, nvc, nvb) -> {
-                            boolean isFixed = doc.getBoolean(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
+                            boolean isFixed = doc.getBoolean(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()));
 
                             List<Document> list = (List<Document>) doc.get(nvc.getName());
 
@@ -356,18 +356,18 @@ public class MongoUtil {
 //            @Override
 //            public void accept(NVPairList nvPairList, Document document) {
 //                if (nvPairList.isFixed())
-//                    document.append(SharedUtil.toCanonicalID('_', nvPairList.getName(), MetaToken.IS_FIXED.getName()), nvPairList.isFixed());
+//                    document.append(SUS.toCanonicalID('_', nvPairList.getName(), MetaToken.IS_FIXED.getName()), nvPairList.isFixed());
 //                document.append(nvPairList.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
 //            }
 //        });
 //
 //        if (nvb instanceof NVPairList) {
 //            if (((NVPairList) nvb).isFixed())
-//                doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
+//                doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVPairList) nvb).isFixed());
 //            doc.append(nvc.getName(), mapArrayValuesNVPair(nve, (ArrayValues<NVPair>) nvb, false));
 //        } else if (nvb instanceof NVGetNameValueList) {
 //            if (((NVGetNameValueList) nvb).isFixed())
-//                doc.append(SharedUtil.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
+//                doc.append(SUS.toCanonicalID('_', nvc.getName(), MetaToken.IS_FIXED.getName()), ((NVGetNameValueList) nvb).isFixed());
 //            doc.append(nvc.getName(), mapArrayValuesNVGetNameValueString(nve, (ArrayValues<GetNameValue<String>>) nvb, false));
 //        } else if (nvb instanceof NVPairGetNameMap) {
 //            //if(log.isEnabled()) log.getLogger().info("WE have NVPairGetNameMap:" + nvb.getName() + ":" +nvc);

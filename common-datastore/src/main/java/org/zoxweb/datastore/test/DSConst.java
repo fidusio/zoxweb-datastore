@@ -88,7 +88,7 @@ public class DSConst {
                 false,
                 false,
                 AllTypes.class,
-                SharedUtil.extractNVConfigs(Param.values()),
+                SUS.extractNVConfigs(Param.values()),
                 null,
                 false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
@@ -288,7 +288,7 @@ public class DSConst {
                 false,
                 false,
                 ComplexTypes.class,
-                SharedUtil.extractNVConfigs(Param.values()),
+                SUS.extractNVConfigs(Param.values()),
                 null,
                 false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO

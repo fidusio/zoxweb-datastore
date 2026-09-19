@@ -20,7 +20,7 @@ import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVConfigEntityPortable;
 import org.zoxweb.shared.util.NVConfigManager;
 import org.zoxweb.shared.util.NVPair;
-import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.SUS;
 
 import java.util.List;
 import java.util.Set;
@@ -61,7 +61,7 @@ public class H2PRegressionTest {
 
         public static final NVConfigEntity NVC_CYCLIC_DAO = new NVConfigEntityPortable(
                 "cyclic_dao", null, "CyclicDAO", true, false, false, false, CyclicDAO.class,
-                SharedUtil.toNVConfigList(NVC_PEER), null, false,
+                SUS.toNVConfigList(NVC_PEER), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public CyclicDAO() {
@@ -315,7 +315,7 @@ public class H2PRegressionTest {
                 NVConfigManager.createNVConfig("keep_me", "v1 field", "KeepMe", false, true, String.class);
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedV1", true, false, false, false, EvolvedV1.class,
-                SharedUtil.toNVConfigList(NVC_KEEP), null, false,
+                SUS.toNVConfigList(NVC_KEEP), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public EvolvedV1() {
@@ -331,7 +331,7 @@ public class H2PRegressionTest {
                 NVConfigManager.createNVConfig("added_later", "v2 field", "AddedLater", false, true, Long.class);
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedV2", true, false, false, false, EvolvedV2.class,
-                SharedUtil.toNVConfigList(NVC_KEEP, NVC_ADDED), null, false,
+                SUS.toNVConfigList(NVC_KEEP, NVC_ADDED), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public EvolvedV2() {
@@ -345,7 +345,7 @@ public class H2PRegressionTest {
                 NVConfigManager.createNVConfig("keep_me", "now a long", "KeepMe", false, true, Long.class);
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedBadType", true, false, false, false, EvolvedBadType.class,
-                SharedUtil.toNVConfigList(NVC_KEEP), null, false,
+                SUS.toNVConfigList(NVC_KEEP), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public EvolvedBadType() {
@@ -422,7 +422,7 @@ public class H2PRegressionTest {
         public static final NVConfigEntity NVC_LONG_NAME_DAO = new NVConfigEntityPortable(
                 "regression_very_long_entity_type_name_that_exceeds_the_postgresql_identifier_limit",
                 null, "LongNameDAO", true, false, false, false, LongNameDAO.class,
-                SharedUtil.toNVConfigList(), null, false,
+                SUS.toNVConfigList(), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public LongNameDAO() {
@@ -435,7 +435,7 @@ public class H2PRegressionTest {
         public static final NVConfigEntity NVC_NON_ASCII_NAME_DAO = new NVConfigEntityPortable(
                 "propriété_dao",
                 null, "NonAsciiNameDAO", true, false, false, false, NonAsciiNameDAO.class,
-                SharedUtil.toNVConfigList(), null, false,
+                SUS.toNVConfigList(), null, false,
                 SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
 
         public NonAsciiNameDAO() {

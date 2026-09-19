@@ -5,7 +5,6 @@ import org.zoxweb.shared.security.RoleGroupInfo;
 import org.zoxweb.shared.security.RoleInfo;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.util.SUS;
-import org.zoxweb.shared.util.SharedStringUtil;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -78,7 +77,7 @@ public final class SecurityCatalogSeeder {
                 continue;
             }
             boolean drift = !model.getValue().equals(existing.getPermissionToken())
-                    || !SharedStringUtil.equals(model.getDescription(), existing.getDescription(), false);
+                    || !SUS.equals(model.getDescription(), existing.getDescription(), false);
             if (drift) {
                 if (model.isReserved()) {
                     // the reserved row is immutable through the manager; a drifted one is a corrupt catalog
@@ -125,7 +124,7 @@ public final class SecurityCatalogSeeder {
                 }
             }
             boolean drift = !wantedGUIDs.equals(currentGUIDs)
-                    || !SharedStringUtil.equals(model.getDescription(), existing.getDescription(), false);
+                    || !SUS.equals(model.getDescription(), existing.getDescription(), false);
             if (drift) {
                 existing.setDescription(model.getDescription());
                 existing.setPermissions(wanted);
@@ -168,7 +167,7 @@ public final class SecurityCatalogSeeder {
                 }
             }
             boolean drift = !wantedGUIDs.equals(currentGUIDs)
-                    || !SharedStringUtil.equals(model.getDescription(), existing.getDescription(), false);
+                    || !SUS.equals(model.getDescription(), existing.getDescription(), false);
             if (drift) {
                 existing.setDescription(model.getDescription());
                 existing.setRoles(wanted);

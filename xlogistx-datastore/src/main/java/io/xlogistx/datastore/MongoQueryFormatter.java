@@ -23,7 +23,7 @@ import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const.LogicalOperator;
 import org.zoxweb.shared.util.NVConfig;
 import org.zoxweb.shared.util.NVConfigEntity;
-import org.zoxweb.shared.util.SharedStringUtil;
+import org.zoxweb.shared.util.SUS;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -126,7 +126,7 @@ public class MongoQueryFormatter {
         }
 
         // Dotted names (nested sub-documents): any reserved ID leaf is stored as a UUID.
-        if (nvc == null && XlogistxMongoUtil.ReservedID.lookupByName(SharedStringUtil.valueAfterRightToken(queryMatch.getName(), ".")) != null
+        if (nvc == null && XlogistxMongoUtil.ReservedID.lookupByName(SUS.valueAfterRightToken(queryMatch.getName(), ".")) != null
                 && queryMatch.getValue() instanceof String) {
             return IDGs.UUIDV7.decode((String) queryMatch.getValue());
         }

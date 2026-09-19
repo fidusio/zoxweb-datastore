@@ -40,7 +40,7 @@ import org.zoxweb.shared.util.Const.Status;
 import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.util.ResourceManager;
 import org.zoxweb.shared.util.ResourceManager.Resource;
-import org.zoxweb.shared.util.SharedUtil;
+import org.zoxweb.shared.util.SUS;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -563,7 +563,7 @@ public class MongoDSShiroTest
 		for (SecurityModel.Role role : roles) {
             String roleSubjectID = SecurityModel.toSubjectID(PROPANEXP_DOMAIN_ID, PROPANEXP_APP_ID, role);
             System.out.println(roleSubjectID);
-            System.out.println(SharedUtil.toCanonicalID('-', apiSecurityManager.currentSubjectID(), apiSecurityManager.currentUserID(), apiSecurityManager.currentDomainID(), apiSecurityManager.currentAppID()));
+            System.out.println(SUS.toCanonicalID('-', apiSecurityManager.currentSubjectID(), apiSecurityManager.currentUserID(), apiSecurityManager.currentDomainID(), apiSecurityManager.currentAppID()));
 
             if (apiSecurityManager.hasRole(roleSubjectID)) {
             	System.out.println("Role Exists: " + roleSubjectID);

@@ -472,7 +472,7 @@ public final class H2PUtil {
         if (!file.isDirectory())
             throw new IllegalArgumentException(location + " is not a directory");
         String combo = location + "/" + dbName;
-        return SharedStringUtil.embedText(DEFAULT_H2_URL, LOCATION_TOK, combo);
+        return SUS.embedText(DEFAULT_H2_URL, LOCATION_TOK, combo);
     }
 
 }

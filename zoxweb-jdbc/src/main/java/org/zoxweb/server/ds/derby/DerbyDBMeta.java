@@ -188,7 +188,7 @@ public class DerbyDBMeta {
                 if (nvb instanceof NVEnumList) {
                     NVStringList tempList = (NVStringList) nvgm.values()[0];
                     for (String enumName : tempList.getValues()) {
-                        ((NVEnumList) nvb).getValue().add(SharedUtil.enumValue(nvc.getMetaTypeBase(), enumName));
+                        ((NVEnumList) nvb).getValue().add(SUS.enumValue(nvc.getMetaTypeBase(), enumName));
                     }
                 } else {
                     ((NVBase<Object>) nvb).setValue(nvgm.values()[0].getValue());
@@ -198,7 +198,7 @@ public class DerbyDBMeta {
                     log.getLogger().info("ERROR !!! : " + nvgm + " " + strValue + " nvmg size: " + nvgm.size());
             }
         } else if (nvb instanceof NVEnum) {
-            ((NVEnum) nvb).setValue(SharedUtil.enumValue(nvc.getMetaType(), rs.getString(nvb.getName())));
+            ((NVEnum) nvb).setValue(SUS.enumValue(nvc.getMetaType(), rs.getString(nvb.getName())));
         } else if (nvb instanceof NVBlob) {
             Blob b = rs.getBlob(nvb.getName());
             if (b != null) {

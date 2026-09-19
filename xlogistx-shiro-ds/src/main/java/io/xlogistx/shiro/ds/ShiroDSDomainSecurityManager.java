@@ -824,7 +824,7 @@ public class ShiroDSDomainSecurityManager
 
     private static boolean appIDMatches(AuthzInfo info, String appID) {
         String owned = info.getAppIdDAO() != null ? info.getAppIdDAO().getAppID() : null;
-        return SharedStringUtil.equals(owned, appID, true);
+        return SUS.equals(owned, appID, true);
     }
 
     private PrincipalIdentifier resolvePrincipal(String principalID) {
@@ -1032,7 +1032,7 @@ public class ShiroDSDomainSecurityManager
      * global. Used in cache keys, logs and the CLI; grants are never prefixed with it.
      */
     public static String appScope(AppIDDefault app) {
-        return app == null ? null : SharedStringUtil.toLowerCase(app.getDomainAppID());
+        return app == null ? null : SUS.toLowerCase(app.getDomainAppID());
     }
 
     /** Both domain and app must be set; the canonical ID getter validates the two parts. */

@@ -520,7 +520,7 @@ public class DerbyDataStore implements APIDataStore<Connection, Connection> {
             con = connect();
             stmt = con.createStatement();
             String select = "SELECT * FROM " + retType.getNVConfig().getName() +
-                    " WHERE GUID IN(" + SharedUtil.toCanonicalID(',', (Object[]) ids) + ")";
+                    " WHERE GUID IN(" + SUS.toCanonicalID(',', (Object[]) ids) + ")";
 //      log.getLogger().info("select: " + select);
 //      log.getLogger().info("IDS: " + Arrays.toString(ids));
             rs = stmt.executeQuery(select);
