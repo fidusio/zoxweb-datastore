@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.data.FileInfoDAO;
+import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.util.DynamicEnumMap;
@@ -143,9 +143,9 @@ public class H2PDumpRestoreTest {
             // A 2-version file rolled back to version 1 (head != highest version).
             byte[] v1 = "file content v1".getBytes(StandardCharsets.UTF_8);
             byte[] v2 = "file content v2 - longer".getBytes(StandardCharsets.UTF_8);
-            FileInfoDAO fid = new FileInfoDAO();
+            FileInfo fid = new FileInfo();
             fid.setFullPathName("dump_file_" + UUID.randomUUID());
-            fid.setFileType(FileInfoDAO.FileType.FILE);
+            fid.setFileType(FileInfo.FileType.FILE);
             source.createFile(null, fid, new ByteArrayInputStream(v1), true);
             source.updateFile(fid, new ByteArrayInputStream(v2), true);
             source.rollbackFile(fid, 1);
@@ -163,7 +163,7 @@ public class H2PDumpRestoreTest {
 
             NVGenericMap restoreStats = target.restore(
                     new ByteArrayInputStream(bos.toByteArray()), RestoreMode.WIPE_AND_LOAD);
-            // 5 PropertyDAO + 1 Range + 2 CyclicDAO + 1 FileInfoDAO
+            // 5 PropertyDAO + 1 Range + 2 CyclicDAO + 1 FileInfo
             assertEquals(Long.valueOf(9), restoreStats.getValue("entities"));
 
             // Entities: JSON-identical to the source's stored form.
@@ -350,9 +350,9 @@ public class H2PDumpRestoreTest {
             source.insert(newPropertyDAO("zip-entity", 1));
             byte[] v1 = "zip file v1".getBytes(StandardCharsets.UTF_8);
             byte[] v2 = "zip file v2 - longer content".getBytes(StandardCharsets.UTF_8);
-            FileInfoDAO fid = new FileInfoDAO();
+            FileInfo fid = new FileInfo();
             fid.setFullPathName("zip_file_" + UUID.randomUUID());
-            fid.setFileType(FileInfoDAO.FileType.FILE);
+            fid.setFileType(FileInfo.FileType.FILE);
             source.createFile(null, fid, new ByteArrayInputStream(v1), true);
             source.updateFile(fid, new ByteArrayInputStream(v2), true);
             source.rollbackFile(fid, 1); // head != highest version
@@ -408,9 +408,9 @@ public class H2PDumpRestoreTest {
         H2PDataStore source = newStore(db("zip_miss_src"));
         H2PDataStore target = newStore(db("zip_miss_dst"));
         try {
-            FileInfoDAO fid = new FileInfoDAO();
+            FileInfo fid = new FileInfo();
             fid.setFullPathName("zip_miss_" + UUID.randomUUID());
-            fid.setFileType(FileInfoDAO.FileType.FILE);
+            fid.setFileType(FileInfo.FileType.FILE);
             source.createFile(null, fid,
                     new ByteArrayInputStream("content".getBytes(StandardCharsets.UTF_8)), true);
 

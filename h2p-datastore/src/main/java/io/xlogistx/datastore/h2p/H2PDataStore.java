@@ -34,7 +34,7 @@ import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APIExceptionHandler;
 import org.zoxweb.shared.api.APIFileInfoMap;
 import org.zoxweb.shared.api.APISearchResult;
-import org.zoxweb.shared.data.FileInfoDAO;
+import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
@@ -2495,8 +2495,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         if (fileTablesEnsured) {
             return;
         }
-        ensureTable(FileInfoDAO.NVC_FILE_INFO_DAO);
-        String fileTable = H2PUtil.q(FileInfoDAO.NVC_FILE_INFO_DAO.getName());
+        ensureTable(FileInfo.NVC_FILE_INFO);
+        String fileTable = H2PUtil.q(FileInfo.NVC_FILE_INFO.getName());
         String guidCol = H2PUtil.q(MetaToken.GUID.getName());
         execDDL("CREATE TABLE IF NOT EXISTS " + H2PUtil.q(FILE_VERSION_TABLE) + " ("
                 + H2PUtil.q("file_guid") + " uuid NOT NULL REFERENCES " + fileTable + "(" + guidCol + ") ON DELETE CASCADE, "
@@ -2532,7 +2532,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     public APIFileInfoMap createFile(String folderID, APIFileInfoMap file, InputStream is, boolean closeStream)
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", file, is);
-        FileInfoDAO info = file.getOriginalFileInfo();
+        FileInfo info = file.getOriginalFileInfo();
         SUS.checkIfNulls("Null file info", info);
         try {
             byte[] content = IOUtil.inputStreamToByteArray(is, false).toByteArray();
@@ -2651,7 +2651,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     public void deleteFile(APIFileInfoMap map)
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map);
-        FileInfoDAO info = map.getOriginalFileInfo();
+        FileInfo info = map.getOriginalFileInfo();
         fileGuid(map); // validates presence of a GUID
         delete(info, false);
         if (log.isEnabled()) log.getLogger().info(info.getName());
@@ -2702,7 +2702,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     public APIFileInfoMap rollbackFile(APIFileInfoMap map, long version)
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map);
-        FileInfoDAO info = map.getOriginalFileInfo();
+        FileInfo info = map.getOriginalFileInfo();
         UUID guid = fileGuid(map);
         boolean localTx = getTransactionConnection() == null;
         if (localTx) beginTransaction();

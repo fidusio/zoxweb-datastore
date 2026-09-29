@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.data.FileInfoDAO;
+import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.util.NVGenericMap;
 
 import java.io.ByteArrayInputStream;
@@ -47,10 +47,10 @@ public class H2PFileStoreTest {
         ds = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(DB_URL));
     }
 
-    private static FileInfoDAO newFileInfo(String name) {
-        FileInfoDAO fid = new FileInfoDAO();
+    private static FileInfo newFileInfo(String name) {
+        FileInfo fid = new FileInfo();
         fid.setFullPathName(name);
-        fid.setFileType(FileInfoDAO.FileType.FILE);
+        fid.setFileType(FileInfo.FileType.FILE);
         fid.setCreationTime(System.currentTimeMillis());
         return fid;
     }
@@ -61,13 +61,13 @@ public class H2PFileStoreTest {
         return b;
     }
 
-    private static byte[] readBack(H2PDataStore store, FileInfoDAO fid) throws IOException {
+    private static byte[] readBack(H2PDataStore store, FileInfo fid) throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         store.readFile(fid, bos, true);
         return bos.toByteArray();
     }
 
-    private static byte[] readBackVersion(H2PDataStore store, FileInfoDAO fid, long version) throws IOException {
+    private static byte[] readBackVersion(H2PDataStore store, FileInfo fid, long version) throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         store.readFile(fid, version, bos, true);
         return bos.toByteArray();
@@ -85,7 +85,7 @@ public class H2PFileStoreTest {
     public void testRoundTripSmallAndLarge() throws IOException {
         for (int size : new int[]{1024, 3 * 1024 * 1024}) {
             byte[] content = randomBytes(size);
-            FileInfoDAO fid = newFileInfo("rt_" + size + "_" + UUID.randomUUID());
+            FileInfo fid = newFileInfo("rt_" + size + "_" + UUID.randomUUID());
             ds.createFile(null, fid, new ByteArrayInputStream(content), true);
 
             assertNotNull(fid.getGUID(), "createFile must assign a GUID");
@@ -93,7 +93,7 @@ public class H2PFileStoreTest {
             assertArrayEquals(content, readBack(ds, fid), "read-back must match (" + size + " bytes)");
 
             // The metadata is a regular entity row, readable through the normal search path.
-            FileInfoDAO meta = (FileInfoDAO) ds.searchByID(FileInfoDAO.class.getName(), fid.getGUID()).get(0);
+            FileInfo meta = (FileInfo) ds.searchByID(FileInfo.class.getName(), fid.getGUID()).get(0);
             assertEquals(fid.getName(), meta.getName());
             assertEquals(size, meta.getLength());
 
@@ -107,7 +107,7 @@ public class H2PFileStoreTest {
     @Test
     public void testUpdateBumpsVersionAndReadSpecific() throws IOException {
         byte[] v1 = randomBytes(2048), v2 = randomBytes(4096), v3 = randomBytes(1024);
-        FileInfoDAO fid = newFileInfo("versions_" + UUID.randomUUID());
+        FileInfo fid = newFileInfo("versions_" + UUID.randomUUID());
         ds.createFile(null, fid, new ByteArrayInputStream(v1), true);
         ds.updateFile(fid, new ByteArrayInputStream(v2), true);
         ds.updateFile(fid, new ByteArrayInputStream(v3), true);
@@ -130,7 +130,7 @@ public class H2PFileStoreTest {
     @Test
     public void testRollbackMovesHeadWithoutRewritingHistory() throws IOException {
         byte[] v1 = randomBytes(1500), v2 = randomBytes(2500);
-        FileInfoDAO fid = newFileInfo("rollback_" + UUID.randomUUID());
+        FileInfo fid = newFileInfo("rollback_" + UUID.randomUUID());
         ds.createFile(null, fid, new ByteArrayInputStream(v1), true);
         ds.updateFile(fid, new ByteArrayInputStream(v2), true);
 
@@ -158,7 +158,7 @@ public class H2PFileStoreTest {
     @Test
     public void testConcurrentUpdatesLastWriteWinsWithHistory() throws Exception {
         final byte[] initial = randomBytes(512);
-        final FileInfoDAO fid = newFileInfo("concurrent_" + UUID.randomUUID());
+        final FileInfo fid = newFileInfo("concurrent_" + UUID.randomUUID());
         ds.createFile(null, fid, new ByteArrayInputStream(initial), true);
         final String guid = fid.getGUID();
         final String fullPath = fid.getFullPathName();
@@ -175,7 +175,7 @@ public class H2PFileStoreTest {
                     for (int i = 0; i < perThread; i++) {
                         // Each worker uses its own DAO instance (NVEntity is not thread-safe),
                         // all pointing at the same stored file via the shared GUID.
-                        FileInfoDAO mine = newFileInfo(fullPath);
+                        FileInfo mine = newFileInfo(fullPath);
                         mine.setGUID(guid);
                         ds.updateFile(mine, new ByteArrayInputStream(randomBytes(256 + seed)), true);
                     }
@@ -208,7 +208,7 @@ public class H2PFileStoreTest {
         H2PDataStore capped = new H2PDSCreator().createAPI(null, cfg);
 
         byte[] v3 = randomBytes(300), v4 = randomBytes(400);
-        FileInfoDAO fid = newFileInfo("capped_" + UUID.randomUUID());
+        FileInfo fid = newFileInfo("capped_" + UUID.randomUUID());
         capped.createFile(null, fid, new ByteArrayInputStream(randomBytes(100)), true); // v1
         capped.updateFile(fid, new ByteArrayInputStream(randomBytes(200)), true);       // v2
         capped.updateFile(fid, new ByteArrayInputStream(v3), true);                     // v3
@@ -226,7 +226,7 @@ public class H2PFileStoreTest {
 
     @Test
     public void testDeleteFileCascades() throws IOException {
-        FileInfoDAO fid = newFileInfo("delete_" + UUID.randomUUID());
+        FileInfo fid = newFileInfo("delete_" + UUID.randomUUID());
         ds.createFile(null, fid, new ByteArrayInputStream(randomBytes(1024)), true);
         ds.updateFile(fid, new ByteArrayInputStream(randomBytes(2048)), true);
 
@@ -234,27 +234,27 @@ public class H2PFileStoreTest {
 
         assertTrue(ds.fileVersions(fid).isEmpty(), "all version rows must be gone");
         assertThrows(APIException.class, () -> readBack(ds, fid), "head read must fail after delete");
-        assertTrue(ds.searchByID(FileInfoDAO.class.getName(), fid.getGUID()).isEmpty(),
+        assertTrue(ds.searchByID(FileInfo.class.getName(), fid.getGUID()).isEmpty(),
                 "the metadata row must be gone");
     }
 
     @Test
     public void testTransactionParticipation() throws IOException {
         // Abort: nothing persists — neither metadata nor content.
-        FileInfoDAO aborted = newFileInfo("tx_abort_" + UUID.randomUUID());
+        FileInfo aborted = newFileInfo("tx_abort_" + UUID.randomUUID());
         ds.beginTransaction();
         try {
             ds.createFile(null, aborted, new ByteArrayInputStream(randomBytes(1024)), true);
         } finally {
             ds.abortTransaction();
         }
-        assertTrue(ds.searchByID(FileInfoDAO.class.getName(), aborted.getGUID()).isEmpty(),
+        assertTrue(ds.searchByID(FileInfo.class.getName(), aborted.getGUID()).isEmpty(),
                 "aborted metadata must not persist");
         assertThrows(APIException.class, () -> readBack(ds, aborted), "aborted content must not persist");
 
         // Commit: the same flow persists.
         byte[] content = randomBytes(1024);
-        FileInfoDAO committed = newFileInfo("tx_commit_" + UUID.randomUUID());
+        FileInfo committed = newFileInfo("tx_commit_" + UUID.randomUUID());
         ds.beginTransaction();
         try {
             ds.createFile(null, committed, new ByteArrayInputStream(content), true);

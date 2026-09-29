@@ -29,8 +29,8 @@ import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.EncapsulatedKey;
 import org.zoxweb.shared.crypto.EncryptedData;
-import org.zoxweb.shared.data.CRUDNVEntityDAO;
-import org.zoxweb.shared.data.CRUDNVEntityListDAO;
+import org.zoxweb.shared.data.CRUDNVEntityInfo;
+import org.zoxweb.shared.data.CRUDNVEntityListInfo;
 import org.zoxweb.shared.data.DataConst.APIProperty;
 import org.zoxweb.shared.data.DataConst.DataParam;
 import org.zoxweb.shared.data.LongSequence;
@@ -1358,7 +1358,7 @@ public class MongoDataStore
         //nve.setReferenceID(doc.getObjectId(ReservedID.REFERENCE_ID.getValue()).toHexString());
 
         if (dataCacheMonitor != null) {
-            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.CREATE, nve));
+            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityInfo(CRUD.CREATE, nve));
         }
         return nve;
     }
@@ -1882,7 +1882,7 @@ public class MongoDataStore
 
 
             if (dataCacheMonitor != null) {
-                dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.UPDATE, nve));
+                dataCacheMonitor.monitorNVEntity(new CRUDNVEntityInfo(CRUD.UPDATE, nve));
             }
         } finally {
             if (sync) {
@@ -1914,7 +1914,7 @@ public class MongoDataStore
                 if (collection != null) {
                     collection.remove(doc);
                     if (dataCacheMonitor != null) {
-                        dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, nve));
+                        dataCacheMonitor.monitorNVEntity(new CRUDNVEntityInfo(CRUD.DELETE, nve));
                     }
 
                 }
@@ -1940,7 +1940,7 @@ public class MongoDataStore
                             if (toRemove != null) {
                                 delete(toRemove, withReference);
                                 if (dataCacheMonitor != null) {
-                                    dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, toRemove));
+                                    dataCacheMonitor.monitorNVEntity(new CRUDNVEntityInfo(CRUD.DELETE, toRemove));
                                 }
                             }
                         } else {
@@ -1952,7 +1952,7 @@ public class MongoDataStore
                                     if (toRemove != null) {
                                         delete(toRemove, withReference);
                                         if (dataCacheMonitor != null) {
-                                            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityDAO(CRUD.DELETE, toRemove));
+                                            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityInfo(CRUD.DELETE, toRemove));
                                         }
                                     }
                                 }
@@ -2617,7 +2617,7 @@ public class MongoDataStore
         }
 
         if (userID == null && dataCacheMonitor != null) {
-            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityListDAO(CRUD.READ, (List<NVEntity>) list));
+            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityListInfo(CRUD.READ, (List<NVEntity>) list));
         }
         return list;
     }
@@ -2656,7 +2656,7 @@ public class MongoDataStore
         }
 
         if (userID == null && dataCacheMonitor != null) {
-            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityListDAO(CRUD.READ, (List<NVEntity>) list));
+            dataCacheMonitor.monitorNVEntity(new CRUDNVEntityListInfo(CRUD.READ, (List<NVEntity>) list));
         }
 
         return list;

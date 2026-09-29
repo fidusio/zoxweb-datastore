@@ -27,10 +27,10 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoDAO;
 import org.zoxweb.shared.data.AddressDAO;
-import org.zoxweb.shared.data.DeviceDAO;
+import org.zoxweb.shared.data.DeviceInfo;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
-import org.zoxweb.shared.iot.DeviceInfo;
+import org.zoxweb.shared.iot.IOTDeviceInfo;
 import org.zoxweb.shared.iot.PortInfo;
 import org.zoxweb.shared.iot.ProtocolInfo;
 import org.zoxweb.shared.util.Const;
@@ -38,7 +38,6 @@ import org.zoxweb.shared.util.NVConfigEntity;
 import org.zoxweb.shared.util.NVInt;
 
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.util.List;
 import java.util.UUID;
@@ -182,13 +181,13 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testSearchAll() {
-        DeviceDAO device = DSConst.init(new DeviceDAO());
+        DeviceInfo device = DSConst.init(new DeviceInfo());
         device.setName(UUID.randomUUID().toString());
         device = dataStore.insert(device);
 
-        List<DeviceDAO> result = dataStore.search(DeviceDAO.class.getName(), null, null);
+        List<DeviceInfo> result = dataStore.search(DeviceInfo.class.getName(), null, null);
         System.out.println("size:" + result.size());
-        result = dataStore.search(DeviceDAO.class.getName(), null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
+        result = dataStore.search(DeviceInfo.class.getName(), null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, device.getName(), "name"));
         System.out.println("size:" + result.size() + " " + result);
 
         DSConst.AllTypes at = DSConst.AllTypes.autoBuilder();
@@ -278,7 +277,7 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testInsertDeviceDAO() throws IOException {
-        DeviceDAO device = DSConst.init(new DeviceDAO());
+        DeviceInfo device = DSConst.init(new DeviceInfo());
         device.getProperties().add("toto", "titi");
         device.getProperties().add(new NVInt("int_val", 100));
         device = dataStore.insert(device);
@@ -317,7 +316,7 @@ public class DerbyDataStoreTest {
 
     @Test
     public void deviceInfoTest() {
-        DeviceInfo deviceInfo = new DeviceInfo();
+        IOTDeviceInfo deviceInfo = new IOTDeviceInfo();
         deviceInfo.setName("ATTINY84-M");
         deviceInfo.setDescription("14 pin Atmel microcontroller");
         deviceInfo.setManufacturer("Microchip");
@@ -349,7 +348,7 @@ public class DerbyDataStoreTest {
 
         //deviceInfo = dataStore.insert(deviceInfo);
 
-        List<DeviceInfo> results = dataStore.search(DeviceInfo.NVC_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
+        List<IOTDeviceInfo> results = dataStore.search(IOTDeviceInfo.NVC_IOT_DEVICE_INFO, null, new QueryMatch<String>(Const.RelationalOperator.EQUAL, "ATTINY84-M", "name"));
 
         if (results != null && results.size() > 0)
             System.out.println(GSONUtil.toJSONDefault(results.get(0), true));

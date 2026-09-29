@@ -219,9 +219,9 @@ public class H2PPostgresDataStoreTest {
         new java.util.Random(42).nextBytes(v1);
         new java.util.Random(43).nextBytes(v2);
 
-        org.zoxweb.shared.data.FileInfoDAO fid = new org.zoxweb.shared.data.FileInfoDAO();
+        org.zoxweb.shared.data.FileInfo fid = new org.zoxweb.shared.data.FileInfo();
         fid.setFullPathName("pg_file_" + UUID.randomUUID());
-        fid.setFileType(org.zoxweb.shared.data.FileInfoDAO.FileType.FILE);
+        fid.setFileType(org.zoxweb.shared.data.FileInfo.FileType.FILE);
         fid.setCreationTime(System.currentTimeMillis());
 
         ds.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
@@ -289,9 +289,9 @@ public class H2PPostgresDataStoreTest {
 
             byte[] v1 = ("file v1 " + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             byte[] v2 = ("file v2 longer " + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            org.zoxweb.shared.data.FileInfoDAO fid = new org.zoxweb.shared.data.FileInfoDAO();
+            org.zoxweb.shared.data.FileInfo fid = new org.zoxweb.shared.data.FileInfo();
             fid.setFullPathName("mig_file_" + tag);
-            fid.setFileType(org.zoxweb.shared.data.FileInfoDAO.FileType.FILE);
+            fid.setFileType(org.zoxweb.shared.data.FileInfo.FileType.FILE);
             h2.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
             h2.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
 

@@ -16,7 +16,7 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIBatchResult;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISearchResult;
-import org.zoxweb.shared.data.FileInfoDAO;
+import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.util.ArrayValues;
 import org.zoxweb.shared.util.DynamicEnumMap;
@@ -196,8 +196,8 @@ final class H2PDumpRestore {
             }
             // File content without its FileInfoDAO metadata rows would restore incoherently.
             if (includeFiles) {
-                typeSet.putIfAbsent(FileInfoDAO.NVC_FILE_INFO_DAO.getName().toLowerCase(),
-                        FileInfoDAO.NVC_FILE_INFO_DAO);
+                typeSet.putIfAbsent(FileInfo.NVC_FILE_INFO.getName().toLowerCase(),
+                        FileInfo.NVC_FILE_INFO);
             }
 
             long cyclesSkipped = 0;
