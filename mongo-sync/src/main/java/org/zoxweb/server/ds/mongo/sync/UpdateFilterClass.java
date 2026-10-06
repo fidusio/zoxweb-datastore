@@ -17,7 +17,7 @@ package org.zoxweb.server.ds.mongo.sync;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.api.APIConfigInfoImpl;
 import org.zoxweb.shared.api.APICredentialsDAO;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.util.NVEntity;
@@ -27,7 +27,7 @@ public class UpdateFilterClass
     public static final UpdateFilterClass SINGLETON = new UpdateFilterClass();
     private static final Class<?>[] array =
             {
-                    APIConfigInfoDAO.class,
+                    APIConfigInfoImpl.class,
                     //	MN
                     //	This is required to prevent API tokens from updating this class during token generation and update.
                     APICredentialsDAO.class,

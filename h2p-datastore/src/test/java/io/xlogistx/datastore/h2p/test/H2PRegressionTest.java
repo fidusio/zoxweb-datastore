@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code userSearchByID} subject scoping, {@code IS NULL} query criteria, and the
  * DynamicEnumMap upsert race.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 public class H2PRegressionTest {
 
     public static final String DB_URL = "jdbc:h2:mem:h2p_regression_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
@@ -50,7 +51,7 @@ public class H2PRegressionTest {
 
     @BeforeAll
     public static void setup() {
-        ds = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(DB_URL));
+        ds = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(DB_URL)));
     }
 
     /** Self-referencing entity type: {@code peer} is a single reference to another CyclicDAO. */
@@ -365,7 +366,7 @@ public class H2PRegressionTest {
         String url = "jdbc:h2:mem:h2p_evolution_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
         String oldGuid;
 
-        H2PDataStore v1 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        H2PDataStore v1 = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(url)));
         try {
             EvolvedV1 e1 = new EvolvedV1();
             e1.setName("evolved-v1");
@@ -377,7 +378,7 @@ public class H2PRegressionTest {
         }
 
         // Reopen the same DB with the V2 meta (fresh store instance = fresh caches).
-        H2PDataStore v2 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        H2PDataStore v2 = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(url)));
         try {
             // Read path first: tableExists -> one-time sync must ALTER in "added_later".
             EvolvedV2 old = (EvolvedV2) v2.searchByID(EvolvedV2.NVC_E, oldGuid).get(0);
@@ -403,7 +404,7 @@ public class H2PRegressionTest {
         }
 
         // A changed column type (String -> Long) must be rejected loudly, never auto-ALTERed.
-        H2PDataStore bad = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(url));
+        H2PDataStore bad = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(url)));
         try {
             EvolvedBadType b = new EvolvedBadType();
             b.setName("evolved-bad");
@@ -493,7 +494,7 @@ public class H2PRegressionTest {
         org.zoxweb.shared.api.APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:h2p_valve_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         cfg.getProperties().build(H2PDSCreator.H2PParam.MAX_SELECT_RESULTS.getName(), "2");
-        H2PDataStore capped = new H2PDSCreator().createAPI(null, cfg);
+        H2PDataStore capped = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(cfg));
         try {
             String[] guids = new String[5];
             for (int i = 0; i < 5; i++) {
@@ -729,7 +730,7 @@ public class H2PRegressionTest {
         org.zoxweb.shared.api.APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:h2p_orphan_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         cfg.getProperties().build(H2PDSCreator.H2PParam.ORPHAN_CLEANUP.getName(), "true");
-        H2PDataStore cleaning = new H2PDSCreator().createAPI(null, cfg);
+        H2PDataStore cleaning = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(cfg));
         try {
             CyclicDAO a = new CyclicDAO();
             a.setName("orphan-parent-" + UUID.randomUUID());

@@ -6,10 +6,10 @@ import io.xlogistx.datastore.h2p.H2PDataStore;
 import io.xlogistx.datastore.h2p.H2PExceptionHandler;
 import io.xlogistx.datastore.h2p.H2PUtil;
 import io.xlogistx.opsec.OPSecUtil;
+import io.xlogistx.shiro.ds.ShiroDSDomainSecurityManager;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.zoxweb.server.security.DomainSecurityManagerDefault;
 import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.security.SecUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * re-run against a persistent database. The tests do not delete anything - all created data is
  * left in the store for inspection.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 public class H2PDomainSecurityManagerDBTest {
 
     private static final String PASSWORD = "Secret123!";
@@ -67,13 +68,15 @@ public class H2PDomainSecurityManagerDBTest {
         //   H2 file (encrypted):  -Dds.url=jdbc:h2:file:./data/dsm;CIPHER=AES;MODE=PostgreSQL  (+ -Dds.file_password=...)
         //   H2 in-memory:         -Dds.url=jdbc:h2:mem:dsm;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
         //   PostgreSQL:           -Dds.url=jdbc:postgresql://host:5432  (db optional; auto-created)
-        String url = System.getProperty("ds.url");
+        // The vault comes first (master key); its db.* entries are the target unless -Dds.* override them.
+        String url = firstNonEmpty(System.getProperty("ds.url"), CryptoTestSupport.db("db.url"));
         Assumptions.assumeTrue(url != null && !url.isEmpty(),
-                "set -Dds.url=jdbc:h2:... or jdbc:postgresql://host:port (+ -Dds.user / -Dds.password, and -Dds.file_password for an encrypted H2 DB) to run this test");
+                "set -Dstore=<vault with db.url> -Dstore.password=..., or -Dds.url=jdbc:h2:... or jdbc:postgresql://host:port"
+                        + " (+ -Dds.user / -Dds.password, and -Dds.file_password for an encrypted H2 DB) to run this test");
 
-        String user = System.getProperty("ds.user");
-        String password = System.getProperty("ds.password");
-        String filePassword = System.getProperty("ds.file_password"); // H2 encrypted (CIPHER) DB only
+        String user = firstNonEmpty(System.getProperty("ds.user"), CryptoTestSupport.db("db.user"));
+        String password = firstNonEmpty(System.getProperty("ds.password"), CryptoTestSupport.db("db.password"));
+        String filePassword = firstNonEmpty(System.getProperty("ds.file_password"), CryptoTestSupport.db("db.enc-password")); // H2 encrypted (CIPHER) DB only
 
         // Structured parse -> branch on the engine.
         NVGenericMap parsed = H2PUtil.parseJdbcURL(url);
@@ -99,10 +102,14 @@ public class H2PDomainSecurityManagerDBTest {
             System.out.println("H2 target: " + url);
         }
 
-        ds = creator.createAPI(null, cfg);
+        ds = creator.createAPI(null, CryptoTestSupport.secure(cfg));
 
         OPSecUtil.singleton();
-        domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(ds).addCredentialType(CIPassword.class);
+        // ShiroDSDomainSecurityManager since 2026-10-05: the user deleted DomainSecurityManagerDefault.
+        // Its catalog rows belong to the common app, so the catalog is seeded first (idempotent).
+        ShiroDSDomainSecurityManager shiroDSM = new ShiroDSDomainSecurityManager(ds);
+        shiroDSM.seedCatalog();
+        domainSecurityManager = shiroDSM;
     }
 
     /** First non-null, non-empty value (env-var fallback chains). */

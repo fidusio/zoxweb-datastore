@@ -30,7 +30,7 @@ public class DSConst {
     public static final String ILLEGAL_PASSWORD= "T!st2s3r";
     public static final String DEFAULT_API_KEY = "test_default_api_key";
 
-    public static final String SUPER_ADMIN = "superadmin@xlogistx.io";
+    public static final String SUPER_ADMIN = "super-admin@xlogistx.io";
     public static final String SUPER_PASSWORD = "T!st2s3r";
     public static final String DOMAIN_ID = "test.com";
     public static final String APP_ID = "testapp";

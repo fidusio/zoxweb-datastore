@@ -110,6 +110,17 @@ public final class H2PQueryFormatter {
      */
     public static int bindWhere(PreparedStatement ps, int startIndex, NVConfigEntity nvce,
                                 QueryMarker... queryCriteria) throws SQLException {
+        return bindWhere(ps, startIndex, nvce, false, queryCriteria);
+    }
+
+    /**
+     * Same as {@link #bindWhere(PreparedStatement, int, NVConfigEntity, QueryMarker...)}; with
+     * {@code encryptionActive} a value-bound criterion on an {@code ENCRYPT}/{@code ENCRYPT_MASK}
+     * attribute is refused ({@link #rejectEncrypted}) — the column holds sealed records there. A
+     * store that does not encrypt keeps those columns in plaintext and may query them as before.
+     */
+    public static int bindWhere(PreparedStatement ps, int startIndex, NVConfigEntity nvce, boolean encryptionActive,
+                                QueryMarker... queryCriteria) throws SQLException {
         int index = startIndex;
         if (queryCriteria == null) {
             return index;
@@ -122,6 +133,7 @@ public final class H2PQueryFormatter {
                 }
                 Object value = qMatch.getValue();
                 NVConfig nvc = nvce != null ? nvce.lookup(qMatch.getName()) : null;
+                if (encryptionActive) rejectEncrypted(nvc, qMatch.getName());
                 ps.setObject(index++, normalize(nvc, value));
             } else if (qm instanceof QueryMatchIn) {
                 QueryMatchIn<?> in = (QueryMatchIn<?>) qm;
@@ -130,12 +142,26 @@ public final class H2PQueryFormatter {
                     continue; // rendered as a constant — no parameters to bind
                 }
                 NVConfig nvc = nvce != null ? nvce.lookup(in.getName()) : null;
+                if (encryptionActive) rejectEncrypted(nvc, in.getName());
                 for (Object v : values) {
                     ps.setObject(index++, normalize(nvc, v));
                 }
             }
         }
         return index;
+    }
+
+    /**
+     * A value-bound criterion on an {@code ENCRYPT}/{@code ENCRYPT_MASK} attribute of an encrypting
+     * store can never match: the column holds a sealed record with a fresh nonce per write, so
+     * equality, ranges, LIKE and IN are meaningless (and would silently return nothing). Refused
+     * loudly; {@code IS [NOT] NULL} tests never reach here.
+     */
+    static void rejectEncrypted(NVConfig nvc, String attribute) {
+        if (H2PFieldCrypto.isEncrypted(nvc)) {
+            throw new IllegalArgumentException("cannot query encrypted attribute " + attribute
+                    + " by value (ENCRYPT/ENCRYPT_MASK column); only IS NULL / IS NOT NULL is allowed");
+        }
     }
 
     /** True when the match must render as {@code IS NULL} / {@code IS NOT NULL} instead of a bound parameter. */
@@ -166,6 +192,11 @@ public final class H2PQueryFormatter {
         }
         if (value instanceof Enum) {
             return ((Enum<?>) value).name();
+        }
+        if (H2PFieldCrypto.isEncrypted(nvc) && value instanceof String) {
+            // ENCRYPT* attributes live in a bytea column; a non-encrypting store holds the clear text as
+            // UTF-8 bytes there (an encrypting store refuses value criteria before reaching this point)
+            return ((String) value).getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
         if (value instanceof Date) {
             return ((Date) value).getTime(); // Date columns are bigint (epoch millis)

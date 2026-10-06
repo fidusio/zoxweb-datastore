@@ -74,7 +74,7 @@ public class SyncMongoDSCreator
 
     @Override
     public APIConfigInfo createEmptyConfigInfo() {
-        APIConfigInfo configInfo = new APIConfigInfoDAO();
+        APIConfigInfo configInfo = new APIConfigInfoImpl();
 
         for (MongoParam mp : MongoParam.values()) {
             if (mp == MongoParam.PORT)

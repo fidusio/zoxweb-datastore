@@ -188,10 +188,18 @@ public final class H2PUtil {
                 || mt == Date.class || mt == Number.class || (mt != null && Enum.class.isAssignableFrom(mt));
     }
 
-    /** The SQL column type for a {@code SCALAR} attribute. */
+    /**
+     * The SQL column type for a {@code SCALAR} attribute. An {@code ENCRYPT}/{@code ENCRYPT_MASK}
+     * attribute is always {@code bytea}: it holds the packed {@code EncryptedData} record
+     * ({@code CipherCodecs.EDEncoder}) when the store encrypts, UTF-8 bytes of the clear text when it
+     * does not — the schema never depends on a store instance's configuration.
+     */
     public static String scalarColumnType(NVConfig nvc) {
         if (isUUIDField(nvc)) {
             return "uuid";
+        }
+        if (H2PFieldCrypto.isEncrypted(nvc)) {
+            return "bytea";
         }
         Class<?> mt = nvc.getMetaType();
         if (mt == Boolean.class) return "boolean";

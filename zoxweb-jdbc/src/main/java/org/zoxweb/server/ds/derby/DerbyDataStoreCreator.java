@@ -16,18 +16,8 @@
 package org.zoxweb.server.ds.derby;
 
 
+import org.zoxweb.shared.api.*;
 import org.zoxweb.shared.util.GetNameValue;
-
-
-import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
-import org.zoxweb.shared.api.APIDataStore;
-import org.zoxweb.shared.api.APIException;
-import org.zoxweb.shared.api.APIExceptionHandler;
-
-import org.zoxweb.shared.api.APIServiceProviderCreator;
-import org.zoxweb.shared.api.APIServiceType;
-import org.zoxweb.shared.api.APITokenManager;
 
 public class DerbyDataStoreCreator
         implements APIServiceProviderCreator {
@@ -68,7 +58,7 @@ public class DerbyDataStoreCreator
 
     @Override
     public APIConfigInfo createEmptyConfigInfo() {
-        APIConfigInfo configInfo = new APIConfigInfoDAO();
+        APIConfigInfo configInfo = new APIConfigInfoImpl();
 
         for (DerbyParam dp : DerbyParam.values())
             configInfo.getProperties().add(dp.getName(), dp.getValue());

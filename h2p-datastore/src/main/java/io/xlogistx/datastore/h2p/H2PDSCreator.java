@@ -352,7 +352,7 @@ public class H2PDSCreator
 
     @Override
     public APIConfigInfo createEmptyConfigInfo() {
-        APIConfigInfo configInfo = new APIConfigInfoDAO();
+        APIConfigInfo configInfo = new APIConfigInfoImpl();
 
         for (H2PParam hp : H2PParam.values()) {
             // PORT is stored as a typed integer; every other param is a plain string value.

@@ -17,7 +17,7 @@ package io.xlogistx.datastore;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.api.APIConfigInfoImpl;
 import org.zoxweb.shared.api.APICredentialsDAO;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.util.NVEntity;
@@ -45,7 +45,7 @@ public class UpdateFilterClass
     private final Set<Class<?>> excluded = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public UpdateFilterClass() {
-        excluded.add(APIConfigInfoDAO.class);
+        excluded.add(APIConfigInfoImpl.class);
         // API tokens must not be updatable during token generation/refresh.
         excluded.add(APICredentialsDAO.class);
     }

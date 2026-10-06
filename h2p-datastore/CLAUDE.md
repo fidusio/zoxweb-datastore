@@ -1,5 +1,16 @@
 # h2p-datastore — Claude Working Notes
 
+> **Since 2026-10-05 this module also holds what was the `xlogistx-shiro-ds` module** (removed on
+> the user's instruction): the security integration tests in
+> `src/test/java/io/xlogistx/shiro/ds/test/` (`SecurityCatalogDBTest`,
+> `ShiroDSDomainSecurityManagerDBTest`, `SubjectSwapSignUpDBTest`, `TestVault`), the test keystores
+> `test.store` / `h2mem.store` / `h2persist.store`, the persistent encrypted H2 file and
+> `shiro-ds.ini` in `src/test/resources/`, and the documents `SHIRO-DS.md` (that module's notes and
+> session log — read it for anything about the Shiro manager, realm, admin tool or these tests),
+> `app-model.md`, `datastore-acl.md` and `no-sneak-plan.md` beside this file. The classes under test
+> live in io-xlogistx (`shiro` and `opsec` modules). Older text that names
+> `xlogistx-shiro-ds/src/main/resources/test.store` means `h2p-datastore/src/test/resources/test.store`.
+
 Scope: this module only (`io.xlogistx.datastore.h2p`). It is a **normalized, relational**
 implementation of zoxweb's `APIDataStore<Connection, Connection>` that runs on **both** H2 (in
 PostgreSQL compatibility mode) **and** a native PostgreSQL server — the same code, swapping only the
@@ -17,6 +28,7 @@ JDBC driver + URL.
 | `H2PMetaManager.java` | Per-instance table registry (case-insensitive; backs `getStoreTables()`; cleared on reconfigure) |
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
 | `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
+| `H2PFieldCrypto.java` | **Encryption at rest** (package-private): ENCRYPT* field records via the `SecurityController`, AESCrypt VX file content, entity-key lifecycle on the `KeyMaker` chain, raw mode for dumps — see the dedicated section |
 
 ## Storage model (fully normalized — no binary blobs)
 
@@ -67,7 +79,8 @@ and cascade delete is a full scan.
 
 The first touch of a type (write path `ensureTable`, or read path `tableExists` on first sight of a
 pre-existing table — both funnel into `ensureTable`, guarded by `createdTables` + `ddlLock`, so it
-runs **once per type per JVM**; reconfigure clears the guard) makes ONE
+runs **once per type per store instance** — `createdTables` is an instance field, read
+2026-10-05; reconfigure clears the guard) makes ONE
 `INFORMATION_SCHEMA.COLUMNS` probe (`readColumnTypes`) and branches:
 
 - **Table absent** → normal `CREATE TABLE` (column types via `columnDDLType`, the single mapping
@@ -91,6 +104,16 @@ runs **once per type per JVM**; reconfigure clears the guard) makes ONE
   is touched, so the type stays unregistered and rejects again on the next touch.
 - Regression: `H2PRegressionTest.testSchemaEvolution` (V1 → V2 adds a column across store
   reopens on one DB; a String→Long change is rejected).
+- **"Constraint already exists" at start-up is by design (user, 2026-10-05: "that was the design
+  requirement which is ok no need to change").** `ensureTable` issues `ALTER TABLE … ADD CONSTRAINT
+  fk_…` for every entity reference without checking for the constraint, and `execDDLQuiet` ignores
+  the duplicate error (H2 `90045`, PostgreSQL `42710`). On a database that already has the foreign
+  keys, each new store instance therefore gets one rejected statement per foreign key, on the
+  first use of the type and never again (not per transaction). H2 writes each one to its
+  `<db>.trace.db` file; with PostgreSQL the client shows nothing. Seen in the run of 2026-10-05 on
+  the encrypted H2 file of `xlogistx-shiro-ds` (nine foreign keys, once per test process, in the
+  first two seconds of each); the PostgreSQL server log was not looked at. Do not report these as
+  a defect.
 
 ### Schemaless JSON
 
@@ -133,7 +156,7 @@ not raw-JSON-string equality.
 ### URL building (`H2PParam.dataStoreURI`)
 - A full `url` param wins verbatim (either engine).
 - Postgres (by driver/url): `jdbc:postgresql://host:port/db[?raw-options]` — **no** H2-only settings
-  (`MODE`/`CIPHER`/`IFEXISTS`/`AUTO_SERVER`/`DB_CLOSE_DELAY`).
+  (`MODE`/`CIPHER`/`IF_EXISTS`/`AUTO_SERVER`/`DB_CLOSE_DELAY`).
 - H2 (default): `jdbc:h2:mem|file|tcp:…` per `TYPE`, with `;MODE=PostgreSQL` + optional settings.
   Both `mem` and `file` append `;DB_CLOSE_DELAY=-1` so the DB stays open across connections for the
   JVM lifetime — without it, `file` mode (connection-per-op) closes + reopens the DB file every op.
@@ -146,7 +169,7 @@ not raw-JSON-string equality.
 
 `H2PParam` (in `H2PDSCreator`): `DRIVER`, `URL`, `TYPE` (mem/file/tcp), `HOST`, `PORT`, `PATH`,
 `DB_NAME`, `USER`, `PASSWORD`, `MODE` (H2 SQL compat, default `PostgreSQL`), `CIPHER`,
-`FILE_PASSWORD`, `IFEXISTS`, `AUTO_SERVER`, `OPTIONS`, `POOL_MAX_SIZE`/`POOL_MIN_IDLE` (HikariCP,
+`FILE_PASSWORD`, `IF_EXISTS`, `AUTO_SERVER`, `OPTIONS`, `POOL_MAX_SIZE`/`POOL_MIN_IDLE` (HikariCP,
 both engines), `MAX_SELECT_RESULTS` (opt-in SELECT cap), `ORPHAN_CLEANUP` (opt-in update-time
 detached-child deletion), `FILE_VERSIONS_MAX` (opt-in per-file version-retention cap).
 
@@ -281,9 +304,9 @@ not elapsed ms; the payoff is on Postgres round trips and H2 `file` mode.
   (replaced single refs, children removed from collections) unless they are shared. Default **off**:
   detached children remain as rows and their lifecycle belongs to the caller.
 
-Still open: SecurityController integration (see dedicated section below — the user is providing it);
-`search` materializes all matches (use `batchSearch`/`nextBatch` for large sets — that IS the
-pagination mechanism); real `discover()`/`search(String...)` implementations over `file_info_dao`
+SecurityController integration: done (encryption at rest 2026-09-29, access control 2026-10-02).
+Still open: `search` materializes all matches (use `batchSearch`/`nextBatch` for large sets — that IS the
+pagination mechanism); real `discover()`/`search(String...)` implementations over `file_info`
 for the document store (currently null stubs, parity with the Mongo stores);
 `isProviderActive()` returns "driver ever loaded", not health (`ping()` is the health check).
 
@@ -333,25 +356,135 @@ searches are full scans today — this also completes the query-pushdown win fro
   stores' formatters (their silently-skip-unknown-marker behavior is accepted as-is). The Mongo
   stores remain the behavioral reference for parity (SyncMongoDS for SecurityController semantics).
 
-## SecurityController integration — WORK IN PROGRESS (not yet supported)
+## Encryption at rest — fields and files (built 2026-09-29; `H2PFieldCrypto`)
 
-**Current state:** the `SecurityController` from `APIConfigInfo` is used in exactly one place —
-`associateNVEntityToSubjectGUID(nve, null)` on the insert/patch path (subject association only).
+Authority for the record format: zoxweb-core `META-ENCRYPTED-DATA.md`. User decisions 2026-09-28/29.
 
-**Not implemented yet** (the reference behavior is `SyncMongoDS`):
-- **Field encryption at rest** — `encryptValue(...)` on every write and `decryptValue(...)` on every
-  read. Consequence today: entities whose fields are marked for encryption are stored in
-  **plaintext** by this datastore. Do not point a store at data that relies on controller-managed
-  field encryption.
-- **Read ACL enforcement** — `isNVEntityAccessible(guid, subjectGUID, CRUD.READ)` in
-  `search`/`batchSearch`/`userSearch`. Today only `userSearch`/`userSearchByID` scope by
-  `subject_guid`; there is no per-entity accessibility check.
+**Activation.** `H2PDataStore.isEncryptionActive()` = the `APIConfigInfo` carries **both** a
+`SecurityController` and a `KeyMaker`. **Since 2026-10-02 that is the only configuration that
+reaches the database**: `newConnection()` → `requireMasterKey()` refuses to connect when the
+controller, the key maker or the master key is missing (`AccessSecurityException`). The older
+behaviour described in this section for "neither" (plaintext) and "exactly one"
+(`requireConsistent` throwing on the first sealed write) can no longer occur through a
+connection; `requireConsistent` is still in the code.
 
-**Status:** actively being worked on. Until it lands, treat a configured `SecurityController` as
-subject-association only; encryption/ACL semantics here are NOT equivalent to the Mongo stores.
-When implementing, thread the controller through `bindColumn`/`setScalar` and the schemaless
-encode/decode, add the accessibility check to the read paths, and mirror `SyncMongoDS` semantics
-(SyncMongoDS.java:248, 605, 1708, 2617).
+**Key chain** = `KeyMaker` (`KeyMakerProvider.SINGLETON` in practice): master key → **subject key**
+(`EncapsulatedKey`, created *with the subject* by `ShiroDSDomainSecurityManager.createSubjectID`
+when a KeyMaker is configured, removed by `deleteSubjectID`; **this store never mints it** — a
+missing one is a loud `AccessSecurityException("No key for <subject>")`) → **entity key** (one per
+entity, minted here on the first sealed write: `km.lookupEncapsulatedKey(ds, guid)` else
+`km.createNVEntityKey(ds, nve, km.getKey(ds, null, subjectGUID))`, which inserts the row through
+this store) → the sealed values. Entity deletion (`deleteByGuid`, incl. cascades, and
+`delete(nvce, criteria)`) removes `encapsulated_key` rows with `reference_guid = guid`. The key
+maker's lookup cache keeps the wrapped row until JVM restart — harmless.
+
+**Access is a permission, never a `subject_guid` equality test** (`SecurityModel.RESOURCE`
+grammar `resource:<resource guid>:<acting subject>:<verbs>`; every subject implicitly holds
+`resource:S:S:read,update,delete,share`). This store asks the controller only:
+`encryptValue`/`decryptValue` do their own owner-or-grant check and walk the *owner's* chain;
+files go through `isNVEntityAccessible(fileGuid, ownerGuid, crud)` (`H2PFieldCrypto.accessAllowed`).
+
+**Storage form: the packed binary record, never canonical text** (user, 2026-09-29 — the `|`-joined
+canonical form is slated for removal; META-ENCRYPTED-DATA §5 names `CipherCodecs` as the storage form
+for a datastore column). An ENCRYPT* attribute is therefore a **`bytea` column, always**
+(`H2PUtil.scalarColumnType`; the schema never depends on a store instance's configuration): the
+`CipherCodecs.EDEncoder` bytes of the record when the store encrypts, the clear text as UTF-8 bytes
+when it does not. The two are told apart by layout (`H2PFieldCrypto.isPackedRecord`: version byte
+`0x02` first, then a decodable layout — clear text never starts with a control byte). Where only text
+fits (a pair inside the JSON column, the dump) the carrier is base64url of the packed bytes
+(`packedText`) — base64 of the column form, not a second record grammar.
+
+| | Fields (`FilterType.ENCRYPT` / `ENCRYPT_MASK` attributes) | Files (`sys_file_version`) |
+|---|---|---|
+| Declaration | `AttrInfo.encrypted/masked` from the attribute's filter (`ChainedFilter.isFilterSupported`); must be a **String SCALAR, not `*guid`** (else `IllegalArgumentException` at first touch); column type `bytea`. Also ENCRYPT* `NVPair`s inside schemaless containers. | every file when active; column `enc SMALLINT` (0 plaintext, 1 VX), added with `ALTER TABLE … ADD COLUMN IF NOT EXISTS` on pre-existing tables |
+| Write | `bindColumn`: null/`""` ⇒ NULL; encrypting store: masked value equal to the stored record's mask ⇒ the stored bytes kept (`WriteCtx.storedRecords`, preloaded by `prepareCrypto` on update/patch), else `sc.encryptValue(...)` ⇒ `EDEncoder` bytes; non-encrypting store ⇒ UTF-8 bytes of the clear text. Schemaless: a JSON copy is sealed (`encodeSchemaless`), pairs carry `packedText` under the bare marker; the caller's object keeps its plaintext. | `createFile`/`updateFile`: `associate` → UPDATE access when the file exists → `insert(info)` → entity key → `AESCrypt.encryptBuffer(entityKey, plain)` (VX container, HKDF, 64 KiB segments) → version row with `enc=1`, `length` = **plaintext** length |
+| Read | `buildEntity` first decides whether the row may be read at all (see "Access control" — a denied row is not returned), then defers encrypted scalars/containers until `guid`+`subject_guid` are set, then `decryptScalar`/`decryptSchemaless`: not a packed record ⇒ UTF-8 clear text set as-is; record + inactive store ⇒ attribute left **null** (one WARN per type); record + active ⇒ `EDDecoder` → `sc.decryptValue(ds, nve, nvb, record, null)`; a denied *decrypt* ⇒ ENCRYPT null, ENCRYPT_MASK shows the record's mask (pair filter swapped to the bare marker per instance) — unreachable for a subject without `read`, which no longer gets the row. | `writeVersionTo`: `enc=0` copied as-is (legacy); `enc=1` ⇒ READ access (owner resolved from `file_info.subject_guid` when the map is a shell) — **denied ⇒ nothing written, `readFile` returns `null`**; allowed ⇒ `AESCrypt.decrypt` segment by segment; tag failure ⇒ `APIException("… tampered with or key mismatch")` |
+| Delete | key rows go with the entity (above) | `deleteFile` needs DELETE access; FK cascade + key row removal |
+| Query | `H2PQueryFormatter.bindWhere(..., encryptionActive, ...)` **rejects value-bound criteria** on ENCRYPT* attributes when active (`IllegalArgumentException`); `IS [NOT] NULL` allowed. (There is no non-encrypting store any more since 2026-10-02, and shiro-ds's lookup of an API key by its secret was removed 2026-10-03: nothing queries an ENCRYPT* attribute by value.) | `fileVersions` adds `encrypted` |
+| Dump/restore | dumps run in **raw mode** (`H2PFieldCrypto.setRaw`): encrypted attributes are left out of the entity JSON and their stored bytes ride **beside the entity line** as base64 in the envelope's `enc` map (`readEncryptedColumns`); restore inserts the entity then writes those bytes straight into the columns (`writeEncryptedColumns`) — nothing ever passes through the entity's filters or the JSON codec, core stays untouched. Readable again **only under the same master key** with the `encapsulated_key` rows restored (ordinary entity rows; dump them). | `file_version` records carry `enc` (absent ⇒ 0); bytes verbatim in JSONL and zip |
+
+Migration: a pre-existing `varchar` column for an ENCRYPT attribute trips the schema type gate
+(`SCHEMA TYPE MISMATCH`) — the sanctioned path (dump with the old classes, restore into the new
+schema) or, on a disposable DB, drop the table. lax-2 `testdb` was recreated from scratch 2026-09-29.
+
+The general read/update/delete check on every entity, plaintext included, was added 2026-10-02 —
+see "Access control" below. Tests: `H2PFieldCryptoTest` (11), `H2PSecureFileTest`
+(8) with the Shiro-free `TestSecurityController` (self permission + grant tokens) and
+`CryptoTestSupport` (`-Dh2p.pg.url` switch as the PG suite).
+
+## Access control — every read and write (built 2026-10-02)
+
+User rule 2026-09-30: *a subject using the datastore can only reach the NVEntities it holds the
+proper permission on — read, update, delete, share — whether the data is encrypted or not.* Plan:
+`~/.claude/plans/datastore-acl.md`.
+
+**Activation** = a `SecurityController` on the `APIConfigInfo` (`isAccessControlActive()`); the
+`KeyMaker` only governs encryption. **Since 2026-10-02 (night) there is no unchecked store:** the
+database is never used without the master key — `H2PDataStore.newConnection()` calls
+`requireMasterKey()` first, and a configuration without `SecurityController`, without `KeyMaker`,
+or whose key maker has no master key loaded is refused with `AccessSecurityException` ("Database
+access refused: …") before any connection is taken. Every store that connects therefore has the
+access check **and** encryption at rest on; the "controller only" and "neither" configurations
+described further down no longer reach the database.
+
+**The verdict** is always the controller's: `SecurityController.isNVEntityAccessible(guid, owner, crud)`
+(`H2PFieldCrypto.accessAllowed`, reached through `H2PDataStore.permitted`). The store passes the row's
+GUID and its **stored** `subject_guid` and never compares owners itself. With the Shiro controller
+that is `ShiroUtil.checkResourcePermission`: owner token `resource:<owner>:<caller>:<verb>` (the self
+permission, which now includes `create`), else grant token `resource:<guid>:<caller>:<verb>`; `*` and
+`resource:*:*:<verb>` imply both. A row with a null `subject_guid` has no owner token — a grant or a
+wildcard only.
+
+| Operation | Check | Denied |
+|---|---|---|
+| `search`, `userSearch`, `searchByID`, `userSearchByID`, `lookupByReferenceID`, `nextBatch` | `read` per row built — referenced entities and collection members included, each judged on its own GUID/owner | row absent, reference null, member missing |
+| `batchSearch`, `countMatch` | `read` per matching row (`guid, subject_guid` selected) | not in the report / not counted |
+| `insert` of a new row, `patch` with no GUID | owner stamped = bound subject when null (also with a preset GUID), then `create` on that owner | `AccessSecurityException` |
+| `insert` of an existing GUID, `update`, `patch` | `update` against the stored owner; an object without owner keeps the stored one, a different owner is refused | `AccessSecurityException` |
+| referenced entity of a row being saved | an existing child the caller may not `update` is **linked, not rewritten** if it may `read` it | exception when it may not even read it |
+| `delete(nve, withReference)` | `delete` against the stored owner; cascaded children too | parent: exception; child: kept, cascade continues |
+| `delete(nvce, criteria)` | per matching row | unreadable rows skipped; a readable, undeletable row aborts before anything is deleted |
+| `readFile`, `fileVersions` | `read` on the file — plaintext versions too | nothing written / `null` / empty list |
+| `createFile`/`updateFile`, `rollbackFile`, `deleteFile` | `update` / `update` / `delete` on the file, stored owner | exception |
+| `dump*`, `restore` | system context required | `AccessSecurityException` (a partial dump is worse than a refusal) |
+
+Not checked (not owned entity rows): `DynamicEnumMap`, sequences.
+
+**System context.** `SecurityController.runAsSystem(Supplier)` / `isSystemContext()` (core default
+methods, fail-closed; Shiro: a re-entrant per-thread counter in `ShiroUtil`). Inside it every check
+passes: it is for login, grant loading, key-chain walks, setup, dump/restore — never an application
+request. Users: the security manager (shiro-ds `ShiroDSDomainSecurityManager.ds()` is a
+`java.lang.reflect.Proxy` running each store call in it — the check asks Shiro, Shiro loads grants
+through the manager, so those reads must not be checked or the check recurses), the controller's own
+key-chain reads, and `H2PFieldCrypto.ensureEntityKey` / `entityKey` (the key rows are the owner's; a
+grantee writing or reading a sealed value walks them).
+
+**Code map.** `ReadCtx` (per-call entity cache + owner-verdict memo, replaces the bare cache map
+through `select` / `buildEntity` / `innerSearchByIDs`; `buildEntity` returns null for a denied row,
+remembered as a null cache entry) · `storedRow` (the write path's single probe: existence + stored
+owner; replaces `existsByGuid`) · `upsert` → `insertRow` / `updateRow` (replace `innerInsert` /
+`innerUpdate`) · `checkCreate` / `checkWrite` · `deleteCheckedByCriteria` · `fileAccess` (stored
+owner always) · `requireSystemContext`.
+
+**Consequences worth knowing.**
+- A subject without `read` gets no row, so it never sees an `ENCRYPT_MASK` mask either; the mask is
+  what a value written back is recognized by, and what a denied *decrypt* would still show.
+- `MAX_SELECT_RESULTS` caps before the filter: a capped search can return fewer rows than the cap
+  while more readable rows exist. `batchSearch` / `nextBatch` is exact.
+- No SQL push-down of the filter: one in-memory `isPermitted` per distinct owner per call, plus one
+  per row of an owner the caller may not read.
+- A share on a parent does not reach its children (each row is judged on its own) — the deferred
+  child-rows question.
+- A store with a controller and **no** key maker does not connect at all (since 2026-10-02;
+  before that it refused file writes and ENCRYPT* values and stored plaintext entities).
+- The subject must be logged in **and thread-bound** through Shiro (`loginSubject`,
+  `loginSubjectJWT`, `ShiroUtil.login`); `dsm.login(...)` only verifies a credential, and
+  `loginApiKey(...)` always refuses since 2026-10-03.
+
+Tests: `H2PAccessControlTest` (9, controller-only store, Shiro-free `TestSecurityController`),
+`H2PFieldCryptoTest` / `H2PSecureFileTest` adapted, shiro-ds
+`datastoreAccessControl_endToEnd_withTheShiroController` and
+`datastoreAccessControl_superAdminReachesEveryRow_ordinarySubjectOnlyItsOwn`.
 
 ## File storage (APIDocumentStore) — versioned
 
@@ -359,10 +492,11 @@ encode/decode, add the accessibility check to the read paths, and mirror `SyncMo
 (same both-interfaces pattern as `XlogistxMongoDataStore`). Designed for files **1 KB – a few MB**
 (whole content is materialized in memory per op — no chunking/streaming).
 
-- **Metadata** is a regular `FileInfoDAO` row (existing normalized CRUD, table `file_info_dao`);
-  `FileInfoDAO` itself implements `APIFileInfoMap`. **Content** is versioned in `sys_file_version`
-  — one `bytea` row per version, `PRIMARY KEY (file_guid, version)`, FK →
-  `file_info_dao(guid) ON DELETE CASCADE`. `sys_file_head(file_guid PK, current_version)` points
+- **Metadata** is a regular `FileInfo` row (existing normalized CRUD, table `file_info`; the class
+  was `FileInfoDAO` until 2026-09-28); `FileInfo` itself implements `APIFileInfoMap`. **Content**
+  is versioned in `sys_file_version` — one `bytea` row per version, `PRIMARY KEY (file_guid,
+  version)`, `enc SMALLINT` (0 plaintext / 1 AESCrypt VX, see "Encryption at rest"), FK →
+  `file_info(guid) ON DELETE CASCADE`. `sys_file_head(file_guid PK, current_version)` points
   at the current version. Identical SQL on H2 and PostgreSQL — no dialect divergence.
 - **`createFile`/`updateFile`** store the stream as the file's next version (`MAX(version)+1`,
   monotonic, never reused — also not after a rollback) and repoint the head. Concurrent updates
@@ -372,8 +506,9 @@ encode/decode, add the accessibility check to the read paths, and mirror `SyncMo
   active, else it runs its own local transaction (no orphaned metadata/content — the SQL
   equivalent of `XlogistxMongoDataStore.createFile`'s GridFS rollback).
 - **`readFile(map, os, …)`** streams the head version; **`readFile(map, version, os, …)`** a
-  specific one; **`fileVersions(map)`** lists them newest-first (`version`/`length`/`created_ts`/
-  `current` per `NVGenericMap`); **`rollbackFile(map, version)`** repoints the head (no content
+  specific one (both return `null` and write nothing when an encrypted version is denied to the
+  bound subject); **`fileVersions(map)`** lists them newest-first (`version`/`length`/`created_ts`/
+  `current`/`encrypted` per `NVGenericMap`); **`rollbackFile(map, version)`** repoints the head (no content
   copy, no history rewrite) and restores the metadata `length`. The three version methods are
   `default` methods on `APIDocumentStore` (zoxweb-core) throwing `UnsupportedOperationException` —
   the Mongo stores don't override them.
@@ -383,8 +518,9 @@ encode/decode, add the accessibility check to the read paths, and mirror `SyncMo
 - `discover()`/`createFolder()`/`search(String...)` return `null` — parity with both Mongo stores;
   folders are just `FULL_PATH_NAME` strings on the DAO.
 - File tables are created out-of-band via `execDDL` (`ensureFileTables`, guarded by a volatile
-  flag reset in `setAPIConfigInfo`). SecurityController field-encryption does NOT apply to file
-  content (module-wide WIP — content is stored as-is).
+  flag reset in `setAPIConfigInfo`). With a `SecurityController` + `KeyMaker` configured every
+  version is an AESCrypt VX container under the file's entity key (see "Encryption at rest");
+  otherwise content is stored as-is with `enc = 0`.
 
 ## Transactions / sequences / DEM
 - Transactions: ambient `ThreadLocal<Connection>` (`autoCommit=false`), `begin/end/abort`. Data ops
@@ -451,7 +587,7 @@ Semantics to keep in mind:
   contract; file-content SQL runs on its own connection and preserves version numbers — `createFile`
   would renumber). Sequence restore is raise-only under `MERGE` so issued values are never re-issued.
 - File dump lines hold one version's bytes in memory at a time (same bound as the file API); the
-  `FileInfoDAO` metadata type is force-included whenever `includeFiles` is on.
+  `FileInfo` metadata type is force-included whenever `includeFiles` is on.
 
 ## PostgreSQL-portability rules (keep it dual-target)
 1. Use only types valid on both: `uuid`, `bytea`, `varchar`, `integer`, `bigint`, `real`,
@@ -585,24 +721,62 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
 Next agreed work item: **performance Tier 1** (section above). The user provides SecurityController
 integration separately.
 
-## Pending design: encrypted fields and files (2026-09-04, not started)
+## Session log — 2026-09-29 (encryption at rest + resource permission model)
 
-Design page section 6: https://claude.ai/code/artifact/61b80405-b4b9-48f6-a1b1-dd915e119f5e
-Once zoxweb-core's crypto rework is installed (`EncryptedData` `|`-joined GCM record,
-`EncapsulatedKey` with `wrapped_key` text column, VX file container in `AESCrypt`), this store owes:
-1. `FilterType.ENCRYPT`/`ENCRYPT_MASK` columns: write the `EncryptedData` canonical string into the
-   existing varchar column via `SecurityController.encryptValue`, decrypt on read; refuse indexes on
-   such columns (proposal K1/K4 on the page).
-2. Entity keys: create `EncapsulatedKey` rows lazily on first encrypted write, delete with the entity.
-   Key rows are looked up by (`reference_guid`, `subject_guid`) — unique index on that pair; the row
-   GUID takes no part in the crypto (core decision 2026-09-04). `EncapsulatedKey` extends
-   `EncryptedData` (typed columns, no text blob) with `key_guid` and `key_size`; inline records
-   carry no key pointer — the store resolves the key from the owning entity's subject and GUID.
-3. Secure files (`FileInfoDAO` `isSecure()`): content through `AESCrypt` VX into `sys_file_version`;
-   per-version bookkeeping is **this store's** (core deleted `EncryptedContentRef`): add columns for
-   `kid`, the 38-byte header (base64url, from `AESCrypt.getLastHeader()`), `cipher_length`,
-   `plain_length`; remote locations via `resource_locator`/`resource_id`/`remote_file_info_dao`.
-4. `DoNotExpose` enforcement point may land in this read layer (decision deferred in core).
+Built per plan `spicy-forging-russell.md` (design page section 6 superseded by the "Encryption at
+rest" section above). zoxweb-core (installed, `-Dgpg.skip=true`): `SecurityModel` — `nventity`
+namespace **removed**, `Target.RESOURCE`, `ResourcePermissionTokenFilter` (stored form
+`resource:<verbs>`), `toResourceToken(res, subject, verbs)` composes the standardized 4-part token,
+`isResourceToken`, `RESOURCE_SELF_VERBS`, catalog `nve_*` rows now `resource:*` / `resource:*:*:<verb>`;
+(a first cut stored the canonical text form and taught `ChainedFilter` to pass it through — **reverted
+the same day**: the record's canonical text is slated for removal, fields now hold `CipherCodecs`
+packed bytes in `bytea` columns and dumps move them beside the entity line, core untouched).
+io-xlogistx shiro (installed): `ShiroUtil.checkResourcePermission`
+returns the owner GUID, String overload + `isResourcePermitted`; `ShiroSecurityController`
+delegates both access checks to it, sets `data_type`/`mask` before sealing, `decryptValues`
+recursion fix, null-safe `currentSubjectGUID`. shiro-ds: flattener synthesizes the self permission
+and composes scoped grants, `share` replaces the owner equality in grant/revoke enforcement,
+subject key created/removed with the subject; 67 + 17 tests. h2p: `H2PFieldCrypto`, hooks in
+`H2PDataStore`/`H2PQueryFormatter`/`H2PDumpRestore`, `sys_file_version.enc`; new tests 11 + 8,
+existing 26/25/12/7 + DSM 11 unchanged. Deferred: general ACL on plaintext entities; composite
+`<kid>.<secret>` API-key login (equality lookup on `api_key` is refused only when a store encrypts);
+`DoNotExpose` enforcement point.
+
+**PostgreSQL DDL inside an ambient transaction (fixed the same day).** Bootstrapping a **fresh**
+lax-2 `testdb` deadlocked: the seeder runs inside `beginTransaction()`, `ensureTable` ran its DDL on
+an out-of-band connection, and the join table's `CREATE TABLE … FOREIGN KEY … REFERENCES role_info`
+waited on the relation lock the idle transaction held on `role_info` (it had just created/written
+it) — forever, invisible to the lock manager (`pg_stat_activity`: one session `idle in
+transaction`, one `active` on `Lock/relation`). Never seen before because every table already
+existed. Fix: `execDDL` (and the `sys_meta_catalog` upsert in `registerInCatalog`) run **on the
+transaction connection, under a SAVEPOINT, when the engine is PostgreSQL and a transaction is
+bound** — PostgreSQL DDL is transactional, so a table created inside a rolled-back transaction
+simply disappears and is recreated on the next touch; a failed quiet DDL (duplicate constraint)
+rolls back to the savepoint instead of aborting the transaction. H2 keeps the out-of-band
+connection (its DDL auto-commits and would end the ambient transaction). Verified by
+`bootstrap-super-admin` on a freshly created database (29 tables, 24/6/4 catalog rows) and the
+full PG suites afterwards. `readColumnTypes` still probes on its own connection; the
+`createdTables` guard keeps a type created inside a transaction from being re-probed in that JVM.
+
+## Session log — 2026-10-02 (datastore access control)
+
+Built per `~/.claude/plans/datastore-acl.md` after the user's go. zoxweb-core (installed,
+`-Dgpg.skip=true`; the working tree also held the user's own in-progress `AccountID` removal, which
+went into the jar with it): `SecurityController.runAsSystem` / `isSystemContext` as fail-closed
+default methods, `RESOURCE_SELF_VERBS` = `create,read,update,delete,share`. io-xlogistx shiro
+(installed with `-Dmaven.test.skip=true` — `ShiroMetaModelTest` no longer compiles since the core
+rename `setAppIdDAO` → `setAppID`, not touched): `ShiroUtil.runAsSystem` / `isSystemContext`,
+`checkResourcePermission` passes in the system context and accepts a null owner (it threw
+`NullPointerException`, locking even `*` out of ownerless rows), `ShiroSecurityController` implements
+the two methods, accepts a null owner in `isNVEntityAccessible`, and walks the key chain in the system
+context. h2p: everything in the "Access control" section; fixed on the way — `fileAccess` trusted the
+`subject_guid` of the caller's `FileInfo` (a shell stamped with the caller's own GUID passed as the
+owner), a preset-GUID insert could leave a row ownerless, and an update through an object without
+`subject_guid` nulled the stored owner (now kept, under access control). shiro-ds: the manager's
+system view of the store. Suites on in-memory H2: access control 9, field crypto 11, secure file 8,
+store 26, regression 25, dump/restore 12, file store 7, default-manager 11; shiro-ds catalog 20,
+manager 69; core `SecurityModelTest` 10, `PermissionGrantTest` 60. **PostgreSQL not run**: the user
+keeps lax-2 `testdb` free of test data (2026-10-02). Nothing committed.
 
 ## Ground rules for future sessions
 0. **Every attribute named `*guid` is a `uuid` column** (user rule 2026-09-15, `H2PUtil.isUUIDField`):
@@ -620,3 +794,65 @@ Once zoxweb-core's crypto rework is installed (`EncryptedData` `|`-joined GCM re
    methods) and `NVC_REFERENCE_ID` is gone from `ReferenceIDDAO`'s meta — so `lookupByReferenceID`/
    `isValidReferenceID` operate on GUIDs, and no exclusion set is needed (`AttrKind.EXCLUDED`
    remains only as the defensive classification for a null NVConfig).
+
+## Session log — 2026-10-02 night (no database without the master key)
+
+User rule: *you cannot use the database without a master key*; and *the prerequisite of any run is
+to load the keystore with its password and take the db info and the master key from it*.
+
+- `H2PDataStore.requireMasterKey()` — called at the top of `newConnection()` (every read, write,
+  DDL, transaction, sequence, dump, restore goes through it): the `APIConfigInfo` must carry a
+  `SecurityController` and a `KeyMaker` whose `getMasterKey()` returns a key, else
+  `AccessSecurityException`. `close()` and `setAPIConfigInfo` are not gated.
+- `H2PDumpRestore.main`: `--store <vault>` is required (`--store-password`, or a console prompt;
+  `--controller <class>`, default `io.xlogistx.shiro.mgt.ShiroSecurityController`, instantiated by
+  name because this module has no controller of its own). `loadVault` reads the opsec `SecretStore`
+  file with the plain JCA API (BCFKS on BC; a text secret is a `PBEKey` password entry): the
+  `master-key` secret key goes into `KeyMakerProvider.SINGLETON`, the `db.*` entries are the
+  connection unless `--url/--user/--password/--file-password` override them. The operation runs
+  inside `controller.runAsSystem`. Checked on scratch H2 files: no `--store` → usage error; dump →
+  zip; restore into a second database; `SecurityAdminTool list-apps` / bootstrap on the copy.
+- Tests. `CryptoTestSupport.loadVault()` opens a vault (`-Dstore=` + `-Dstore.password=`, else a
+  throw-away one with a fresh master key), loads the master key, `secure(cfg)` = stub controller +
+  key maker, `db(name)` / `vaultPostgresURL()`; `config()` and the two live suites take the
+  PostgreSQL target from the vault when it names one (`-Dh2p.pg.*` / `-Dds.*` still override).
+  New JUnit extension `SystemContext` runs a whole class in the stub controller's system context:
+  the mechanics suites (`H2PDataStoreTest`, `H2PRegressionTest`, `H2PFileStoreTest`,
+  `H2PDumpRestoreTest`, `H2PPostgresDataStoreTest`, `H2PDomainSecurityManagerDBTest`) carry it and
+  open every store through `secure(...)`. File content is always sealed now, so a file needs an
+  owner with a subject key: `H2PFileStoreTest` binds one per class, the dump and PostgreSQL file
+  tests bind one for the file writes and unbind before the dump/restore. The three "half / no
+  configuration" tests became refusal tests (`incompleteConfiguration_databaseRefused` ×2,
+  `noController_noDatabase`); `H2PAccessControlTest` runs on a controller + key maker store.
+  `testFullStoreRoundTrip` restores 11 entities (the 9 + the owner's subject key + the file's key).
+- Owner stamping during a restore — **corrected 2026-10-03 after tracing the code**. What was
+  observed (run): in `testFullStoreRoundTrip`, rows that had no owner in the source came back with
+  the bound test subject as owner when the restore ran while that subject was bound. Cause
+  (read in the source): `insertRow` calls `controller.associateNVEntityToSubjectGUID(nve, null)`
+  for every new row, also in the system context; the test stub `TestSecurityController` stamps any
+  entity without `subject_guid` when a subject is bound. The production `ShiroSecurityController`
+  stamps only an entity that has **no GUID**, and a restored row always carries its GUID, so by
+  that code it is not stamped. That last point was read, not run with the Shiro controller. The
+  earlier wording here presented it as a datastore behaviour; it is a property of the test stub.
+- Results. In-memory H2: access control 9, field crypto 11, secure file 8, data store 26,
+  regression 25, file store 7, dump/restore 12, default-manager 11 — all green. **PostgreSQL
+  (lax-2 `testdb`, through `xlogistx-shiro-ds/src/main/resources/test.store`):**
+  `H2PPostgresDataStoreTest` 9, field crypto 11, secure file 8, access control 9 — all green.
+  `H2PDomainSecurityManagerDBTest` was not run on PostgreSQL: core's `DomainSecurityManagerDefault`
+  creates subjects without a subject key (read in the source: its `createSubjectID` inserts the
+  subject and the class never references `EncapsulatedKey` or `KeyMaker`; the user has since said
+  that class is being replaced by `ShiroDSDomainSecurityManager`). Nothing committed.
+
+## Session log — 2026-10-05 (`DomainSecurityManagerDefault` deleted by the user)
+
+The user deleted core's `DomainSecurityManagerDefault` and its `DomainSecurityManagerDefaultTest`
+("fix the code"). `H2PDomainSecurityManagerDBTest` now builds `ShiroDSDomainSecurityManager(ds)`
+and seeds the catalog in its set-up (the Shiro manager's catalog rows belong to the common app,
+which must exist); the Mongo `DomainSecurityManagerDBTest` in `xlogistx-datastore` had already had
+its construction commented out by the user (it skips without a Mongo server). While rebuilding,
+the parent `pom.xml` turned out to have its `<version>1.0.0</version>` line replaced by a stray
+`N` (modified at 15:50, not by my earlier edit, which only removed the module line); restored.
+Run: zoxweb-core, io-xlogistx and the whole zoxweb-datastore reactor install offline;
+`H2PDomainSecurityManagerDBTest` 11/11 through `h2mem.store`; `SecurityCatalogDBTest` 21/21 and
+`ShiroDSDomainSecurityManagerDBTest` 72/72 through `h2mem.store`; no-sneak-core and no-sneak-app
+compile against the new core jar. Nothing committed.

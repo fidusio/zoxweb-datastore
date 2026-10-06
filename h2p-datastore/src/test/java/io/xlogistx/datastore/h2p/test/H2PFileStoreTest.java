@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * last-write-wins updates, the {@code FILE_VERSIONS_MAX} retention cap, cascade delete, and
  * ambient-transaction participation.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 public class H2PFileStoreTest {
 
     public static final String DB_URL = "jdbc:h2:mem:h2p_file_store_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
@@ -42,9 +43,23 @@ public class H2PFileStoreTest {
     private static H2PDataStore ds;
     private static final Random RAND = new Random(20260729);
 
+    /** The subject that owns the files: file content is always sealed under its owner's key chain. */
+    private static String owner;
+
     @BeforeAll
     public static void setup() {
-        ds = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(DB_URL));
+        ds = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(DB_URL)));
+        owner = CryptoTestSupport.newSubjectWithKey(ds);
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    public void bindOwner() {
+        TestSecurityController.currentSubject = owner;
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    public static void unbind() {
+        TestSecurityController.currentSubject = null;
     }
 
     private static FileInfo newFileInfo(String name) {
@@ -205,7 +220,8 @@ public class H2PFileStoreTest {
         APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:h2p_file_cap_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         cfg.getProperties().build(H2PParam.FILE_VERSIONS_MAX.getName(), "2");
-        H2PDataStore capped = new H2PDSCreator().createAPI(null, cfg);
+        H2PDataStore capped = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(cfg));
+        TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(capped); // its own database, its own owner
 
         byte[] v3 = randomBytes(300), v4 = randomBytes(400);
         FileInfo fid = newFileInfo("capped_" + UUID.randomUUID());

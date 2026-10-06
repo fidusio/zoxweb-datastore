@@ -41,6 +41,7 @@ import org.zoxweb.shared.io.SharedIOUtil;
 import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.*;
+import org.zoxweb.shared.util.ExceptionReason.Reason;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -85,6 +86,16 @@ import java.util.logging.Level;
  * IF NOT EXISTS}; {@code FOREIGN KEY … ON DELETE CASCADE}; standard {@code INFORMATION_SCHEMA}).
  * The same code runs on H2 (in {@code MODE=PostgreSQL}) and on a real PostgreSQL server by only
  * swapping the JDBC driver + URL.
+ *
+ * <p><b>Access control.</b> With a {@link SecurityController} on the {@link APIConfigInfo}, every
+ * entity that passes through this store is checked for the subject bound to the calling thread,
+ * encrypted or not: a row is returned only when the subject may {@code read} it (a denied row is
+ * silently absent — fewer search results, a null reference, a missing collection member), and is
+ * updated or deleted only when the subject holds that verb on it (denied ⇒
+ * {@link AccessSecurityException}). The store never compares owners itself: it asks the controller,
+ * with the row's GUID and its <em>stored</em> {@code subject_guid}. Code that must reach the store
+ * with nobody logged in runs inside the controller's system context
+ * ({@link SecurityController#runAsSystem}). Without a controller nothing is checked.
  */
 @SuppressWarnings("serial")
 public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
@@ -96,6 +107,10 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     static final String DEM_TABLE = "dynamic_enum_map";
     static final String FILE_VERSION_TABLE = "sys_file_version";
     static final String FILE_HEAD_TABLE = "sys_file_head";
+    /** {@code sys_file_version.enc}: {@link #FILE_ENC_PLAIN} or {@link #FILE_ENC_VX} (AESCrypt VX container under the file's entity key). */
+    static final String FILE_ENC_COLUMN = "enc";
+    static final int FILE_ENC_PLAIN = 0;
+    static final int FILE_ENC_VX = 1;
     static final String META_CATALOG_TABLE = "sys_meta_catalog";
 
     private volatile boolean driverLoaded = false;
@@ -130,7 +145,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     private final ThreadLocal<Connection> txConnection = new ThreadLocal<>();
 
+    /** Encryption at rest (fields + files); a SecurityController AND a KeyMaker with its master key are required to connect at all ({@link #requireMasterKey}). */
+    private final H2PFieldCrypto crypto = new H2PFieldCrypto(this);
+
     public H2PDataStore() {
+    }
+
+    /** @return true when this store encrypts ENCRYPT* attributes and file content (controller + key maker configured). */
+    public boolean isEncryptionActive() {
+        return crypto.active();
+    }
+
+    /** @return true when this store checks every read and write against its {@link SecurityController} (one is configured). */
+    public boolean isAccessControlActive() {
+        return crypto.controller() != null;
     }
 
     public H2PDataStore(APIConfigInfo configInfo) {
@@ -185,8 +213,39 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return newConnection();
     }
 
+    /**
+     * The database is never used without the master key (user rule 2026-10-02): every connection
+     * this store hands out or uses goes through here first. The configuration must carry a
+     * {@link SecurityController} and a {@code KeyMaker} whose master key is loaded — the two that
+     * make encryption at rest and the access check active. Anything less and the store refuses to
+     * connect, so no read, write, DDL, dump or restore can reach the database.
+     *
+     * @throws AccessSecurityException when the controller, the key maker or the master key is missing
+     */
+    private void requireMasterKey() {
+        APIConfigInfo aci = getAPIConfigInfo();
+        SUS.checkIfNulls("Configuration null", aci);
+        boolean noController = aci.getSecurityController() == null, noKeyMaker = aci.getKeyMaker() == null;
+        if (noController || noKeyMaker) {
+            throw new AccessSecurityException("Database access refused: the store configuration needs a SecurityController"
+                    + " and a KeyMaker with the master key loaded (missing: " + (noController ? "SecurityController" : "")
+                    + (noController && noKeyMaker ? ", " : "") + (noKeyMaker ? "KeyMaker" : "") + ")");
+        }
+        byte[] masterKey;
+        try {
+            masterKey = aci.getKeyMaker().getMasterKey();
+        } catch (RuntimeException e) {
+            throw new AccessSecurityException("Database access refused: master key not loaded (" + e.getMessage() + ")");
+        }
+        if (masterKey == null || masterKey.length == 0) {
+            throw new AccessSecurityException("Database access refused: master key not loaded");
+        }
+        java.util.Arrays.fill(masterKey, (byte) 0);
+    }
+
     @Override
     public Connection newConnection() throws APIException {
+        requireMasterKey();
         try {
             // Both engines are pooled via HikariCP. A pooled close() returns the connection, so the
             // acquire/close/transaction machinery is engine-agnostic.
@@ -286,8 +345,42 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return txConnection.get() != null;
     }
 
-    /** Run a DDL statement on its own auto-committed connection (never the ambient transaction connection). */
+    /**
+     * Run a DDL statement. Normally on its own auto-committed connection (H2 commits implicitly on
+     * DDL, which would end an ambient transaction early). <b>PostgreSQL with an ambient transaction
+     * open on this thread is the exception:</b> the DDL runs on the transaction connection, under a
+     * SAVEPOINT. PostgreSQL DDL is transactional, and an out-of-band connection would block on the
+     * relation locks the open transaction already holds — e.g. a join table's
+     * {@code FOREIGN KEY … REFERENCES role_info} while the transaction has just created or written
+     * {@code role_info} — and the transaction, idle, would never release them: a deadlock that the
+     * lock manager cannot see (found 2026-09-29 bootstrapping a fresh database). The SAVEPOINT keeps a
+     * failed statement (e.g. a duplicate constraint) from aborting the whole transaction.
+     */
     private void execDDL(String sql) {
+        Connection tx = txConnection.get();
+        if (tx != null && currentDSType == DSType.POSTGRES) {
+            Statement stmt = null;
+            java.sql.Savepoint sp = null;
+            try {
+                sp = tx.setSavepoint();
+                stmt = tx.createStatement();
+                if (log.isEnabled()) log.getLogger().info("DDL (in tx): " + sql);
+                stmt.execute(sql);
+                tx.releaseSavepoint(sp);
+            } catch (SQLException e) {
+                if (sp != null) {
+                    try {
+                        tx.rollback(sp);
+                    } catch (SQLException ignore) {
+                        // surface the original failure
+                    }
+                }
+                throw mapOrWrap(e);
+            } finally {
+                close(stmt);
+            }
+            return;
+        }
         Connection con = null;
         Statement stmt = null;
         try {
@@ -562,6 +655,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         /** {@code name.toLowerCase()} — the key rows are materialized under; precomputed (hot read path). */
         final String lowerName;
         final H2PUtil.AttrKind kind;
+        /** Declared {@code ENCRYPT} / {@code ENCRYPT_MASK} (see {@link H2PFieldCrypto}); {@code masked} implies {@code encrypted}. */
+        final boolean encrypted;
+        final boolean masked;
         /** Referenced type for ENTITY_REF / ENTITY_COLLECTION, resolved once — see {@link #childNVCE}. */
         volatile NVConfigEntity child;
         volatile boolean childUnresolvable;
@@ -571,6 +667,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             this.name = nvc.getName();
             this.lowerName = this.name.toLowerCase();
             this.kind = H2PUtil.classify(nvc);
+            this.encrypted = H2PFieldCrypto.isEncrypted(nvc.getValueFilter());
+            this.masked = H2PFieldCrypto.isMasked(nvc.getValueFilter());
         }
 
         boolean isColumn() {
@@ -595,11 +693,26 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 AttrInfo ai = new AttrInfo(nvc);
                 if (ai.kind != H2PUtil.AttrKind.PK && ai.kind != H2PUtil.AttrKind.EXCLUDED) {
                     H2PUtil.checkNameForSQL("attribute", ai.name);
+                    if (ai.encrypted && (ai.kind != H2PUtil.AttrKind.SCALAR
+                            || nvc.getMetaType() != String.class || H2PUtil.isUUIDField(nvc))) {
+                        // An encrypted attribute is stored as the record's canonical text in its own
+                        // varchar column: only a String scalar can carry it, and a *guid column is a
+                        // native uuid that could never hold ciphertext.
+                        throw new IllegalArgumentException("ENCRYPT/ENCRYPT_MASK attribute must be a String scalar (not a *guid): "
+                                + nvce.getName() + "." + ai.name + " is " + ai.kind + " of " + nvc.getMetaType()
+                                + ". FIX YOUR CODE: declare it as String or drop the filter.");
+                    }
                     list.add(ai);
                 }
             }
             return list;
         });
+    }
+
+    /** True if the type declares at least one ENCRYPT* attribute (decides whether the crypto pass runs). */
+    private static boolean hasEncryptedAttrs(List<AttrInfo> infos) {
+        for (AttrInfo ai : infos) if (ai.encrypted) return true;
+        return false;
     }
 
     /** Join table name for an entity-collection attribute: {@code <table>__<attr>} (63-byte safe). */
@@ -907,22 +1020,42 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 metaCatalogEnsured = true;
             }
             String classType = nvce.getMetaTypeBase().getName();
-            con = newConnection();
-            upd = con.prepareStatement("UPDATE " + H2PUtil.q(META_CATALOG_TABLE) + " SET "
-                    + H2PUtil.q("class_type") + " = ? WHERE " + H2PUtil.q("table_name") + " = ?");
-            upd.setString(1, classType);
-            upd.setString(2, tableName(nvce));
-            if (upd.executeUpdate() == 0) {
-                try {
-                    ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(META_CATALOG_TABLE) + " ("
-                            + H2PUtil.q("table_name") + ", " + H2PUtil.q("class_type") + ") VALUES (?, ?)");
-                    ins.setString(1, tableName(nvce));
-                    ins.setString(2, classType);
-                    ins.executeUpdate();
-                } catch (SQLException e) {
-                    // Concurrent registrar won the race — the row exists now, which is all we need.
-                    if (!"23505".equals(e.getSQLState())) throw e;
+            // PostgreSQL with an ambient transaction: the catalog table (and the type's table) may
+            // exist only inside that transaction, so the upsert must run on it too — see execDDL.
+            Connection tx = txConnection.get();
+            boolean inTx = tx != null && currentDSType == DSType.POSTGRES;
+            con = inTx ? tx : newConnection();
+            java.sql.Savepoint sp = inTx ? con.setSavepoint() : null;
+            try {
+                upd = con.prepareStatement("UPDATE " + H2PUtil.q(META_CATALOG_TABLE) + " SET "
+                        + H2PUtil.q("class_type") + " = ? WHERE " + H2PUtil.q("table_name") + " = ?");
+                upd.setString(1, classType);
+                upd.setString(2, tableName(nvce));
+                if (upd.executeUpdate() == 0) {
+                    java.sql.Savepoint sp2 = inTx ? con.setSavepoint() : null;
+                    try {
+                        ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(META_CATALOG_TABLE) + " ("
+                                + H2PUtil.q("table_name") + ", " + H2PUtil.q("class_type") + ") VALUES (?, ?)");
+                        ins.setString(1, tableName(nvce));
+                        ins.setString(2, classType);
+                        ins.executeUpdate();
+                        if (sp2 != null) con.releaseSavepoint(sp2);
+                    } catch (SQLException e) {
+                        if (sp2 != null) con.rollback(sp2);
+                        // Concurrent registrar won the race — the row exists now, which is all we need.
+                        if (!"23505".equals(e.getSQLState())) throw e;
+                    }
                 }
+                if (sp != null) con.releaseSavepoint(sp);
+            } catch (SQLException e) {
+                if (sp != null) {
+                    try {
+                        con.rollback(sp); // keep the ambient transaction usable
+                    } catch (SQLException ignore) {
+                        // surface the original failure
+                    }
+                }
+                throw e;
             }
         } catch (Exception e) {
             catalogSynced.remove(key); // retry on the next touch of this type
@@ -996,17 +1129,137 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return nvce;
     }
 
-    private boolean existsByGuid(Connection con, NVConfigEntity nvce, String guid) throws SQLException {
+    // ---------- Access control ----------
+
+    /** Column of the owner of a row, as {@link AttrInfo#lowerName} spells it. */
+    private static final String OWNER_COLUMN = MetaToken.SUBJECT_GUID.getName().toLowerCase();
+
+    /**
+     * True when the calling thread's operations are access-checked: a {@link SecurityController} is
+     * configured and the thread is not inside its system context.
+     */
+    private boolean accessChecked() {
+        SecurityController sc = crypto.controller();
+        return sc != null && !sc.isSystemContext();
+    }
+
+    /**
+     * The controller's verdict on one resource for the bound subject: the owner rights
+     * ({@code ownerGUID}, null for a row without owner) or a grant on the resource itself. Never
+     * compares owners here.
+     */
+    private boolean permitted(String guid, String ownerGUID, CRUD crud) {
+        return crypto.accessAllowed(guid, ownerGUID, crud);
+    }
+
+    /** True when the type stores a {@code subject_guid} column (every type on the common base does). */
+    private boolean hasOwnerColumn(NVConfigEntity nvce) {
+        for (AttrInfo ai : attrInfos(nvce)) {
+            if (ai.isColumn() && OWNER_COLUMN.equals(ai.lowerName)) return true;
+        }
+        return false;
+    }
+
+    private static String ownerOf(Object column) {
+        return column instanceof UUID ? IDGs.UUIDV7.encode((UUID) column) : null;
+    }
+
+    /** A stored row as the write path needs it: it exists, and who owns it ({@code owner} null = no owner). */
+    private static final class StoredRow {
+        final String owner;
+
+        StoredRow(String owner) {
+            this.owner = owner;
+        }
+    }
+
+    /**
+     * The stored row with that GUID, or null when there is none. One round trip: it is the existence
+     * probe of the write path and also yields the <b>stored</b> owner — an update or a delete is
+     * judged against it, never against the {@code subject_guid} of the object the caller sent.
+     */
+    private StoredRow storedRow(Connection con, NVConfigEntity nvce, String guid) throws SQLException {
+        boolean owned = hasOwnerColumn(nvce);
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            ps = con.prepareStatement("SELECT 1 FROM " + H2PUtil.q(tableName(nvce))
+            ps = con.prepareStatement("SELECT " + (owned ? H2PUtil.q(MetaToken.SUBJECT_GUID.getName()) : "1")
+                    + " FROM " + H2PUtil.q(tableName(nvce))
                     + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
             ps.setObject(1, IDGs.UUIDV7.decode(guid));
             rs = ps.executeQuery();
-            return rs.next();
+            if (!rs.next()) return null;
+            return new StoredRow(owned ? ownerOf(rs.getObject(1)) : null);
         } finally {
             close(rs, ps);
+        }
+    }
+
+    /**
+     * A new row: without an owner it gets the bound subject, then the caller needs {@code create} on
+     * that owner — its own rows through the self permission, somebody else's only with a grant such
+     * as {@code resource:*:*:create}. Nobody bound ⇒ refused.
+     */
+    private void checkCreate(NVConfigEntity nvce, NVEntity nve) {
+        SecurityController sc = crypto.controller();
+        if (sc == null || sc.isSystemContext()) return;
+        if (SUS.isEmpty(nve.getSubjectGUID()) && hasOwnerColumn(nvce)) {
+            String caller = sc.currentSubjectGUID();
+            if (caller != null) nve.setSubjectGUID(caller);
+        }
+        String owner = SUS.isEmpty(nve.getSubjectGUID()) ? null : nve.getSubjectGUID();
+        if (!(owner != null ? permitted(owner, owner, CRUD.CREATE) : permitted(nve.getGUID(), null, CRUD.CREATE))) {
+            throw new AccessSecurityException("Not permitted to create " + nvce.getName()
+                    + (owner != null ? " owned by " + owner : ""), Reason.UNAUTHORIZED);
+        }
+    }
+
+    /**
+     * An existing row: the caller needs the verb on it, judged against the stored owner. An update
+     * never changes the owner: an object without one keeps the stored owner, a different one is
+     * refused.
+     */
+    private void checkWrite(NVConfigEntity nvce, NVEntity nve, StoredRow stored, CRUD crud) {
+        if (!accessChecked()) return;
+        if (!permitted(nve.getGUID(), stored.owner, crud)) {
+            throw new AccessSecurityException("Not permitted to " + crud.name().toLowerCase() + " "
+                    + nvce.getName() + " " + nve.getGUID(), Reason.UNAUTHORIZED);
+        }
+        if (crud == CRUD.UPDATE && hasOwnerColumn(nvce)) {
+            if (SUS.isEmpty(nve.getSubjectGUID())) {
+                if (stored.owner != null) nve.setSubjectGUID(stored.owner);
+            } else if (!nve.getSubjectGUID().equalsIgnoreCase(stored.owner)) {
+                throw new AccessSecurityException("The owner of " + nvce.getName() + " " + nve.getGUID()
+                        + " can not be changed by an update", Reason.UNAUTHORIZED);
+            }
+        }
+    }
+
+    /**
+     * State of one read call: the entities built so far (cycle guard and dedup) and the access
+     * verdicts already obtained, so one owner is asked about once per call, not once per row.
+     */
+    private final class ReadCtx {
+        /** Built entities by GUID; a row denied to the caller is remembered with a null value. */
+        final Map<String, NVEntity> cache = new HashMap<>();
+        /** Owner GUID → the caller may read what that owner owns (the owner token). */
+        private final Map<String, Boolean> ownerRead = new HashMap<>();
+        final boolean checked = accessChecked();
+
+        boolean mayRead(String guid, String ownerGUID) {
+            if (!checked) return true;
+            if (guid == null) return false;
+            if (ownerGUID != null) {
+                Boolean owner = ownerRead.get(ownerGUID);
+                if (owner == null) {
+                    // resource:<owner>:<caller>:read — the same answer for every row of that owner
+                    owner = permitted(ownerGUID, ownerGUID, CRUD.READ);
+                    ownerRead.put(ownerGUID, owner);
+                }
+                if (owner) return true;
+            }
+            // resource:<guid>:<caller>:read — a share of this row
+            return permitted(guid, null, CRUD.READ);
         }
     }
 
@@ -1049,6 +1302,16 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         final Set<String> inFlight = new HashSet<>();
         private final List<String[]> refFixups = new ArrayList<>();   // {table, column, rowGuid, refGuid}
         private final List<Object[]> joinFixups = new ArrayList<>();  // {joinTable, parentGuid, childGuid, ord}
+        /**
+         * Stored records (packed bytes) of the entity being updated, per lower-cased masked attribute
+         * name — lets a masked read written back ({@code ****1234}) keep the stored ciphertext.
+         * Filled by {@link #prepareCrypto} on update/patch only.
+         */
+        private Map<String, byte[]> storedRecords;
+
+        byte[] storedRecord(String lowerName) {
+            return storedRecords != null ? storedRecords.get(lowerName) : null;
+        }
 
         void deferRef(String table, String column, String rowGuid, String refGuid) {
             refFixups.add(new String[]{table, column, rowGuid, refGuid});
@@ -1098,7 +1361,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             WriteCtx ctx = new WriteCtx();
-            V ret = innerInsert(con, nve, ctx);
+            V ret = upsert(con, nve, ctx, false);
             ctx.applyFixups(con);
             return ret;
         } catch (SQLException e) {
@@ -1108,22 +1371,44 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
     }
 
-    private <V extends NVEntity> V innerInsert(Connection con, V nve, WriteCtx ctx) throws SQLException {
+    /**
+     * {@code insert} and {@code update} are the same GUID-keyed upsert: a stored row with the
+     * entity's GUID is updated, a missing one inserted. The row is probed once ({@link #storedRow}).
+     *
+     * @param reference true when {@code nve} is written as a referenced entity of the one being
+     *                  saved: under access control a row the caller may not update is then linked,
+     *                  not rewritten, provided the caller may read it
+     */
+    private <V extends NVEntity> V upsert(Connection con, V nve, WriteCtx ctx, boolean reference) throws SQLException {
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         ensureTable(nvce);
+        StoredRow stored = SUS.isEmpty(nve.getGUID()) ? null : storedRow(con, nvce, nve.getGUID());
+        if (stored == null) {
+            return insertRow(con, nve, nvce, ctx);
+        }
+        if (reference && accessChecked() && !permitted(nve.getGUID(), stored.owner, CRUD.UPDATE)) {
+            if (!permitted(nve.getGUID(), stored.owner, CRUD.READ)) {
+                throw new AccessSecurityException("Not permitted to reference " + nvce.getName() + " " + nve.getGUID(),
+                        Reason.UNAUTHORIZED);
+            }
+            ctx.seen.add(nve.getGUID());
+            return nve;
+        }
+        return updateRow(con, nve, nvce, ctx, stored);
+    }
 
-        SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
+    private <V extends NVEntity> V insertRow(Connection con, V nve, NVConfigEntity nvce, WriteCtx ctx) throws SQLException {
+        SecurityController sc = crypto.controller();
         if (sc != null) sc.associateNVEntityToSubjectGUID(nve, null);
         if (SUS.isEmpty(nve.getGUID())) nve.setGUID(IDGs.UUIDV7.genID());
+        checkCreate(nvce, nve);
         MetaUtil.initTimeStamp(nve);
 
-        if (existsByGuid(con, nvce, nve.getGUID())) {
-            return innerUpdate(con, nve, ctx);
-        }
         ctx.seen.add(nve.getGUID());
         ctx.inFlight.add(nve.getGUID());
 
         List<AttrInfo> infos = attrInfos(nvce);
+        prepareCrypto(con, nve, infos, ctx, false); // entity key before any statement of this row
         insertChildren(con, nve, infos, ctx); // referenced entities first (FK targets must exist)
 
         List<AttrInfo> cols = columnAttrs(infos);
@@ -1158,6 +1443,143 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return c;
     }
 
+    /**
+     * The crypto pass before a row is written (see {@link H2PFieldCrypto}). Runs only for types that
+     * declare ENCRYPT* attributes or hold ENCRYPT* pairs in a schemaless container:
+     * <ol>
+     * <li>a half configuration (controller xor key maker) is refused when a value would have to be
+     * sealed — never silently plaintext;</li>
+     * <li>when active, the entity's key is minted on the first sealed write (wrapped under the owner's
+     * subject key, which must exist);</li>
+     * <li>on update/patch the stored records of the masked attributes are preloaded so a masked
+     * value written back keeps the stored ciphertext.</li>
+     * </ol>
+     * Without any configuration the write proceeds in plaintext, as before.
+     */
+    private void prepareCrypto(Connection con, NVEntity nve, List<AttrInfo> infos, WriteCtx ctx, boolean stored)
+            throws SQLException {
+        boolean sealing = false;
+        List<AttrInfo> masked = null;
+        for (AttrInfo ai : infos) {
+            if (ai.encrypted) {
+                NVBase<?> nvb = nve.lookup(ai.name);
+                if (nvb != null && H2PFieldCrypto.needsSealing(nvb.getValue())) sealing = true;
+                if (ai.masked) {
+                    if (masked == null) masked = new ArrayList<>();
+                    masked.add(ai);
+                }
+            } else if (ai.kind == H2PUtil.AttrKind.SCHEMALESS && H2PFieldCrypto.hasEncryptedPairs(nve.lookup(ai.name))) {
+                sealing = true;
+            }
+        }
+        if (!sealing) return;
+        crypto.requireConsistent(nve.getNVConfig().getName() + " " + nve.getGUID());
+        if (!crypto.active()) return; // neither configured: clear text as UTF-8 bytes (dev/tests)
+        crypto.ensureEntityKey(nve);
+        if (stored && masked != null) {
+            ctx.storedRecords = readBinaryColumns(con, (NVConfigEntity) nve.getNVConfig(), nve.getGUID(), masked);
+        }
+    }
+
+    /** The current bytes of the given {@code bytea} columns of one row, keyed by lower-cased attribute name. */
+    private Map<String, byte[]> readBinaryColumns(Connection con, NVConfigEntity nvce, String guid, List<AttrInfo> cols)
+            throws SQLException {
+        Map<String, byte[]> ret = new HashMap<>();
+        if (cols.isEmpty()) return ret;
+        StringBuilder sql = new StringBuilder("SELECT ");
+        for (int i = 0; i < cols.size(); i++) {
+            if (i > 0) sql.append(", ");
+            sql.append(H2PUtil.q(cols.get(i).name));
+        }
+        sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)))
+                .append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?");
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            ps = con.prepareStatement(sql.toString());
+            ps.setObject(1, IDGs.UUIDV7.decode(guid));
+            rs = ps.executeQuery();
+            if (rs.next()) {
+                for (int i = 0; i < cols.size(); i++) {
+                    byte[] v = rs.getBytes(i + 1);
+                    if (v != null) ret.put(cols.get(i).lowerName, v);
+                }
+            }
+        } finally {
+            close(rs, ps);
+        }
+        return ret;
+    }
+
+    /** The encrypted (ENCRYPT*) attributes of a type, in declaration order. */
+    private List<AttrInfo> encryptedAttrs(NVConfigEntity nvce) {
+        List<AttrInfo> ret = new ArrayList<>();
+        for (AttrInfo ai : attrInfos(nvce)) if (ai.encrypted) ret.add(ai);
+        return ret;
+    }
+
+    /**
+     * The stored bytes of a row's encrypted columns, keyed by attribute name — for the dump, which
+     * moves them beside the entity line instead of through the entity. Empty for a type without
+     * encrypted attributes.
+     */
+    Map<String, byte[]> readEncryptedColumns(NVConfigEntity nvce, String guid) {
+        List<AttrInfo> cols = encryptedAttrs(nvce);
+        if (cols.isEmpty()) return new HashMap<>();
+        Connection con = null;
+        try {
+            con = acquire();
+            Map<String, byte[]> byLower = readBinaryColumns(con, nvce, guid, cols);
+            Map<String, byte[]> ret = new LinkedHashMap<>();
+            for (AttrInfo ai : cols) {
+                byte[] v = byLower.get(ai.lowerName);
+                if (v != null) ret.put(ai.name, v);
+            }
+            return ret;
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(con);
+        }
+    }
+
+    /**
+     * Writes stored bytes straight into a row's encrypted columns (restore), bypassing the entity
+     * and its filters: the record is opaque to this store and only meaningful under the same master
+     * key. Unknown or non-encrypted attribute names are rejected.
+     */
+    void writeEncryptedColumns(NVConfigEntity nvce, String guid, Map<String, byte[]> columns) {
+        if (columns == null || columns.isEmpty()) return;
+        Map<String, AttrInfo> allowed = new HashMap<>();
+        for (AttrInfo ai : encryptedAttrs(nvce)) allowed.put(ai.lowerName, ai);
+        StringBuilder sql = new StringBuilder("UPDATE ").append(H2PUtil.q(tableName(nvce))).append(" SET ");
+        List<byte[]> values = new ArrayList<>();
+        for (Map.Entry<String, byte[]> e : columns.entrySet()) {
+            AttrInfo ai = allowed.get(e.getKey().toLowerCase());
+            if (ai == null) {
+                throw new IllegalArgumentException("not an encrypted attribute of " + nvce.getName() + ": " + e.getKey());
+            }
+            if (!values.isEmpty()) sql.append(", ");
+            sql.append(H2PUtil.q(ai.name)).append(" = ?");
+            values.add(e.getValue());
+        }
+        sql.append(" WHERE ").append(H2PUtil.q(MetaToken.GUID.getName())).append(" = ?");
+        Connection con = null;
+        PreparedStatement ps = null;
+        try {
+            con = acquire();
+            ps = con.prepareStatement(sql.toString());
+            int idx = 1;
+            for (byte[] v : values) ps.setBytes(idx++, v);
+            ps.setObject(idx, IDGs.UUIDV7.decode(guid));
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw mapOrWrap(e);
+        } finally {
+            close(ps, con);
+        }
+    }
+
     private static Object valueOf(NVEntity nve, NVConfig nvc) {
         NVBase<?> nvb = nve.lookup(nvc.getName());
         return nvb != null ? nvb.getValue() : null;
@@ -1185,7 +1607,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     private void writeChild(Connection con, NVEntity child, WriteCtx ctx) throws SQLException {
         if (SUS.isEmpty(child.getGUID())) child.setGUID(IDGs.UUIDV7.genID());
         if (ctx.seen.contains(child.getGUID())) return;
-        innerInsert(con, child, ctx);
+        upsert(con, child, ctx, true);
     }
 
     private void bindColumn(PreparedStatement ps, int idx, AttrInfo ai, NVEntity nve, WriteCtx ctx) throws SQLException {
@@ -1193,7 +1615,15 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         Object value = nvb != null ? nvb.getValue() : null;
         switch (ai.kind) {
             case SCALAR:
-                if (nvb instanceof NVNumber) {
+                if (ai.encrypted) {
+                    // bytea column: the packed record when encrypting (or the kept ciphertext of a masked
+                    // write-back), the clear text as UTF-8 bytes otherwise — see H2PFieldCrypto
+                    byte[] bytes = crypto.active()
+                            ? crypto.encryptScalar(nve, ai.nvc, ai.masked, nvb, ctx != null ? ctx.storedRecord(ai.lowerName) : null)
+                            : H2PFieldCrypto.plaintextBytes(value);
+                    if (bytes == null) ps.setObject(idx, null);
+                    else ps.setBytes(idx, bytes);
+                } else if (nvb instanceof NVNumber) {
                     // NVNumber (e.g. Range start/end) carries a runtime numeric type — tag it so int/long/… survive.
                     ps.setString(idx, value == null ? null : H2PUtil.encodeNumber((Number) value));
                 } else {
@@ -1220,7 +1650,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 break;
             }
             case SCHEMALESS:
-                dialect.bindSchemaless(ps, idx, encodeSchemaless(nvb));
+                // ENCRYPT* pairs inside the container are sealed on a copy (the caller keeps its plaintext)
+                dialect.bindSchemaless(ps, idx, crypto.encodeSchemaless(nve, nvb, encodeSchemaless(nvb)));
                 break;
             default:
                 ps.setObject(idx, null);
@@ -1300,8 +1731,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     /**
      * Run a SELECT with an optional WHERE, materialize rows, then build entities (resolving
-     * refs/joins). {@code cache} is the per-call entity cache keyed by GUID — the cycle guard for
-     * mutually-referencing rows, and a dedup for repeated child fetches within one operation.
+     * refs/joins). {@code ctx} is the per-call read state: the entity cache keyed by GUID — the cycle
+     * guard for mutually-referencing rows, and a dedup for repeated child fetches within one
+     * operation — and the access verdicts; a row the caller may not read is not returned.
      * {@code projection} (lowercased attribute names, null = all) limits the selected columns and
      * the resolved collections — {@code guid} is always selected. {@code capResults} applies the
      * {@link H2PParam#MAX_SELECT_RESULTS} valve — only ever true for open-ended predicate searches;
@@ -1309,7 +1741,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      * NEVER be capped, or collection resolution / batch pages would silently drop rows.
      */
     private List<NVEntity> select(Connection con, NVConfigEntity nvce, String whereClause, SqlBinder binder,
-                                  Map<String, NVEntity> cache, Set<String> projection, boolean capResults)
+                                  ReadCtx ctx, Set<String> projection, boolean capResults)
             throws SQLException {
         List<NVEntity> ret = new ArrayList<>();
         if (nvce == null || !tableExists(con, nvce)) return ret;
@@ -1317,7 +1749,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         if (projection != null) {
             StringBuilder sb = new StringBuilder(H2PUtil.q(MetaToken.GUID.getName()));
             for (AttrInfo ai : attrInfos(nvce)) {
-                if (ai.isColumn() && projection.contains(ai.lowerName)) {
+                // the owner column is always read when access is checked: the verdict needs it
+                if (ai.isColumn() && (projection.contains(ai.lowerName) || (ctx.checked && OWNER_COLUMN.equals(ai.lowerName)))) {
                     sb.append(", ").append(H2PUtil.q(ai.name));
                 }
             }
@@ -1341,7 +1774,10 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         } finally {
             close(rs, ps);
         }
-        for (Map<String, Object> row : rows) ret.add(buildEntity(con, nvce, row, cache, projection));
+        for (Map<String, Object> row : rows) {
+            NVEntity built = buildEntity(con, nvce, row, ctx, projection);
+            if (built != null) ret.add(built); // null: the caller may not read that row
+        }
         return ret;
     }
 
@@ -1360,9 +1796,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return rows;
     }
 
+    /**
+     * Builds one entity from its row, or returns null when the caller may not read it. The access
+     * verdict comes first — right after the row's GUID and owner, before any value is decrypted or
+     * any reference resolved.
+     */
     @SuppressWarnings("unchecked")
     private NVEntity buildEntity(Connection con, NVConfigEntity nvce, Map<String, Object> row,
-                                 Map<String, NVEntity> cache, Set<String> projection) throws SQLException {
+                                 ReadCtx ctx, Set<String> projection) throws SQLException {
         NVEntity nve;
         try {
             nve = (NVEntity) nvce.getMetaTypeBase().getDeclaredConstructor().newInstance();
@@ -1371,15 +1812,29 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
         Object g = row.get(MetaToken.GUID.getName());
         if (g instanceof UUID) nve.setGUID(IDGs.UUIDV7.encode((UUID) g));
+        if (ctx.checked && !ctx.mayRead(nve.getGUID(), ownerOf(row.get(OWNER_COLUMN)))) {
+            if (nve.getGUID() != null) ctx.cache.put(nve.getGUID(), null); // denied: remembered, not re-queried
+            return null;
+        }
         // Register before resolving references: a child referencing back to this row must find it
         // here instead of re-querying (infinite recursion on cyclic graphs).
-        if (cache != null && nve.getGUID() != null) cache.put(nve.getGUID(), nve);
+        if (nve.getGUID() != null) ctx.cache.put(nve.getGUID(), nve);
 
         List<AttrInfo> infos = attrInfos(nvce);
+        // Encrypted scalars and schemaless containers with sealed pairs are opened AFTER the loop:
+        // the controller needs the row's guid + subject_guid, which are plain scalars set by the loop.
+        List<AttrInfo> deferredCrypto = null;
         for (AttrInfo ai : infos) {
             String col = ai.lowerName;
             switch (ai.kind) {
                 case SCALAR:
+                    if (ai.encrypted) {
+                        if (row.get(col) != null) {
+                            if (deferredCrypto == null) deferredCrypto = new ArrayList<>();
+                            deferredCrypto.add(ai);
+                        }
+                        break;
+                    }
                     setScalar(nve, ai, row.get(col));
                     break;
                 case BLOB: {
@@ -1391,9 +1846,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                     Object ref = row.get(col);
                     if (ref instanceof UUID) {
                         String refId = IDGs.UUIDV7.encode((UUID) ref);
-                        NVEntity child = cache != null ? cache.get(refId) : null;
+                        NVEntity child = ctx.cache.get(refId);
                         if (child == null) {
-                            List<NVEntity> found = innerSearchByIDs(con, childNVCE(ai), null, cache, refId);
+                            List<NVEntity> found = innerSearchByIDs(con, childNVCE(ai), null, ctx, refId);
                             child = found.isEmpty() ? null : found.get(0);
                         }
                         if (child != null) ((NVEntityReference) nve.lookup(ai.name)).setValue(child);
@@ -1402,11 +1857,28 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 }
                 case SCHEMALESS: {
                     String json = dialect.readSchemaless(row.get(col)); // String (H2) or PGobject jsonb (PG)
-                    if (json != null) decodeSchemaless(json, ai, nve);
+                    if (json != null) {
+                        decodeSchemaless(json, ai, nve);
+                        NVBase<?> decoded = nve.lookup(ai.name);
+                        if (decoded != null && H2PFieldCrypto.hasSealedPairs(decoded)) {
+                            if (deferredCrypto == null) deferredCrypto = new ArrayList<>();
+                            deferredCrypto.add(ai);
+                        }
+                    }
                     break;
                 }
                 default:
                     break;
+            }
+        }
+        if (deferredCrypto != null) {
+            for (AttrInfo ai : deferredCrypto) {
+                if (ai.kind == H2PUtil.AttrKind.SCALAR) {
+                    Object v = row.get(ai.lowerName);
+                    crypto.decryptScalar(nve, ai.nvc, ai.masked, v instanceof byte[] ? (byte[]) v : null);
+                } else {
+                    crypto.decryptSchemaless(nve, nve.lookup(ai.name));
+                }
             }
         }
 
@@ -1421,7 +1893,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             String[] ids = new String[childGuids.size()];
             for (int i = 0; i < ids.length; i++) ids[i] = IDGs.UUIDV7.encode(childGuids.get(i));
             Map<String, NVEntity> byGUID = new LinkedHashMap<>();
-            for (NVEntity child : this.<NVEntity>innerSearchByIDs(con, childNVCE(ai), null, cache, ids)) {
+            for (NVEntity child : this.<NVEntity>innerSearchByIDs(con, childNVCE(ai), null, ctx, ids)) {
                 byGUID.put(child.getGUID(), child);
             }
             for (String id : ids) {
@@ -1510,7 +1982,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             WriteCtx ctx = new WriteCtx();
-            V ret = innerUpdate(con, nve, ctx);
+            V ret = upsert(con, nve, ctx, false);
             ctx.applyFixups(con);
             return ret;
         } catch (SQLException e) {
@@ -1520,16 +1992,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
     }
 
-    private <V extends NVEntity> V innerUpdate(Connection con, V nve, WriteCtx ctx) throws SQLException {
-        NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
-        ensureTable(nvce);
-        if (SUS.isEmpty(nve.getGUID()) || !existsByGuid(con, nvce, nve.getGUID())) {
-            return innerInsert(con, nve, ctx);
-        }
+    private <V extends NVEntity> V updateRow(Connection con, V nve, NVConfigEntity nvce, WriteCtx ctx, StoredRow stored)
+            throws SQLException {
+        checkWrite(nvce, nve, stored, CRUD.UPDATE);
         ctx.seen.add(nve.getGUID());
         MetaUtil.initTimeStamp(nve);
 
         List<AttrInfo> infos = attrInfos(nvce);
+        prepareCrypto(con, nve, infos, ctx, true); // entity key + stored records of masked attributes
         // Opt-in orphan cleanup: remember the stored children before the update rewrites them.
         List<ChildRef> before = orphanCleanupEnabled()
                 ? collectDbChildren(con, nvce, IDGs.UUIDV7.decode(nve.getGUID()), infos) : null;
@@ -1623,18 +2093,17 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
                 ensureTable(nvce);
 
-                SecurityController sc = getAPIConfigInfo() != null ? getAPIConfigInfo().getSecurityController() : null;
-                if (sc != null) sc.associateNVEntityToSubjectGUID(nve, null);
-
                 WriteCtx ctx = new WriteCtx();
                 if (SUS.isEmpty(nve.getGUID())) {
-                    V ret = innerInsert(con, nve, ctx);
+                    V ret = insertRow(con, nve, nvce, ctx); // associates the new row with the bound subject
                     ctx.applyFixups(con);
                     return ret;
                 }
-                if (!existsByGuid(con, nvce, nve.getGUID())) {
+                StoredRow stored = storedRow(con, nvce, nve.getGUID());
+                if (stored == null) {
                     throw new APIException("Can not patch a missing object " + nve.getGUID());
                 }
+                checkWrite(nvce, nve, stored, CRUD.UPDATE);
                 ctx.seen.add(nve.getGUID());
                 if (updateTS) MetaUtil.initTimeStamp(nve);
 
@@ -1655,6 +2124,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 } else {
                     subset = infos; // no names -> full update
                 }
+                prepareCrypto(con, nve, subset, ctx, true); // entity key + stored records of masked attributes
 
                 if (!updateRefOnly) {
                     insertChildren(con, nve, subset, ctx); // write referenced entities within the subset
@@ -1786,6 +2256,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                                  Set<UUID> visited) throws SQLException {
         if (nvce == null || guid == null || !visited.add(guid)) return false;
         if (!tableExists(con, nvce)) return false;
+        if (accessChecked()) {
+            String id = IDGs.UUIDV7.encode(guid);
+            StoredRow stored = storedRow(con, nvce, id);
+            if (stored == null) return false;
+            if (!permitted(id, stored.owner, CRUD.DELETE)) {
+                throw new AccessSecurityException("Not permitted to delete " + nvce.getName() + " " + id, Reason.UNAUTHORIZED);
+            }
+        }
 
         List<AttrInfo> infos = attrInfos(nvce);
         List<ChildRef> children = withReference ? collectDbChildren(con, nvce, guid, infos) : null;
@@ -1803,18 +2281,42 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             close(ps);
         }
 
-        if (deleted && children != null) {
-            for (ChildRef c : children) {
-                deleteChildSafely(con, c.nvce, c.guid, visited);
+        if (deleted) {
+            deleteEntityKeys(con, nvce, guid);
+            if (children != null) {
+                for (ChildRef c : children) {
+                    deleteChildSafely(con, c.nvce, c.guid, visited);
+                }
             }
         }
         return deleted;
     }
 
     /**
+     * Removes the {@code EncapsulatedKey} row(s) protecting a deleted entity ({@code reference_guid} =
+     * its GUID). Direct SQL on the key table when it exists; no-op for the key table itself. The key
+     * maker's lookup cache may keep the wrapped row until the JVM restarts — harmless, nothing is
+     * left to open with it.
+     */
+    private void deleteEntityKeys(Connection con, NVConfigEntity nvce, UUID guid) throws SQLException {
+        if (H2PFieldCrypto.KEY_TABLE.equalsIgnoreCase(nvce.getName())) return;
+        if (!rawTableExists(con, H2PFieldCrypto.KEY_TABLE)) return;
+        PreparedStatement ps = null;
+        try {
+            ps = con.prepareStatement("DELETE FROM " + H2PUtil.q(H2PFieldCrypto.KEY_TABLE)
+                    + " WHERE " + H2PUtil.q(H2PFieldCrypto.KEY_REFERENCE_COLUMN) + " = ?");
+            ps.setObject(1, guid);
+            ps.executeUpdate();
+        } finally {
+            close(ps);
+        }
+    }
+
+    /**
      * Cascade into one child; a child still referenced by another row (shared) raises an FK
      * violation — it is kept and the cascade continues. Inside a transaction the attempt is wrapped
-     * in a SAVEPOINT (PostgreSQL aborts the whole tx on any failed statement otherwise).
+     * in a SAVEPOINT (PostgreSQL aborts the whole tx on any failed statement otherwise). Under access
+     * control a child the caller may not delete is kept the same way.
      */
     private boolean deleteChildSafely(Connection con, NVConfigEntity childNvce, UUID childGuid,
                                       Set<UUID> visited) throws SQLException {
@@ -1823,6 +2325,12 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             boolean r = deleteByGuid(con, childNvce, childGuid, true, visited);
             if (sp != null) con.releaseSavepoint(sp);
             return r;
+        } catch (AccessSecurityException e) {
+            if (sp != null) con.rollback(sp);
+            if (log.isEnabled()) {
+                log.getLogger().log(Level.FINE, "child kept (delete not permitted): " + childNvce.getName() + " " + childGuid);
+            }
+            return false;
         } catch (SQLException e) {
             if (isFkViolation(e)) {
                 if (sp != null) con.rollback(sp);
@@ -1854,16 +2362,91 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             if (!tableExists(con, nvce)) return false;
-            String sql = "DELETE FROM " + H2PUtil.q(tableName(nvce))
-                    + " WHERE " + H2PQueryFormatter.formatWhere(queryCriteria);
+            String where = H2PQueryFormatter.formatWhere(queryCriteria);
+            if (accessChecked()) {
+                return deleteCheckedByCriteria(con, nvce, where, queryCriteria);
+            }
+            // Entities may own EncapsulatedKey rows: collect the matching GUIDs first so the key
+            // rows can go with them (the key table is the only case where this pass is needed).
+            List<UUID> guids = null;
+            if (!H2PFieldCrypto.KEY_TABLE.equalsIgnoreCase(nvce.getName()) && rawTableExists(con, H2PFieldCrypto.KEY_TABLE)) {
+                guids = new ArrayList<>();
+                ResultSet rs = null;
+                try {
+                    ps = con.prepareStatement("SELECT " + H2PUtil.q(MetaToken.GUID.getName()) + " FROM "
+                            + H2PUtil.q(tableName(nvce)) + " WHERE " + where);
+                    H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
+                    rs = ps.executeQuery();
+                    while (rs.next()) {
+                        Object g = rs.getObject(1);
+                        if (g instanceof UUID) guids.add((UUID) g);
+                    }
+                } finally {
+                    close(rs, ps);
+                    ps = null;
+                }
+            }
+            String sql = "DELETE FROM " + H2PUtil.q(tableName(nvce)) + " WHERE " + where;
             ps = con.prepareStatement(sql);
-            H2PQueryFormatter.bindWhere(ps, 1, nvce, queryCriteria);
-            return ps.executeUpdate() > 0;
+            H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
+            boolean deleted = ps.executeUpdate() > 0;
+            if (deleted && guids != null) {
+                for (UUID g : guids) deleteEntityKeys(con, nvce, g);
+            }
+            return deleted;
         } catch (SQLException e) {
             throw mapOrWrap(e);
         } finally {
             close(ps, con);
         }
+    }
+
+    /**
+     * Criteria delete under access control. Matching rows the caller may not read are skipped — they
+     * are invisible to it, so neither deleted nor reported. A row it may read but not delete aborts
+     * the call before anything is deleted.
+     */
+    private boolean deleteCheckedByCriteria(Connection con, NVConfigEntity nvce, String where, QueryMarker... queryCriteria)
+            throws SQLException {
+        boolean owned = hasOwnerColumn(nvce);
+        ReadCtx ctx = new ReadCtx();
+        List<UUID> guids = new ArrayList<>();
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            ps = con.prepareStatement("SELECT " + H2PUtil.q(MetaToken.GUID.getName())
+                    + (owned ? ", " + H2PUtil.q(MetaToken.SUBJECT_GUID.getName()) : "")
+                    + " FROM " + H2PUtil.q(tableName(nvce)) + " WHERE " + where);
+            H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
+            rs = ps.executeQuery();
+            while (rs.next()) {
+                Object g = rs.getObject(1);
+                if (!(g instanceof UUID)) continue;
+                String id = IDGs.UUIDV7.encode((UUID) g);
+                String owner = owned ? ownerOf(rs.getObject(2)) : null;
+                if (!ctx.mayRead(id, owner)) continue;
+                if (!permitted(id, owner, CRUD.DELETE)) {
+                    throw new AccessSecurityException("Not permitted to delete " + nvce.getName() + " " + id, Reason.UNAUTHORIZED);
+                }
+                guids.add((UUID) g);
+            }
+        } finally {
+            close(rs, ps);
+        }
+        if (guids.isEmpty()) return false;
+        try {
+            ps = con.prepareStatement("DELETE FROM " + H2PUtil.q(tableName(nvce))
+                    + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
+            for (UUID g : guids) {
+                ps.setObject(1, g);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } finally {
+            close(ps);
+        }
+        for (UUID g : guids) deleteEntityKeys(con, nvce, g);
+        return true;
     }
 
     // ---------- Search ----------
@@ -1913,8 +2496,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             for (NVEntity e : select(con, nvce, w.toString(), ps -> {
                 int idx = 1;
                 if (hasUser) ps.setObject(idx++, IDGs.UUIDV7.decode(userID));
-                H2PQueryFormatter.bindWhere(ps, idx, nvce, queryCriteria);
-            }, new HashMap<>(), toProjection(fieldNames), true)) {
+                H2PQueryFormatter.bindWhere(ps, idx, nvce, crypto.active(), queryCriteria);
+            }, new ReadCtx(), toProjection(fieldNames), true)) {
                 ret.add((V) e);
             }
         } catch (SQLException e) {
@@ -1931,7 +2514,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         Connection con = null;
         try {
             con = acquire();
-            return innerSearchByIDs(con, nvce, null, new HashMap<>(), ids);
+            return innerSearchByIDs(con, nvce, null, new ReadCtx(), ids);
         } finally {
             close(con);
         }
@@ -1943,24 +2526,24 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         Connection con = null;
         try {
             con = acquire();
-            return innerSearchByIDs(con, resolveNVCE(className), null, new HashMap<>(), ids);
+            return innerSearchByIDs(con, resolveNVCE(className), null, new ReadCtx(), ids);
         } finally {
             close(con);
         }
     }
 
     /**
-     * Fetch entities by GUID, serving already-built instances from the per-call {@code cache} and
+     * Fetch entities by GUID, serving already-built instances from the per-call {@code ctx} cache and
      * querying only the missing ones. When {@code userID} is non-null the query is additionally
-     * scoped to {@code subject_guid = userID}. Result order follows {@code ids}; missing/filtered
-     * ids are simply absent.
+     * scoped to {@code subject_guid = userID}. Result order follows {@code ids}; missing, filtered
+     * and access-denied ids are simply absent.
      */
     @SuppressWarnings("unchecked")
     private <V extends NVEntity> List<V> innerSearchByIDs(Connection con, NVConfigEntity nvce, String userID,
-                                                          Map<String, NVEntity> cache, String... ids) {
+                                                          ReadCtx ctx, String... ids) {
         List<V> ret = new ArrayList<>();
         if (nvce == null || ids == null || ids.length == 0) return ret;
-        Map<String, NVEntity> effectiveCache = cache != null ? cache : new HashMap<>();
+        Map<String, NVEntity> effectiveCache = ctx.cache;
         List<String> order = new ArrayList<>();
         List<UUID> toFetch = new ArrayList<>();
         for (String id : ids) {
@@ -1984,7 +2567,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                     int idx = 1;
                     for (UUID u : toFetch) ps.setObject(idx++, u);
                     if (hasUser) ps.setObject(idx, IDGs.UUIDV7.decode(userID));
-                }, effectiveCache, null, false); // built entities land in the cache, keyed by GUID
+                }, ctx, null, false); // built entities land in the cache, keyed by GUID
             } catch (SQLException e) {
                 throw mapOrWrap(e);
             }
@@ -2017,7 +2600,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             // Scoped to the subject: an id belonging to another subject_guid is filtered out.
-            return innerSearchByIDs(con, nvce, userID, new HashMap<>(), ids);
+            return innerSearchByIDs(con, nvce, userID, new ReadCtx(), ids);
         } finally {
             close(con);
         }
@@ -2033,11 +2616,31 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             if (!tableExists(con, nvce)) return 0;
-            StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM ").append(H2PUtil.q(tableName(nvce)));
             String where = H2PQueryFormatter.formatWhere(queryCriteria);
+            if (accessChecked()) {
+                // only the rows the caller may read are counted: one verdict per matching row
+                boolean owned = hasOwnerColumn(nvce);
+                StringBuilder sql = new StringBuilder("SELECT ").append(H2PUtil.q(MetaToken.GUID.getName()));
+                if (owned) sql.append(", ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName()));
+                sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)));
+                if (!where.isEmpty()) sql.append(" WHERE ").append(where);
+                ps = con.prepareStatement(sql.toString());
+                H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
+                rs = ps.executeQuery();
+                ReadCtx ctx = new ReadCtx();
+                long count = 0;
+                while (rs.next()) {
+                    Object g = rs.getObject(1);
+                    if (g instanceof UUID && ctx.mayRead(IDGs.UUIDV7.encode((UUID) g), owned ? ownerOf(rs.getObject(2)) : null)) {
+                        count++;
+                    }
+                }
+                return count;
+            }
+            StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM ").append(H2PUtil.q(tableName(nvce)));
             if (!where.isEmpty()) sql.append(" WHERE ").append(where);
             ps = con.prepareStatement(sql.toString());
-            H2PQueryFormatter.bindWhere(ps, 1, nvce, queryCriteria);
+            H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
             rs = ps.executeQuery();
             return rs.next() ? rs.getLong(1) : 0;
         } catch (SQLException e) {
@@ -2056,7 +2659,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         Connection con = null;
         try {
             con = acquire();
-            List<NVEntity> found = innerSearchByIDs(con, nvce, null, new HashMap<>(), id);
+            List<NVEntity> found = innerSearchByIDs(con, nvce, null, new ReadCtx(), id);
             return (NT) (found.isEmpty() ? null : found.get(0));
         } finally {
             close(con);
@@ -2075,7 +2678,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      * NEVER capped — {@code batchSearch}/{@code nextBatch} IS the datastore-agnostic user-space
      * pagination mechanism ({@code MAX_SELECT_RESULTS} guards full-entity materialization; a
      * guid-only report row is cheap, and the caller pages the actual data via {@link #nextBatch}
-     * at the size of its own choosing).
+     * at the size of its own choosing). Under access control the report lists only the rows the
+     * caller may read.
      */
     @Override
     public <T> APISearchResult<T> batchSearch(NVConfigEntity nvce, QueryMarker... queryCriteria)
@@ -2088,18 +2692,26 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         try {
             con = acquire();
             if (tableExists(con, nvce)) {
-                StringBuilder sql = new StringBuilder("SELECT ").append(H2PUtil.q(MetaToken.GUID.getName()))
-                        .append(" FROM ").append(H2PUtil.q(tableName(nvce)));
+                ReadCtx ctx = accessChecked() ? new ReadCtx() : null;
+                boolean owned = ctx != null && hasOwnerColumn(nvce);
+                StringBuilder sql = new StringBuilder("SELECT ").append(H2PUtil.q(MetaToken.GUID.getName()));
+                if (owned) sql.append(", ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName()));
+                sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)));
                 String where = H2PQueryFormatter.formatWhere(queryCriteria);
                 if (!where.isEmpty()) sql.append(" WHERE ").append(where);
                 // Deterministic report order (UUID v7 is time-ordered) so nextBatch pages are stable.
                 sql.append(" ORDER BY ").append(H2PUtil.q(MetaToken.GUID.getName()));
                 ps = con.prepareStatement(sql.toString());
-                H2PQueryFormatter.bindWhere(ps, 1, nvce, queryCriteria);
+                H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
                 rs = ps.executeQuery();
                 while (rs.next()) {
+                    UUID guid = rs.getObject(1, UUID.class);
+                    if (ctx != null && (guid == null
+                            || !ctx.mayRead(IDGs.UUIDV7.encode(guid), owned ? ownerOf(rs.getObject(2)) : null))) {
+                        continue;
+                    }
                     @SuppressWarnings("unchecked")
-                    T id = (T) rs.getObject(1, UUID.class);
+                    T id = (T) guid;
                     list.add(id);
                 }
             }
@@ -2156,7 +2768,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         Connection con = null;
         try {
             con = acquire();
-            List<NVEntity> nveList = innerSearchByIDs(con, reportResults.getNVConfigEntity(), null, new HashMap<>(), ids);
+            List<NVEntity> nveList = innerSearchByIDs(con, reportResults.getNVConfigEntity(), null, new ReadCtx(), ids);
             batch.setBatch(nveList);
         } finally {
             close(con);
@@ -2504,11 +3116,50 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 + H2PUtil.q("length") + " BIGINT NOT NULL, "
                 + H2PUtil.q("created_ts") + " BIGINT NOT NULL, "
                 + H2PUtil.q("data") + " bytea NOT NULL, "
+                + H2PUtil.q(FILE_ENC_COLUMN) + " SMALLINT DEFAULT 0 NOT NULL, "
                 + "PRIMARY KEY (" + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + "))");
+        // pre-existing tables (created before encryption at rest): additive, portable to both engines
+        execDDL("ALTER TABLE " + H2PUtil.q(FILE_VERSION_TABLE) + " ADD COLUMN IF NOT EXISTS "
+                + H2PUtil.q(FILE_ENC_COLUMN) + " SMALLINT DEFAULT 0 NOT NULL");
         execDDL("CREATE TABLE IF NOT EXISTS " + H2PUtil.q(FILE_HEAD_TABLE) + " ("
                 + H2PUtil.q("file_guid") + " uuid PRIMARY KEY REFERENCES " + fileTable + "(" + guidCol + ") ON DELETE CASCADE, "
                 + H2PUtil.q("current_version") + " BIGINT NOT NULL)");
         fileTablesEnsured = true;
+    }
+
+    /**
+     * The owner ({@code subject_guid}) of a stored file, read from its metadata row — the caller's
+     * {@link APIFileInfoMap} may be a shell carrying only the GUID. Null when unknown.
+     */
+    private String fileOwner(Connection con, UUID fileGuid) throws SQLException {
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+        try {
+            ps = con.prepareStatement("SELECT " + H2PUtil.q(MetaToken.SUBJECT_GUID.getName())
+                    + " FROM " + H2PUtil.q(FileInfo.NVC_FILE_INFO.getName())
+                    + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
+            ps.setObject(1, fileGuid);
+            rs = ps.executeQuery();
+            if (rs.next()) {
+                Object o = rs.getObject(1);
+                return o instanceof UUID ? IDGs.UUIDV7.encode((UUID) o) : (o != null ? o.toString() : null);
+            }
+            return null;
+        } finally {
+            close(rs, ps);
+        }
+    }
+
+    /**
+     * Access check for a file operation: the controller decides (owner through its self permission,
+     * or a grant), judged against the file's <b>stored</b> owner — the caller's object is never
+     * trusted for it. Read denial is reported to the caller as "nothing" ({@code false});
+     * write/delete denial throws.
+     */
+    private boolean fileAccess(Connection con, UUID fileGuid, FileInfo info, CRUD crud) throws SQLException {
+        String owner = fileOwner(con, fileGuid);
+        if (owner != null && info != null && SUS.isEmpty(info.getSubjectGUID())) info.setSubjectGUID(owner);
+        return crypto.accessAllowed(IDGs.UUIDV7.encode(fileGuid), owner, crud);
     }
 
     /** @return the file's guid as a UUID; throws when the map has no GUID (never stored). */
@@ -2538,15 +3189,48 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             byte[] content = IOUtil.inputStreamToByteArray(is, false).toByteArray();
             info.setLength(content.length);
             ensureFileTables(); // out-of-band DDL — before joining/starting any transaction
+            crypto.requireConsistent("file " + info.getName()); // controller xor key maker: refuse
+            boolean encrypt = crypto.active();
             boolean localTx = getTransactionConnection() == null;
             if (localTx) beginTransaction();
             try {
+                if (encrypt) {
+                    // Encryption at rest: every file is a VX container under the file's entity key.
+                    // Overwriting an existing file needs UPDATE on it (owner self permission or grant),
+                    // judged against its stored owner, which a shell object then takes over; a new file
+                    // is owned by the bound subject (association) or the caller-supplied subject_guid.
+                    if (!SUS.isEmpty(info.getGUID())) {
+                        Connection c0 = null;
+                        try {
+                            c0 = acquire();
+                            UUID g0 = IDGs.UUIDV7.decode(info.getGUID());
+                            if (storedRow(c0, FileInfo.NVC_FILE_INFO, info.getGUID()) != null
+                                    && !fileAccess(c0, g0, info, CRUD.UPDATE)) {
+                                throw new AccessSecurityException("Not permitted to update file " + info.getGUID());
+                            }
+                        } catch (SQLException e) {
+                            throw mapOrWrap(e);
+                        } finally {
+                            close(c0);
+                        }
+                    }
+                    SecurityController sc = crypto.controller();
+                    sc.associateNVEntityToSubjectGUID(info, null);
+                    if (SUS.isEmpty(info.getSubjectGUID())) {
+                        throw new AccessSecurityException("encrypted file without subject_guid (no bound subject): " + info.getName());
+                    }
+                }
                 insert(info); // existing CRUD: null GUID -> insert (assigns UUID v7), known GUID -> update
                 UUID guid = IDGs.UUIDV7.decode(info.getGUID());
+                byte[] stored = content;
+                if (encrypt) {
+                    crypto.ensureEntityKey(info);
+                    stored = crypto.encryptFile(info, content);
+                }
                 Connection con = null;
                 try {
                     con = acquire();
-                    long version = insertFileVersion(con, guid, content);
+                    long version = insertFileVersion(con, guid, stored, content.length, encrypt ? FILE_ENC_VX : FILE_ENC_PLAIN);
                     setFileHead(con, guid, version);
                     pruneFileVersions(con, guid);
                 } catch (SQLException e) {
@@ -2572,34 +3256,43 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
     }
 
-    /** Streams the file's current (head) version. */
+    /**
+     * Streams the file's current (head) version. A version the bound subject may not read (no
+     * ownership, no grant) writes nothing and returns {@code null} — encrypted or not, whenever a
+     * {@link SecurityController} is configured.
+     */
     @Override
     public APIFileInfoMap readFile(APIFileInfoMap map, OutputStream os, boolean closeStream)
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map, os);
         try {
-            writeVersionTo(map, null, os);
-            return map;
+            return writeVersionTo(map, null, os) ? map : null;
         } finally {
             if (closeStream) SharedIOUtil.close(os);
         }
     }
 
-    /** Streams one specific stored version of the file. */
+    /** Streams one specific stored version of the file; {@code null} when the read is denied. */
     @Override
     public APIFileInfoMap readFile(APIFileInfoMap map, long version, OutputStream os, boolean closeStream)
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map, os);
         try {
-            writeVersionTo(map, version, os);
-            return map;
+            return writeVersionTo(map, version, os) ? map : null;
         } finally {
             if (closeStream) SharedIOUtil.close(os);
         }
     }
 
-    /** Writes one stored version's content ({@code null} = the head version) to {@code os}. */
-    private void writeVersionTo(APIFileInfoMap map, Long version, OutputStream os) throws IOException {
+    /**
+     * Writes one stored version's content ({@code null} = the head version) to {@code os}. With a
+     * controller configured the bound subject needs READ on the file first. A plaintext version
+     * ({@code enc = 0}, legacy or written without encryption) is then copied as-is; a VX version
+     * ({@code enc = 1}) is opened under the file's entity key.
+     *
+     * @return false when the read was denied (nothing written)
+     */
+    private boolean writeVersionTo(APIFileInfoMap map, Long version, OutputStream os) throws IOException {
         UUID guid = fileGuid(map);
         Connection con = null;
         PreparedStatement ps = null;
@@ -2610,14 +3303,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 throw new APIException("File not found: " + map.getOriginalFileInfo().getName());
             }
             if (version == null) {
-                ps = con.prepareStatement("SELECT v." + H2PUtil.q("data")
+                ps = con.prepareStatement("SELECT v." + H2PUtil.q("data") + ", v." + H2PUtil.q(FILE_ENC_COLUMN)
                         + " FROM " + H2PUtil.q(FILE_VERSION_TABLE) + " v JOIN " + H2PUtil.q(FILE_HEAD_TABLE) + " h"
                         + " ON h." + H2PUtil.q("file_guid") + " = v." + H2PUtil.q("file_guid")
                         + " AND h." + H2PUtil.q("current_version") + " = v." + H2PUtil.q("version")
                         + " WHERE v." + H2PUtil.q("file_guid") + " = ?");
                 ps.setObject(1, guid);
             } else {
-                ps = con.prepareStatement("SELECT " + H2PUtil.q("data")
+                ps = con.prepareStatement("SELECT " + H2PUtil.q("data") + ", " + H2PUtil.q(FILE_ENC_COLUMN)
                         + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
                         + " WHERE " + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " = ?");
                 ps.setObject(1, guid);
@@ -2628,8 +3321,28 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 throw new APIException("File " + (version != null ? "version " + version + " " : "")
                         + "not found: " + map.getOriginalFileInfo().getName());
             }
-            os.write(rs.getBytes(1));
+            byte[] data = rs.getBytes(1);
+            int enc = rs.getInt(2);
+            FileInfo info = map.getOriginalFileInfo();
+            if (crypto.controller() != null && !fileAccess(con, guid, info, CRUD.READ)) {
+                if (log.isEnabled()) log.getLogger().info("read denied for file " + guid);
+                return false;
+            }
+            if (enc == FILE_ENC_PLAIN) {
+                os.write(data);
+                os.flush();
+                return true;
+            }
+            if (enc != FILE_ENC_VX) {
+                throw new APIException("Unknown file content encoding " + enc + " for " + map.getOriginalFileInfo().getName());
+            }
+            if (!crypto.active()) {
+                throw new APIException("File " + map.getOriginalFileInfo().getName()
+                        + " is encrypted at rest; this store has no SecurityController + KeyMaker to open it");
+            }
+            crypto.decryptFile(info, data, os);
             os.flush();
+            return true;
         } catch (SQLException e) {
             throw mapOrWrap(e);
         } finally {
@@ -2652,8 +3365,22 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             throws NullPointerException, IllegalArgumentException, IOException, AccessSecurityException, APIException {
         SUS.checkIfNulls("Null value", map);
         FileInfo info = map.getOriginalFileInfo();
-        fileGuid(map); // validates presence of a GUID
-        delete(info, false);
+        UUID guid = fileGuid(map); // validates presence of a GUID
+        if (crypto.active()) {
+            // encryption at rest: deleting needs DELETE on the file (owner self permission or grant)
+            Connection con = null;
+            try {
+                con = acquire();
+                if (storedRow(con, FileInfo.NVC_FILE_INFO, info.getGUID()) != null && !fileAccess(con, guid, info, CRUD.DELETE)) {
+                    throw new AccessSecurityException("Not permitted to delete file " + info.getGUID());
+                }
+            } catch (SQLException e) {
+                throw mapOrWrap(e);
+            } finally {
+                close(con);
+            }
+        }
+        delete(info, false); // FK cascade removes versions + head; deleteByGuid removes the entity key
         if (log.isEnabled()) log.getLogger().info(info.getName());
     }
 
@@ -2671,9 +3398,12 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             if (!rawTableExists(con, FILE_VERSION_TABLE)) {
                 return ret;
             }
+            if (crypto.controller() != null && !fileAccess(con, guid, map.getOriginalFileInfo(), CRUD.READ)) {
+                return ret; // not the caller's to see
+            }
             long head = currentFileVersion(con, guid);
             ps = con.prepareStatement("SELECT " + H2PUtil.q("version") + ", " + H2PUtil.q("length") + ", "
-                    + H2PUtil.q("created_ts") + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
+                    + H2PUtil.q("created_ts") + ", " + H2PUtil.q(FILE_ENC_COLUMN) + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
                     + " WHERE " + H2PUtil.q("file_guid") + " = ? ORDER BY " + H2PUtil.q("version") + " DESC");
             ps.setObject(1, guid);
             rs = ps.executeQuery();
@@ -2683,7 +3413,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                         .build(new NVLong("version", v))
                         .build(new NVLong("length", rs.getLong(2)))
                         .build(new NVLong("created_ts", rs.getLong(3)))
-                        .build(new NVBoolean("current", v == head)));
+                        .build(new NVBoolean("current", v == head))
+                        .build(new NVBoolean("encrypted", rs.getInt(4) == FILE_ENC_VX)));
             }
             return ret;
         } catch (SQLException e) {
@@ -2713,6 +3444,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             ResultSet rs = null;
             try {
                 con = acquire();
+                if (crypto.controller() != null && !fileAccess(con, guid, info, CRUD.UPDATE)) {
+                    throw new AccessSecurityException("Not permitted to roll back file " + info.getGUID());
+                }
                 sel = con.prepareStatement("SELECT " + H2PUtil.q("length")
                         + " FROM " + H2PUtil.q(FILE_VERSION_TABLE)
                         + " WHERE " + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " = ?");
@@ -2772,7 +3506,11 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      * transaction the INSERT is SAVEPOINT-wrapped: PostgreSQL aborts the whole tx on any failed
      * statement, and the retry must survive the collision.
      */
-    private long insertFileVersion(Connection con, UUID fileGuid, byte[] content) throws SQLException {
+    /**
+     * Stores one version row: {@code content} as written to the column (plaintext, or a VX container
+     * when {@code enc} is {@link #FILE_ENC_VX}); {@code length} is always the plaintext length.
+     */
+    private long insertFileVersion(Connection con, UUID fileGuid, byte[] content, long plainLength, int enc) throws SQLException {
         long now = System.currentTimeMillis();
         while (true) {
             long next;
@@ -2794,12 +3532,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             try {
                 ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(FILE_VERSION_TABLE) + " ("
                         + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + ", " + H2PUtil.q("length") + ", "
-                        + H2PUtil.q("created_ts") + ", " + H2PUtil.q("data") + ") VALUES (?, ?, ?, ?, ?)");
+                        + H2PUtil.q("created_ts") + ", " + H2PUtil.q("data") + ", " + H2PUtil.q(FILE_ENC_COLUMN)
+                        + ") VALUES (?, ?, ?, ?, ?, ?)");
                 ins.setObject(1, fileGuid);
                 ins.setLong(2, next);
-                ins.setLong(3, content.length);
+                ins.setLong(3, plainLength);
                 ins.setLong(4, now);
                 ins.setBytes(5, content);
+                ins.setInt(6, enc);
                 ins.executeUpdate();
                 if (sp != null) con.releaseSavepoint(sp);
                 return next;
@@ -2935,7 +3675,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     public long dump(NVConfigEntity nvce, OutputStream out) throws APIException {
         SUS.checkIfNulls("Null type or stream", nvce, out);
-        return new H2PDumpRestore(this).dumpType(nvce, out);
+        requireSystemContext("dump");
+        crypto.setRaw(true); // a backup carries the stored records, never the plaintext of whoever runs it
+        try {
+            return new H2PDumpRestore(this).dumpType(nvce, out);
+        } finally {
+            crypto.setRaw(false);
+        }
     }
 
     /**
@@ -2945,7 +3691,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     public String dumpToJSON(NVConfigEntity nvce) throws APIException {
         SUS.checkIfNulls("Null type", nvce);
-        return new H2PDumpRestore(this).dumpTypeToJSONArray(nvce);
+        requireSystemContext("dump");
+        crypto.setRaw(true);
+        try {
+            return new H2PDumpRestore(this).dumpTypeToJSONArray(nvce);
+        } finally {
+            crypto.setRaw(false);
+        }
     }
 
     /** Whole-store dump including file content — see {@link #dump(OutputStream, boolean, NVConfigEntity...)}. */
@@ -2966,7 +3718,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     public NVGenericMap dump(OutputStream out, boolean includeFiles, NVConfigEntity... types) throws APIException {
         SUS.checkIfNulls("Null stream", out);
-        return new H2PDumpRestore(this).dumpStore(out, includeFiles, types);
+        requireSystemContext("dump");
+        crypto.setRaw(true); // encrypted attributes travel as their stored records (same master key to restore)
+        try {
+            return new H2PDumpRestore(this).dumpStore(out, includeFiles, types);
+        } finally {
+            crypto.setRaw(false);
+        }
     }
 
     /** Zip-container dump including file content — see {@link #dumpZip(OutputStream, boolean, NVConfigEntity...)}. */
@@ -2987,7 +3745,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     public NVGenericMap dumpZip(OutputStream out, boolean includeFiles, NVConfigEntity... types)
             throws APIException {
         SUS.checkIfNulls("Null stream", out);
-        return new H2PDumpRestore(this).dumpZip(out, includeFiles, types);
+        requireSystemContext("dump");
+        crypto.setRaw(true);
+        try {
+            return new H2PDumpRestore(this).dumpZip(out, includeFiles, types);
+        } finally {
+            crypto.setRaw(false);
+        }
     }
 
     /**
@@ -3006,7 +3770,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      */
     public NVGenericMap restore(InputStream in, RestoreMode mode) throws APIException {
         SUS.checkIfNulls("Null stream or mode", in, mode);
+        requireSystemContext("restore");
         return new H2PDumpRestore(this).restore(in, mode);
+    }
+
+    /**
+     * A dump or a restore moves every row of the store. Under access control it would otherwise
+     * carry only what the caller may read — a silently partial backup — so it is refused outside the
+     * controller's system context.
+     */
+    private void requireSystemContext(String operation) {
+        if (accessChecked()) {
+            throw new AccessSecurityException(operation + " of an access-controlled store runs in the system context only"
+                    + " (SecurityController.runAsSystem)", Reason.UNAUTHORIZED);
+        }
     }
 
     // ---------- Error mapping ----------

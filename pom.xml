@@ -24,7 +24,6 @@
         <module>xlogistx-datastore</module>
 
         <module>h2p-datastore</module>
-        <module>xlogistx-shiro-ds</module>
         <!--        <module>common</module>-->
     </modules>
 

@@ -12,12 +12,15 @@ package io.xlogistx.datastore.h2p;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIBatchResult;
+import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.api.APISearchResult;
 import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.io.SharedIOUtil;
+import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.util.ArrayValues;
 import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.NVBase;
@@ -226,14 +229,27 @@ final class H2PDumpRestore {
         }
     }
 
-    /** Streams every stored entity of the type as envelope lines. @return {written, cyclesSkipped} */
+    /**
+     * Streams every stored entity of the type as envelope lines. Encrypted (ENCRYPT*) attributes are
+     * absent from the entity JSON (the store reads in raw mode) and travel as their stored bytes,
+     * base64, in the envelope's {@code enc} map — opaque to the entity, its filters and the JSON
+     * codec, readable again only under the same master key.
+     * @return {written, cyclesSkipped}
+     */
     private long[] writeEntities(NVConfigEntity nvce, Writer w) throws IOException {
         long[] counts = new long[2];
         try {
-            forEachStored(nvce, nve ->
-                            writeLine(w, KIND_ENTITY,
-                                    JsonParser.parseString(GSONUtil.toJSON(nve, false, false, true, null))),
-                    counts);
+            forEachStored(nvce, nve -> {
+                JsonObject enc = null;
+                Map<String, byte[]> encrypted = ds.readEncryptedColumns(nvce, nve.getGUID());
+                if (!encrypted.isEmpty()) {
+                    enc = new JsonObject();
+                    for (Map.Entry<String, byte[]> e : encrypted.entrySet()) {
+                        enc.addProperty(e.getKey(), SharedBase64.encodeAsString(Base64Type.DEFAULT, e.getValue()));
+                    }
+                }
+                writeLine(w, KIND_ENTITY, JsonParser.parseString(GSONUtil.toJSON(nve, false, false, true, null)), enc);
+            }, counts);
         } catch (UncheckedIOException e) {
             throw e.cause;
         }
@@ -334,7 +350,7 @@ final class H2PDumpRestore {
             if (!ds.rawTableExists(con, H2PDataStore.FILE_VERSION_TABLE)) return counts;
             st = con.createStatement();
             rs = st.executeQuery("SELECT " + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + ", "
-                    + H2PUtil.q("length") + ", " + H2PUtil.q("created_ts")
+                    + H2PUtil.q("length") + ", " + H2PUtil.q("created_ts") + ", " + H2PUtil.q(H2PDataStore.FILE_ENC_COLUMN)
                     + (inline ? ", " + H2PUtil.q("data") : "")
                     + " FROM " + H2PUtil.q(H2PDataStore.FILE_VERSION_TABLE)
                     + " ORDER BY " + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version"));
@@ -346,8 +362,11 @@ final class H2PDumpRestore {
                 o.addProperty("version", version);
                 o.addProperty("length", rs.getLong(3));
                 o.addProperty("created_ts", rs.getLong(4));
+                // content encoding: 0 plaintext, 1 AESCrypt VX container (bytes travel verbatim, opened only
+                // under the same master key after restore)
+                o.addProperty(H2PDataStore.FILE_ENC_COLUMN, rs.getInt(5));
                 if (inline) {
-                    o.addProperty("content", SharedBase64.encodeAsString(Base64Type.DEFAULT, rs.getBytes(5)));
+                    o.addProperty("content", SharedBase64.encodeAsString(Base64Type.DEFAULT, rs.getBytes(6)));
                 } else {
                     o.addProperty("entry", contentEntryName(fileGuid, version));
                 }
@@ -400,9 +419,17 @@ final class H2PDumpRestore {
     }
 
     private static void writeLine(Writer w, String kind, JsonElement payload) throws IOException {
+        writeLine(w, kind, payload, null);
+    }
+
+    /** Envelope key of the encrypted-column bytes that ride beside an entity line. */
+    static final String ENC = "enc";
+
+    private static void writeLine(Writer w, String kind, JsonElement payload, JsonObject enc) throws IOException {
         JsonObject env = new JsonObject();
         env.addProperty(K, kind);
         env.add(V, payload);
+        if (enc != null && enc.size() > 0) env.add(ENC, enc);
         w.write(env.toString()); // JsonElement.toString() is compact — one line per envelope
         w.write('\n');
     }
@@ -571,7 +598,15 @@ final class H2PDumpRestore {
                         txOpen = true;
                         txCount = 0;
                     }
-                    ds.insert(GSONUtil.fromJSON(v.toString()));
+                    NVEntity restored = ds.insert(GSONUtil.fromJSON(v.toString()));
+                    if (env.has(ENC) && env.get(ENC).isJsonObject()) {
+                        // encrypted columns: stored bytes written straight into the row, never through the entity
+                        Map<String, byte[]> columns = new LinkedHashMap<>();
+                        for (Map.Entry<String, JsonElement> e : env.getAsJsonObject(ENC).entrySet()) {
+                            columns.put(e.getKey(), SharedBase64.decode(Base64Type.DEFAULT, e.getValue().getAsString()));
+                        }
+                        ds.writeEncryptedColumns((NVConfigEntity) restored.getNVConfig(), restored.getGUID(), columns);
+                    }
                     counts[0]++;
                     if (++txCount >= DEFAULT_BATCH_SIZE) {
                         ds.endTransaction();
@@ -745,6 +780,8 @@ final class H2PDumpRestore {
         long version = o.get("version").getAsLong();
         long length = o.get("length").getAsLong();
         long createdTs = o.get("created_ts").getAsLong();
+        // dumps written before encryption at rest carry no enc: plaintext
+        int enc = o.has(H2PDataStore.FILE_ENC_COLUMN) ? o.get(H2PDataStore.FILE_ENC_COLUMN).getAsInt() : H2PDataStore.FILE_ENC_PLAIN;
         Connection con = null;
         PreparedStatement upd = null;
         PreparedStatement ins = null;
@@ -752,23 +789,26 @@ final class H2PDumpRestore {
             con = ds.newConnection();
             upd = con.prepareStatement("UPDATE " + H2PUtil.q(H2PDataStore.FILE_VERSION_TABLE) + " SET "
                     + H2PUtil.q("length") + " = ?, " + H2PUtil.q("created_ts") + " = ?, "
-                    + H2PUtil.q("data") + " = ? WHERE " + H2PUtil.q("file_guid") + " = ? AND "
-                    + H2PUtil.q("version") + " = ?");
+                    + H2PUtil.q("data") + " = ?, " + H2PUtil.q(H2PDataStore.FILE_ENC_COLUMN) + " = ? WHERE "
+                    + H2PUtil.q("file_guid") + " = ? AND " + H2PUtil.q("version") + " = ?");
             upd.setLong(1, length);
             upd.setLong(2, createdTs);
             upd.setBytes(3, data);
-            upd.setObject(4, guid);
-            upd.setLong(5, version);
+            upd.setInt(4, enc);
+            upd.setObject(5, guid);
+            upd.setLong(6, version);
             if (upd.executeUpdate() == 0) {
                 try {
                     ins = con.prepareStatement("INSERT INTO " + H2PUtil.q(H2PDataStore.FILE_VERSION_TABLE) + " ("
                             + H2PUtil.q("file_guid") + ", " + H2PUtil.q("version") + ", " + H2PUtil.q("length") + ", "
-                            + H2PUtil.q("created_ts") + ", " + H2PUtil.q("data") + ") VALUES (?, ?, ?, ?, ?)");
+                            + H2PUtil.q("created_ts") + ", " + H2PUtil.q("data") + ", " + H2PUtil.q(H2PDataStore.FILE_ENC_COLUMN)
+                            + ") VALUES (?, ?, ?, ?, ?, ?)");
                     ins.setObject(1, guid);
                     ins.setLong(2, version);
                     ins.setLong(3, length);
                     ins.setLong(4, createdTs);
                     ins.setBytes(5, data);
+                    ins.setInt(6, enc);
                     ins.executeUpdate();
                 } catch (SQLException e) {
                     // Concurrent writer took the slot — the row exists now, apply the dump's content.
@@ -826,10 +866,18 @@ final class H2PDumpRestore {
 
     private static final String USAGE =
             "Usage:\n"
-            + "  H2PDumpRestore dump    --url <jdbc-url> --out <file> [options]\n"
-            + "  H2PDumpRestore restore --url <jdbc-url> --in <file> [--mode merge|wipe] [options]\n"
+            + "  H2PDumpRestore dump    --store <vault> --out <file> [options]\n"
+            + "  H2PDumpRestore restore --store <vault> --in <file> [--mode merge|wipe] [options]\n"
             + "\n"
-            + "Connection (H2 or PostgreSQL — engine resolved from the URL):\n"
+            + "Secret store (required — the database is never used without the master key):\n"
+            + "  --store <file>            SecretStore vault (BCFKS) holding the master-key secret key\n"
+            + "                            and the db.url / db.user / db.password / db.enc-password text secrets\n"
+            + "  --store-password <pwd>    the vault password (prompted on a console when absent)\n"
+            + "  --controller <class>      SecurityController implementation\n"
+            + "                            (default io.xlogistx.shiro.mgt.ShiroSecurityController)\n"
+            + "\n"
+            + "Connection (H2 or PostgreSQL — engine resolved from the URL); each option overrides\n"
+            + "the vault entry of the same meaning:\n"
             + "  --url <jdbc-url>          e.g. jdbc:h2:file:./data/db;CIPHER=AES\n"
             + "                                 jdbc:postgresql://host:5432/db\n"
             + "  --user <user>             database user\n"
@@ -856,10 +904,13 @@ final class H2PDumpRestore {
      * Command-line dump/restore, e.g.
      * <pre>
      *   java -cp ... io.xlogistx.datastore.h2p.H2PDumpRestore dump \
-     *       --url jdbc:postgresql://host:5432/db --user u --password p --out store.zip
+     *       --store vault.store --store-password pw --out store.zip
      *   java -cp ... io.xlogistx.datastore.h2p.H2PDumpRestore restore \
-     *       --url jdbc:h2:file:./data/db --in store.zip --mode wipe
+     *       --store vault.store --url jdbc:h2:file:./data/db --in store.zip --mode wipe
      * </pre>
+     * The vault is opened first: its master key goes into the {@link KeyMakerProvider}, its
+     * {@code db.*} entries are the connection unless an option overrides them, and the operation
+     * runs in the controller's system context.
      * Prints the operation's stats as JSON on success.
      */
     public static void main(String[] args) {
@@ -885,46 +936,57 @@ final class H2PDumpRestore {
                 System.exit(1);
             }
         }
-        String url = opts.get("--url");
         String io = "dump".equals(command) ? opts.get("--out") : opts.get("--in");
-        if (url == null || io == null) {
-            System.err.println("--url and --" + ("dump".equals(command) ? "out" : "in")
+        if (opts.get("--store") == null || io == null) {
+            System.err.println("--store and --" + ("dump".equals(command) ? "out" : "in")
                     + " are required\n\n" + USAGE);
+            System.exit(1);
+        }
+
+        // prerequisite of every run: the vault, its db.* settings and its master key
+        Map<String, String> vault;
+        SecurityController controller;
+        try {
+            vault = loadVault(opts.get("--store"), opts.get("--store-password"));
+            controller = (SecurityController) Class.forName(opts.getOrDefault("--controller", DEFAULT_CONTROLLER))
+                    .getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            System.err.println(command + " failed: " + e);
+            System.exit(1);
+            return;
+        }
+        String url = opts.getOrDefault("--url", vault.get("db.url"));
+        if (url == null) {
+            System.err.println("no database URL: pass --url or store db.url in the vault\n\n" + USAGE);
             System.exit(1);
         }
 
         H2PDataStore ds = null;
         try {
-            ds = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
-                    url, opts.get("--user"), opts.get("--password"), opts.get("--file-password")));
-            NVGenericMap stats;
-            if ("dump".equals(command)) {
-                NVConfigEntity[] types = resolveCliTypes(ds, opts.get("--types"));
-                boolean includeFiles = !opts.containsKey("--no-files");
-                String format = opts.getOrDefault("--format",
-                        io.toLowerCase().endsWith(".zip") ? "zip" : "jsonl");
-                try (OutputStream out = java.nio.file.Files.newOutputStream(java.nio.file.Paths.get(io))) {
-                    stats = "zip".equals(format)
-                            ? ds.dumpZip(out, includeFiles, types)
-                            : ds.dump(out, includeFiles, types);
+            APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(url,
+                    opts.getOrDefault("--user", vault.get("db.user")),
+                    opts.getOrDefault("--password", vault.get("db.password")),
+                    opts.getOrDefault("--file-password", vault.get("db.enc-password")));
+            cfg.setSecurityController(controller);
+            cfg.setKeyMaker(KeyMakerProvider.SINGLETON);
+            ds = new H2PDSCreator().createAPI(null, cfg);
+            final H2PDataStore store = ds;
+            // a dump or a restore reaches every subject's rows: the system context, for this call only
+            Object outcome = controller.runAsSystem(() -> {
+                try {
+                    return runCommand(store, command, io, opts);
+                } catch (Exception e) {
+                    return e;
                 }
-                System.out.println("dumped to " + io);
-            } else {
-                String mode = opts.getOrDefault("--mode", "merge");
-                H2PDataStore.RestoreMode rm;
-                if ("merge".equalsIgnoreCase(mode)) rm = H2PDataStore.RestoreMode.MERGE;
-                else if ("wipe".equalsIgnoreCase(mode)) rm = H2PDataStore.RestoreMode.WIPE_AND_LOAD;
-                else {
-                    System.err.println("invalid --mode " + mode + " (merge|wipe)\n\n" + USAGE);
-                    System.exit(1);
-                    return;
-                }
-                try (InputStream in = java.nio.file.Files.newInputStream(java.nio.file.Paths.get(io))) {
-                    stats = ds.restore(in, rm);
-                }
-                System.out.println("restored from " + io);
+            });
+            if (outcome instanceof Exception) {
+                throw (Exception) outcome;
             }
-            System.out.println(GSONUtil.toJSONDefault(stats, true));
+            if (outcome == null) {
+                System.exit(1); // usage error, already reported
+            }
+            System.out.println(("dump".equals(command) ? "dumped to " : "restored from ") + io);
+            System.out.println(GSONUtil.toJSONDefault((NVGenericMap) outcome, true));
         } catch (Exception e) {
             System.err.println(command + " failed: " + e.getMessage());
             System.exit(2);
@@ -937,6 +999,87 @@ final class H2PDumpRestore {
                 }
             }
         }
+    }
+
+    /** The alias of the master key in the vault. */
+    static final String MASTER_KEY_ALIAS = "master-key";
+    /** The controller used when {@code --controller} is absent (io-xlogistx shiro, on the runtime classpath of a deployment). */
+    static final String DEFAULT_CONTROLLER = "io.xlogistx.shiro.mgt.ShiroSecurityController";
+
+    /**
+     * Opens the vault (a BCFKS keystore as written by the io-xlogistx opsec {@code SecretStore}),
+     * loads its {@value #MASTER_KEY_ALIAS} into {@link KeyMakerProvider#SINGLETON} and returns its
+     * {@code db.*} text secrets. This module does not depend on opsec, so the keystore is read with
+     * the plain JCA API: a text secret is a password entry ({@link javax.crypto.interfaces.PBEKey}).
+     *
+     * @throws Exception when the vault cannot be opened or holds no master key
+     */
+    static Map<String, String> loadVault(String file, String storePassword) throws Exception {
+        char[] password;
+        if (storePassword != null && !storePassword.isEmpty()) {
+            password = storePassword.toCharArray();
+        } else if (System.console() != null) {
+            password = System.console().readPassword("Password for secret store %s: ", file);
+        } else {
+            throw new IllegalArgumentException("--store-password required (no console to prompt on)");
+        }
+        if (java.security.Security.getProvider("BC") == null) {
+            java.security.Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+        }
+        java.security.KeyStore ks = java.security.KeyStore.getInstance("BCFKS", "BC");
+        try (InputStream is = java.nio.file.Files.newInputStream(java.nio.file.Paths.get(file))) {
+            ks.load(is, password);
+        }
+        Map<String, String> db = new HashMap<>();
+        javax.crypto.SecretKey masterKey = null;
+        for (String alias : Collections.list(ks.aliases())) {
+            if (ks.isCertificateEntry(alias)) {
+                continue;
+            }
+            java.security.Key key = ks.getKey(alias, password);
+            if (key instanceof javax.crypto.interfaces.PBEKey) {
+                if (alias.startsWith("db.")) {
+                    db.put(alias, new String(((javax.crypto.interfaces.PBEKey) key).getPassword()));
+                }
+            } else if (key instanceof javax.crypto.SecretKey && MASTER_KEY_ALIAS.equals(alias)) {
+                masterKey = new javax.crypto.spec.SecretKeySpec(key.getEncoded(), key.getAlgorithm());
+            }
+        }
+        java.util.Arrays.fill(password, '\0');
+        if (masterKey == null) {
+            throw new IllegalArgumentException("secret store " + file + " holds no " + MASTER_KEY_ALIAS + " secret key");
+        }
+        KeyMakerProvider.SINGLETON.setMasterSecretKey(masterKey);
+        return db;
+    }
+
+    /** @return the operation's stats, or null after a usage error was printed */
+    private static NVGenericMap runCommand(H2PDataStore ds, String command, String io, Map<String, String> opts) throws Exception {
+        NVGenericMap stats;
+        if ("dump".equals(command)) {
+            NVConfigEntity[] types = resolveCliTypes(ds, opts.get("--types"));
+            boolean includeFiles = !opts.containsKey("--no-files");
+            String format = opts.getOrDefault("--format",
+                    io.toLowerCase().endsWith(".zip") ? "zip" : "jsonl");
+            try (OutputStream out = java.nio.file.Files.newOutputStream(java.nio.file.Paths.get(io))) {
+                stats = "zip".equals(format)
+                        ? ds.dumpZip(out, includeFiles, types)
+                        : ds.dump(out, includeFiles, types);
+            }
+        } else {
+            String mode = opts.getOrDefault("--mode", "merge");
+            H2PDataStore.RestoreMode rm;
+            if ("merge".equalsIgnoreCase(mode)) rm = H2PDataStore.RestoreMode.MERGE;
+            else if ("wipe".equalsIgnoreCase(mode)) rm = H2PDataStore.RestoreMode.WIPE_AND_LOAD;
+            else {
+                System.err.println("invalid --mode " + mode + " (merge|wipe)\n\n" + USAGE);
+                return null;
+            }
+            try (InputStream in = java.nio.file.Files.newInputStream(java.nio.file.Paths.get(io))) {
+                stats = ds.restore(in, rm);
+            }
+        }
+        return stats;
     }
 
     /** Comma-separated type names → NVConfigEntities via the store's resolver; null spec = discover. */

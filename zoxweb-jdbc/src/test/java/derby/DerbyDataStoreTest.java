@@ -25,7 +25,7 @@ import org.zoxweb.datastore.test.CommonDataStoreTest;
 import org.zoxweb.server.ds.derby.DerbyDataStore;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.api.APIConfigInfoDAO;
+import org.zoxweb.shared.api.APIConfigInfoImpl;
 import org.zoxweb.shared.data.AddressDAO;
 import org.zoxweb.shared.data.DeviceInfo;
 import org.zoxweb.shared.data.Range;
@@ -64,7 +64,7 @@ public class DerbyDataStoreTest {
 //    	try
         {
             //NVEntity.GLOBAL_ID_AS_REF_ID = true;
-            APIConfigInfo configInfo = new APIConfigInfoDAO();
+            APIConfigInfo configInfo = new APIConfigInfoImpl();
             configInfo.getProperties().add("driver", CLIENT_DRIVER);
             configInfo.getProperties().add("url", CLIENT_URL);
             configInfo.getProperties().add("user", USER);

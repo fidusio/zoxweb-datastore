@@ -9,7 +9,6 @@ import io.xlogistx.shiro.ShiroUtil;
 import io.xlogistx.shiro.authc.APIKeyAuthenticationToken;
 import io.xlogistx.shiro.authc.CredentialsInfoMatcher;
 import io.xlogistx.shiro.authc.JWTAuthenticationToken;
-
 import io.xlogistx.shiro.ds.DSAuthorizingRealm;
 import io.xlogistx.shiro.ds.GrantFlattener;
 import io.xlogistx.shiro.ds.ShiroDSDomainSecurityManager;
@@ -26,25 +25,24 @@ import org.junit.jupiter.api.Test;
 import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.security.JWTProvider;
 import org.zoxweb.server.security.SecUtil;
-import org.zoxweb.server.util.cache.JWTTokenCache;
 import org.zoxweb.server.task.TaskUtil;
-import org.zoxweb.shared.app.AppIDDefault;
+import org.zoxweb.server.util.cache.JWTTokenCache;
 import org.zoxweb.shared.api.APIConfigInfo;
+import org.zoxweb.shared.app.AppIDDefault;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.security.*;
 import org.zoxweb.shared.security.model.SecurityModel;
-import org.zoxweb.shared.util.Const;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.ResourceManager;
+import org.zoxweb.shared.util.*;
 
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.util.Date;
 import java.sql.*;
+import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -74,13 +72,17 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
     private static ShiroDSDomainSecurityManager dsm;
     private static H2PDataStore ds;
+    /** {@link #ds} in the system context: fixtures and raw checks, see {@link TestVault#systemView}. */
+    private static org.zoxweb.shared.api.APIDataStore<?, ?> sys;
 
     @BeforeAll
     public static void setup() throws Exception {
-        String url = System.getProperty("ds.url", DEFAULT_URL);
-        String user = System.getProperty("ds.user");
-        String password = System.getProperty("ds.password");
-        String filePassword = System.getProperty("ds.file_password");
+        // prerequisite of every run: the vault, which supplies the master key and, when it holds them, the db.* settings
+        TestVault.load();
+        String url = firstNonEmpty(System.getProperty("ds.url"), TestVault.db("db.url"), DEFAULT_URL);
+        String user = firstNonEmpty(System.getProperty("ds.user"), TestVault.db("db.user"));
+        String password = firstNonEmpty(System.getProperty("ds.password"), TestVault.db("db.password"));
+        String filePassword = firstNonEmpty(System.getProperty("ds.file_password"), TestVault.db("db.enc-password"));
 
         NVGenericMap parsed = H2PUtil.parseJdbcURL(url);
         String subprotocol = parsed.getValue(H2PUtil.JDBC_SUBPROTOCOL);
@@ -99,10 +101,13 @@ public class ShiroDSDomainSecurityManagerDBTest {
             cfg = H2PDSCreator.toAPIConfigInfo(url, user, password, filePassword);
             System.out.println("H2 target: " + url);
         }
-        ds = new H2PDSCreator().createAPI(null, cfg);
+        ds = new H2PDSCreator().createAPI(null, TestVault.secure(cfg));
+        sys = TestVault.systemView(ds);
 
         OPSecUtil.singleton();
         dsm = new ShiroDSDomainSecurityManager(ds);
+        dsm.setSuperAdminPrincipalID(TestVault.superAdminID()); // from the vault, never hard coded
+        dsm.seedCatalog(); // the common app and its catalog: every catalog row belongs to an app (2026-10-01)
     }
 
     @AfterEach
@@ -145,6 +150,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         return dsm.createSubjectID(principal, HashUtil.toBCryptPassword(PASSWORD));
     }
 
+    /** A third-party API key of {@code subject}: the default purpose of a {@link SubjectAPIKey}, never a login. */
     private static SubjectAPIKey newAPIKey(SubjectIdentifier subject, String key) {
         SubjectAPIKey sak = new SubjectAPIKey();
         sak.setName("key-" + UUID.randomUUID());
@@ -155,9 +161,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
         return sak;
     }
 
-    /** API key with a random 32-byte secret and an explicit key ID, optionally scoped to domain/app. */
+    /** Signing key (SYMMETRIC_KEY: the only kind that verifies a JWT login) with a random 32-byte secret and an explicit key ID, optionally scoped to domain/app. */
     private static SubjectAPIKey newSigningKey(SubjectIdentifier subject, String domainID, String appID) {
         SubjectAPIKey sak = new SubjectAPIKey();
+        sak.setCredentialType(org.zoxweb.shared.security.CredentialInfo.Type.SYMMETRIC_KEY);
         sak.setName("jwt-key-" + UUID.randomUUID());
         sak.setSystemID("shiro-ds-test");
         sak.setPrincipalID("kid-" + UUID.randomUUID());
@@ -166,7 +173,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         sak.setAPIKeyAsBytes(secret);
         sak.setStatus(Const.Status.ACTIVE);
         if (domainID != null) {
-            sak.setAppID(new AppIDDefault(domainID, appID));
+            sak.setAppID(appRecord(domainID, appID)); // a scoped key references the app record
         }
         dsm.createCredential(subject, sak);
         return sak;
@@ -409,10 +416,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectIdentifier subject = newSubject(principal);
         PrincipalIdentifier pid = dsm.lookupPrincipalID(principal);
         pid.setStatus(SecConst.SecStatus.INACTIVE);
-        ds.update(pid);
+        sys.update(pid);
         assertThrows(AccessSecurityException.class, () -> dsm.login(principal, PASSWORD));
         pid.setStatus(SecConst.SecStatus.ACTIVE);
-        ds.update(pid);
+        sys.update(pid);
         assertEquals(subject.getGUID(), dsm.login(principal, PASSWORD).getGUID());
     }
 
@@ -558,7 +565,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String principal = uniquePrincipal();
         SubjectIdentifier subject = newSubject(principal);
         String key = "key-" + UUID.randomUUID();
-        newAPIKey(subject, key);
+        SubjectAPIKey sak = newAPIKey(subject, key);
+        assertNotNull(dsm.lookupSubjectAPIKeyByID(sak.getSubjectID()));
         PermissionInfo perm = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "x:y"));
         dsm.addPermissionGrant(subject, perm);
 
@@ -566,33 +574,85 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertNull(dsm.lookupSubjectID(principal));
         assertNull(dsm.lookupPrincipalID(principal));
         assertEquals(0, dsm.lookupCredentialsBySubjectGUID(subject.getGUID(), null).length);
-        assertNull(dsm.lookupSubjectAPIKey(key));
+        assertNull(dsm.lookupSubjectAPIKeyByID(sak.getSubjectID()), "the key row went with the subject");
         assertEquals(0, dsm.getPermissionGrants(subject.getGUID()).length);
-        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key));
     }
 
+    /**
+     * An API key is the subject's credential for a third-party API (user rule 2026-10-03): sealed in
+     * the store, served in clear to its logged-in owner through the datastore, to nobody else, and
+     * never a login to this system — not as a raw key, and not as the secret behind a JWT.
+     */
     @Test
-    public void apiKeyLogin_roundTrip_statusAndExpiry() {
-        SubjectIdentifier subject = newSubject(uniquePrincipal());
-        String key = "key-" + UUID.randomUUID();
-        SubjectAPIKey sak = newAPIKey(subject, key);
+    public void thirdPartyApiKey_sealedInTheStore_servedInClearToItsLoggedInOwner_neverALogin() throws Exception {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier owner = newSubject(pa);
+        newSubject(pb);
+        byte[] secretBytes = new byte[32];
+        new SecureRandom().nextBytes(secretBytes);
 
-        assertEquals(subject.getGUID(), dsm.loginApiKey(key).getGUID());
+        // the owner, logged in, stores the key of its third-party account
+        login(pa);
+        SubjectAPIKey sak = new SubjectAPIKey();
+        sak.setName("claude.ai");
+        sak.setSystemID("api.anthropic.com");
+        sak.setAPIKeyAsBytes(secretBytes);
+        sak.setStatus(Const.Status.ACTIVE);
+        dsm.createCredential(owner, sak);
+        final String secret = sak.getAPIKey(), guid = sak.getGUID(), keyID = sak.getSubjectID();
+        assertEquals(org.zoxweb.shared.security.CredentialInfo.Type.API_KEY, sak.getCredentialType(),
+                "a key is a third-party key unless it is made a signing key");
+        assertFalse(sak.isSigningKey());
+
+        // at rest: a sealed record, never the secret
+        byte[] raw = rawApiKeyColumn(guid);
+        assertNotNull(raw);
+        assertFalse(new String(raw, java.nio.charset.StandardCharsets.ISO_8859_1).contains(secret), "the secret is not stored in the clear");
+
+        // the logged-in owner looks the key up from the datastore, which serves it in clear
+        List<SubjectAPIKey> mine = ds.search(SubjectAPIKey.NVC_SUBJECT_API_KEY, null,
+                new QueryMatch<>(Const.RelationalOperator.EQUAL, owner.getGUID(), MetaToken.SUBJECT_GUID.getName()));
+        assertEquals(1, mine.size());
+        assertEquals("claude.ai", mine.get(0).getName());
+        assertEquals(secret, mine.get(0).getAPIKey(), "the owner gets the key in clear");
+        assertArrayEquals(secretBytes, mine.get(0).getAPIKeyAsBytes());
+        assertEquals(org.zoxweb.shared.security.CredentialInfo.Type.API_KEY, mine.get(0).getCredentialType());
+
+        // another logged-in subject, and nobody at all: no row
+        login(pb);
+        assertTrue(ds.searchByID(SubjectAPIKey.NVC_SUBJECT_API_KEY, guid).isEmpty(), "a stranger gets nothing");
+        dsm.logout();
+        assertTrue(ds.searchByID(SubjectAPIKey.NVC_SUBJECT_API_KEY, guid).isEmpty(), "nobody logged in gets nothing");
+
+        // never a login: the raw key is refused, known or unknown
+        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(secret));
         assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey("key-" + UUID.randomUUID()));
         assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(null));
+        // it does not sign a login token ...
+        assertThrows(IllegalArgumentException.class, () -> ShiroDSDomainSecurityManager.mintJWT(sak, null, 30_000));
+        // ... and a token forged by someone who knows the secret and the key id is refused
+        SubjectAPIKey forged = new SubjectAPIKey();
+        forged.setCredentialType(org.zoxweb.shared.security.CredentialInfo.Type.SYMMETRIC_KEY);
+        forged.setPrincipalID(keyID);
+        forged.setAPIKeyAsBytes(secretBytes);
+        String token = ShiroDSDomainSecurityManager.mintJWT(forged, null, 30_000);
+        assertThrows(AccessSecurityException.class, () -> dsm.loginJWT(token), "a third-party key never verifies a login");
+        assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectJWT(token, null));
+        assertNull(org.apache.shiro.util.ThreadContext.getSubject(), "nothing bound");
 
-        sak.setStatus(Const.Status.SUSPENDED);
-        dsm.updateCredential(subject, sak);
-        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key), "suspended key must not log in");
+        // the key cannot be turned into a signing key behind the owner's back either: the purpose is stored
+        assertFalse(dsm.lookupSubjectAPIKeyByID(keyID).isSigningKey());
+    }
 
-        sak.setStatus(Const.Status.ACTIVE);
-        sak.setExpiryDate(System.currentTimeMillis() - 1000);
-        dsm.updateCredential(subject, sak);
-        assertThrows(AccessSecurityException.class, () -> dsm.loginApiKey(key), "expired key must not log in");
-
-        sak.setExpiryDate(System.currentTimeMillis() + 60_000);
-        dsm.updateCredential(subject, sak);
-        assertEquals(subject.getGUID(), dsm.loginApiKey(key).getGUID());
+    /** Raw {@code api_key} column of a key row, bypassing the datastore's read path. */
+    private static byte[] rawApiKeyColumn(String guid) throws SQLException {
+        try (Connection con = ds.newConnection();
+             PreparedStatement ps = con.prepareStatement("SELECT \"api_key\" FROM \"subject_api_key\" WHERE \"guid\" = ?")) {
+            ps.setObject(1, UUID.fromString(guid));
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getBytes(1) : null;
+            }
+        }
     }
 
     @Test
@@ -673,7 +733,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     }
 
     @Test
-    public void jwtAndApiKey_loginSubject_bindsAndAuthorizes() {
+    public void jwt_loginSubject_bindsAndAuthorizes() {
         SubjectIdentifier subject = newSubject(uniquePrincipal());
         String permToken = "jwt:" + UUID.randomUUID().toString().replace("-", "") + ":read";
         PermissionInfo perm = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), permToken));
@@ -689,14 +749,6 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.logout();
         assertNull(org.apache.shiro.util.ThreadContext.getSubject());
 
-        String rawKey = "key-" + UUID.randomUUID();
-        newAPIKey(subject, rawKey);
-        Subject viaKey = dsm.loginSubjectApiKey(rawKey, null, null);
-        assertTrue(viaKey.isAuthenticated());
-        assertEquals(subject.getGUID(), DSAuthorizingRealm.subjectGUIDOf(viaKey.getPrincipals()));
-        assertTrue(viaKey.isPermitted(permToken));
-        dsm.logout();
-        assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectApiKey("key-" + UUID.randomUUID(), null, null));
         assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectJWT("nope", null));
         assertNull(org.apache.shiro.util.ThreadContext.getSubject(), "failed logins must not leave a binding");
     }
@@ -707,14 +759,19 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectAPIKey sak = newAPIKey(subject, "key-" + UUID.randomUUID());
         assertNotNull(sak.getSubjectID(), "insert stamps a key ID");
         assertEquals(sak.getGUID(), dsm.lookupSubjectAPIKeyByID(sak.getSubjectID()).getGUID());
-        assertThrows(IllegalArgumentException.class, () -> ShiroDSDomainSecurityManager.mintJWT(new SubjectAPIKey(), null, 0), "no key ID");
+        SubjectAPIKey noID = new SubjectAPIKey();
+        noID.setCredentialType(org.zoxweb.shared.security.CredentialInfo.Type.SYMMETRIC_KEY);
+        assertThrows(IllegalArgumentException.class, () -> ShiroDSDomainSecurityManager.mintJWT(noID, null, 0), "no key ID");
+        assertThrows(IllegalArgumentException.class, () -> ShiroDSDomainSecurityManager.mintJWT(sak, null, 0), "a third-party key signs nothing");
+        assertThrows(IllegalArgumentException.class, () -> sak.setCredentialType(org.zoxweb.shared.security.CredentialInfo.Type.PASSWORD));
     }
 
     /**
      * The xlogistx-shiro {@code ShiroUtil} entry points go through {@code SecurityUtils}' global
      * security manager. With {@code installAsGlobal()} every one of them must work against this
      * realm: {@code login(domain, realm, user, password)}, {@code login(AuthenticationToken)} for
-     * all three token kinds, {@code loginSubject(..., autoLogin)} and {@code loginBySessionID}.
+     * the password and JWT tokens (a raw API key token is refused: an API key is not a login),
+     * {@code loginSubject(..., autoLogin)} and {@code loginBySessionID}.
      */
     @Test
     public void shiroUtil_loginEntryPoints_workAgainstThisManager() throws Exception {
@@ -737,10 +794,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertFalse(SecurityUtils.getSubject().isAuthenticated());
             ThreadContext.remove();
 
-            // login(AuthenticationToken): raw key
-            ShiroUtil.login(new APIKeyAuthenticationToken(rawKey));
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
-            SecurityUtils.getSubject().logout();
+            // login(AuthenticationToken): a raw key is not a login, even the key of an existing subject
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.login(new APIKeyAuthenticationToken(rawKey)));
+            assertFalse(SecurityUtils.getSubject().isAuthenticated());
             ThreadContext.remove();
 
             // login(AuthenticationToken): JWT
@@ -896,7 +952,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertFalse(unbound.isBound());
         IllegalStateException e = assertThrows(IllegalStateException.class, unbound::getDomainSecurityManager);
         assertTrue(e.getMessage().contains("no-such-resource"), e.getMessage());
-        assertEquals(ShiroDSDomainSecurityManager.REALM_NAME, unbound.getName(), "no-arg defaults");
+        assertEquals(ShiroUtil.REALM_NAME, unbound.getName(), "no-arg defaults");
         assertTrue(unbound.getCredentialsMatcher() instanceof CredentialsInfoMatcher);
 
         ShiroDSDomainSecurityManager attached = ShiroDSDomainSecurityManager.attach(unbound, ds);
@@ -921,23 +977,25 @@ public class ShiroDSDomainSecurityManagerDBTest {
         Cache<Object, AuthorizationInfo> cache = dsm.getRealm().getAuthorizationCache();
         assertNotNull(cache);
 
+        // the cache key of a login with no domain/app: the subject in the common app (2026-10-01)
+        String cacheKey = subject.getGUID() + "|" + ShiroDSDomainSecurityManager.COMMON_SCOPE;
         dsm.getRealm().evictAuthorization(subject.getGUID());
         dsm.login(principal, PASSWORD);
-        assertNull(cache.get(subject.getGUID()), "lazy: login alone caches nothing");
+        assertNull(cache.get(cacheKey), "lazy: login alone caches nothing");
 
         dsm.setEagerAuthorization(true);
         try {
             dsm.login(principal, PASSWORD);
-            AuthorizationInfo cached = cache.get(subject.getGUID());
+            AuthorizationInfo cached = cache.get(cacheKey);
             assertNotNull(cached, "eager: grants loaded and cached by the login itself");
             assertTrue(cached.getStringPermissions().contains(token));
 
             dsm.getRealm().evictAuthorization(subject.getGUID());
             assertThrows(AccessSecurityException.class, () -> dsm.login(principal, "wrong-" + PASSWORD));
-            assertNull(cache.get(subject.getGUID()), "a failed login must not load grants");
+            assertNull(cache.get(cacheKey), "a failed login must not load grants");
 
             Subject s = dsm.loginSubject(principal, PASSWORD, null, null);
-            assertNotNull(cache.get(subject.getGUID()), "bound login warms the cache too");
+            assertNotNull(cache.get(cacheKey), "bound login warms the cache too");
             assertTrue(dsm.getRealm().lookupAuthorizationInfo(s.getPrincipals()).getStringPermissions().contains(token));
             dsm.installAsGlobal();
             AuthorizationInfo viaUtil = ShiroUtil.lookupAuthorizationInfo(DSAuthorizingRealm.class, s.getPrincipals());
@@ -1054,7 +1112,20 @@ public class ShiroDSDomainSecurityManagerDBTest {
     private static final String DOMAIN = "xlogistx.io";
 
     private static AppIDDefault app(String name) {
-        return new AppIDDefault(DOMAIN, name);
+        return appRecord(DOMAIN, name);
+    }
+
+    /** The app record, created with its starter catalog and registrar when the test store does not have it yet. */
+    private static AppIDDefault appRecord(String domainID, String appID) {
+        AppIDDefault stored = dsm.lookupApp(domainID, appID);
+        return stored != null ? stored : dsm.createApp(domainID, appID);
+    }
+
+    /** A role of the app's own catalog (every app has its own copy of the starter roles). */
+    private static RoleInfo appRole(AppIDDefault app, SecurityModel.Role role) {
+        RoleInfo ret = dsm.lookupRole(ShiroUtil.appScope(app), role.getName());
+        assertNotNull(ret, role.getName() + " in " + ShiroUtil.appScope(app));
+        return ret;
     }
 
     private static Subject loginApp(String principal, String appName) {
@@ -1064,39 +1135,44 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
     @Test
     public void appGrant_loginScopeSelectsGrants_andRevokeAppRemovesThem() {
-        dsm.seedCatalog();
-        RoleInfo domainAdmin = dsm.lookupRole(null, SecurityModel.Role.DOMAIN_ADMIN.getName());
-        RoleInfo userRole = dsm.lookupRole(null, SecurityModel.Role.USER.getName());
+        RoleInfo userRole = dsm.lookupRole(null, SecurityModel.Role.USER.getName()); // the common app's
         String principal = uniquePrincipal();
         SubjectIdentifier subject = newSubject(principal);
         AppIDDefault a = app("appa");
-        RoleGrant grant = dsm.addRoleGrant(subject, domainAdmin, a);
-        dsm.addRoleGrant(subject, userRole); // global
+        RoleInfo appAdmin = appRole(a, SecurityModel.Role.APP_ADMIN); // the app's own role: the common one is not grantable in it
+        assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGrant(subject, dsm.lookupRole(null, SecurityModel.Role.APP_ADMIN.getName()), a),
+                "a role of the common app can not be granted in another app");
+        RoleGrant grant = dsm.addRoleGrant(subject, appAdmin, a);
+        dsm.addRoleGrant(subject, userRole); // no app = the common app
+        assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGrant(subject, appAdmin), "an app's role is not grantable in the common app");
         assertNotNull(grant.getGUID());
         assertNull(grant.getBrokerGUID(), "nobody bound -> no broker");
         RoleGrant[] scoped = dsm.getRoleGrants(subject.getGUID(), a);
         assertEquals(1, scoped.length);
-        assertEquals(a, scoped[0].getAppIdDAO(), "app_id round-trips through the store");
+        assertEquals(a, scoped[0].getAppID(), "app_id round-trips through the store");
         assertEquals(0, dsm.getRoleGrants(subject.getGUID(), app("other")).length);
-        assertEquals("xlogistx.io-appa", ShiroDSDomainSecurityManager.appScope(a));
+        assertEquals("xlogistx.io-appa", ShiroUtil.appScope(a));
 
-        // global login: global grants only
+        // a login with no domain/app is a login into the common app: the common grants only
         dsm.logout();
         Subject global = dsm.loginSubject(principal, PASSWORD, null, null);
         assertTrue(global.hasRole("user"));
-        assertFalse(global.hasRole("domain_admin"), "the app grant needs an app login");
+        assertFalse(global.hasRole("app_admin"), "the app grant needs an app login");
         assertFalse(global.isPermitted("subject:create"));
+        dsm.logout();
+        Subject inCommon = dsm.loginSubject(principal, PASSWORD, ShiroDSDomainSecurityManager.COMMON_DOMAIN_ID, ShiroDSDomainSecurityManager.COMMON_APP_ID);
+        assertTrue(inCommon.hasRole("user"), "an explicit login into the common app sees the same grants");
+        assertFalse(inCommon.hasRole("app_admin"));
 
         // app login: that app's grants only, as plain tokens
         Subject inA = loginApp(principal, "appa");
-        assertTrue(inA.hasRole("domain_admin"));
+        assertTrue(inA.hasRole("app_admin"));
         assertTrue(inA.isPermitted("subject:create"));
-        assertTrue(inA.isPermitted("nventity:read:" + UUID.randomUUID()));
-        assertFalse(inA.hasRole("user"), "global grants stay out of an app login");
+        assertFalse(inA.hasRole("user"), "the common grants stay out of an app login");
 
         // another app: nothing
         Subject inOther = loginApp(principal, "other");
-        assertFalse(inOther.hasRole("domain_admin"));
+        assertFalse(inOther.hasRole("app_admin"));
         assertFalse(inOther.isPermitted("subject:create"));
         assertFalse(inOther.hasRole("user"));
 
@@ -1104,7 +1180,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertTrue(again.isPermitted("subject:create"));
         assertEquals(1, dsm.revokeAppGrants(subject.getGUID(), a));
         assertFalse(again.isPermitted("subject:create"), "the app-scoped cache entry is evicted on revoke");
-        assertFalse(again.hasRole("domain_admin"));
+        assertFalse(again.hasRole("app_admin"));
         assertEquals(0, dsm.revokeAppGrants(subject.getGUID(), a), "nothing left");
         dsm.logout();
         assertTrue(dsm.loginSubject(principal, PASSWORD, null, null).hasRole("user"), "global grant untouched");
@@ -1113,13 +1189,15 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
     @Test
     public void appGrant_scopedRoleGroup_appliesInThatAppLoginOnly() {
-        dsm.seedCatalog();
-        RoleGroupInfo appUsers = dsm.lookupRoleGroup(null, SecurityModel.RoleGroup.APP_USERS.getName());
         String principal = uniquePrincipal();
         SubjectIdentifier subject = newSubject(principal);
         AppIDDefault b = app("appb");
+        RoleGroupInfo appUsers = dsm.lookupRoleGroup(ShiroUtil.appScope(b), SecurityModel.RoleGroup.APP_USERS.getName());
+        assertNotNull(appUsers, "the app's own role group");
+        assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGroupGrant(subject,
+                dsm.lookupRoleGroup(null, SecurityModel.RoleGroup.APP_USERS.getName()), b), "the common group is not grantable in another app");
         RoleGroupGrant g = dsm.addRoleGroupGrant(subject, appUsers, b);
-        assertEquals(b, g.getAppIdDAO());
+        assertEquals(b, g.getAppID());
         Subject inB = loginApp(principal, "appb");
         assertTrue(inB.hasRole("app_user"));
         assertTrue(inB.hasRole("user"), "every role of the group, plain");
@@ -1136,11 +1214,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
     @Test
     public void appGrant_enforcement_appAdminActsInsideItsAppLoginOnly_andBrokerRevokes() {
-        dsm.seedCatalog();
-        RoleInfo appAdmin = dsm.lookupRole(null, SecurityModel.Role.APP_ADMIN.getName());
-        RoleInfo appUser = dsm.lookupRole(null, SecurityModel.Role.APP_USER.getName());
         AppIDDefault a = app("appc");
         AppIDDefault b = app("appd");
+        RoleInfo appAdmin = appRole(a, SecurityModel.Role.APP_ADMIN);
+        RoleInfo appUser = appRole(a, SecurityModel.Role.APP_USER);
         String adminPrincipal = uniquePrincipal();
         String bystanderPrincipal = uniquePrincipal();
         SubjectIdentifier admin = newSubject(adminPrincipal);
@@ -1180,6 +1257,270 @@ public class ShiroDSDomainSecurityManagerDBTest {
     }
 
     // ------------------------------------------------------------------
+    // app model (user decisions 2026-10-01/02): every app owns its catalog, has a registrar,
+    // no domain/app = the common app; plan xlogistx-shiro-ds/app-model.md
+    // ------------------------------------------------------------------
+
+    /**
+     * A registrar sign-up as an application runs it: the registrar is logged in with a JWT signed by
+     * its key, without being bound; the work runs inside a {@link io.xlogistx.shiro.SubjectSwap};
+     * the registrar is logged out.
+     */
+    private static <V> V asRegistrar(SubjectAPIKey key, java.util.concurrent.Callable<V> work) throws Exception {
+        Subject registrar = dsm.loginUnboundSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(key, null, 5 * 60_000L), null);
+        try (io.xlogistx.shiro.SubjectSwap swap = new io.xlogistx.shiro.SubjectSwap(registrar)) {
+            return work.call();
+        } finally {
+            registrar.logout();
+        }
+    }
+
+    private static String currentSubjectGUID() {
+        return DSAuthorizingRealm.subjectGUIDOf(SecurityUtils.getSubject().getPrincipals());
+    }
+
+    @Test
+    public void app_createGivesStarterCatalogAndRegistrar_deleteRemovesThem() {
+        String name = "reg" + Long.toHexString(System.nanoTime());
+        String managerPrincipal = uniquePrincipal();
+        SubjectIdentifier manager = newSubject(managerPrincipal);
+        ShiroDSDomainSecurityManager.AppCreation created = dsm.createApp(DOMAIN, name, manager);
+        AppIDDefault app = created.app;
+        String label = ShiroUtil.appScope(app);
+        assertEquals(DOMAIN + "-" + name, label);
+        assertEquals(label, app.getName());
+        assertEquals(app.getGUID(), dsm.lookupApp(DOMAIN, name).getGUID());
+
+        // the starter set: the non platform-only roles with their permissions, and their groups — the app's own rows
+        for (SecurityModel.Role r : SecurityModel.Role.values()) {
+            RoleInfo row = dsm.lookupRole(label, r.getName());
+            assertEquals(!r.isPlatformOnly(), row != null, r.getName() + " in " + label);
+            if (row != null) {
+                assertEquals(app.getGUID(), row.getAppID().getGUID(), "owned by the app");
+                assertEquals(r.getPermissions().length, row.getPermissions().length, r.getName());
+                for (PermissionInfo p : row.getPermissions()) {
+                    assertEquals(app.getGUID(), dsm.lookupPermissionByGUID(p.getGUID()).getAppID().getGUID(), "its permissions are the app's copies");
+                }
+            }
+        }
+        for (SecurityModel.RoleGroup g : SecurityModel.RoleGroup.values()) {
+            assertEquals(!g.isPlatformOnly(), dsm.lookupRoleGroup(label, g.getName()) != null, g.getName());
+        }
+        assertNotNull(dsm.lookupRole(null, SecurityModel.Role.DOMAIN_ADMIN.getName()), "the common app keeps the platform-only roles");
+        assertNotNull(dsm.lookupRole(null, SecurityModel.Role.APP_REGISTRAR.getName()), "and has a registrar role of its own");
+
+        // the registrar: a SYSTEM subject, a key scoped to the app (secret readable here, once), the app_registrar role
+        assertNotNull(created.registrar);
+        assertEquals(BaseSubjectID.SubjectType.SYSTEM, created.registrar.getSubjectType());
+        assertEquals("registrar." + label, ShiroDSDomainSecurityManager.registrarPrincipal(app));
+        assertEquals(created.registrar.getGUID(), dsm.lookupRegistrar(app).getGUID());
+        assertEquals(created.registrar.getGUID(), dsm.lookupSubjectID("registrar." + label).getGUID());
+        assertNotNull(created.registrarKey);
+        assertNotNull(created.registrarKey.getAPIKeyAsBytes());
+        assertEquals(app, created.registrarKey.getAppID());
+        assertNull(dsm.ensureRegistrar(app).registrarKey, "created once: no secret the second time");
+        assertEquals(created.registrar.getGUID(), dsm.ensureRegistrar(app).registrar.getGUID());
+        Subject reg = dsm.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(created.registrarKey, null, 60_000), null);
+        assertTrue(reg.hasRole(SecurityModel.Role.APP_REGISTRAR.getName()));
+        assertTrue(reg.isPermitted(SecurityModel.PERM_ADD_SUBJECT));
+        assertFalse(reg.isPermitted(SecurityModel.PERM_ASSIGN_ROLE));
+        assertFalse(reg.isPermitted(SecurityModel.PERM_UPDATE_SUBJECT));
+        assertFalse(reg.isPermitted(SecurityModel.PERM_CREATE_APP_ID));
+        dsm.logout();
+
+        // the first manager holds the app's app_admin, which manages the app's catalog
+        assertNotNull(created.firstManagerGrant);
+        assertEquals(app.getGUID(), created.firstManagerGrant.getAppID().getGUID());
+        Subject inApp = loginApp(managerPrincipal, name);
+        assertTrue(inApp.hasRole(SecurityModel.Role.APP_ADMIN.getName()));
+        assertTrue(inApp.isPermitted(SecurityModel.PERM_ADD_ROLE));
+        assertTrue(inApp.isPermitted(SecurityModel.PERM_ADD_PERMISSION));
+        assertFalse(inApp.isPermitted(SecurityModel.PERM_CREATE_APP_ID));
+        dsm.logout();
+
+        // delete: the record, its catalog, its registrar and the grants in it go; the common app never does
+        assertThrows(IllegalArgumentException.class, () -> dsm.deleteApp(dsm.commonApp()));
+        assertTrue(dsm.deleteApp(app));
+        assertNull(dsm.lookupApp(DOMAIN, name));
+        assertNull(dsm.lookupRegistrar(app));
+        assertNull(dsm.lookupRole(label, SecurityModel.Role.APP_ADMIN.getName()));
+        assertEquals(0, dsm.lookupAllPermissionsByAppID(label).length);
+        assertEquals(0, dsm.getRoleGrants(manager.getGUID(), app).length);
+        assertNotNull(dsm.lookupSubjectByGUID(manager.getGUID()), "a subject that held a grant in the app stays");
+        assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGrant(manager, dsm.lookupRole(null, SecurityModel.Role.USER.getName()), app), "unknown app");
+
+        // the canonical id splits at the last separator: a hyphenated domain survives
+        AppIDDefault hyphenated = AppIDDefault.create("my-site.com-shop");
+        assertEquals("my-site.com", hyphenated.getDomainID());
+        assertEquals("shop", hyphenated.getAppID());
+    }
+
+    @Test
+    public void registrar_signUpThroughTheSubjectSwap_createsOrJoins_andNothingElse() throws Exception {
+        String name = "signup" + Long.toHexString(System.nanoTime());
+        ShiroDSDomainSecurityManager.AppCreation created = dsm.createApp(DOMAIN, name, null);
+        AppIDDefault app = created.app;
+        SubjectAPIKey key = created.registrarKey;
+        String newcomer = uniquePrincipal();
+        String existingPrincipal = uniquePrincipal();
+        SubjectIdentifier existing = newSubject(existingPrincipal);
+
+        dsm.setEnforcePermissions(true);
+        try {
+            // a sign-up is a subject creation: nobody logged in may not
+            assertThrows(AccessSecurityException.class, () -> dsm.registerSubject(newcomer, PASSWORD));
+
+            // the swap: the registrar is bound for the work only, the thread's previous subject comes back
+            dsm.loginSubject(existingPrincipal, PASSWORD, null, null);
+            SubjectIdentifier made = asRegistrar(key, () -> {
+                assertTrue(SecurityUtils.getSubject().hasRole(SecurityModel.Role.APP_REGISTRAR.getName()), "the registrar is the bound subject");
+                assertEquals(created.registrar.getGUID(), currentSubjectGUID());
+                return dsm.registerSubject(newcomer, PASSWORD);
+            });
+            assertEquals(existing.getGUID(), currentSubjectGUID(), "the previous subject is bound again");
+            dsm.logout();
+            assertNotNull(made);
+            assertEquals(made.getGUID(), dsm.lookupSubjectID(newcomer).getGUID());
+            assertEquals(BaseSubjectID.SubjectType.USER, made.getSubjectType());
+            Subject in = loginApp(newcomer, name);
+            assertTrue(in.hasRole(SecurityModel.Role.APP_USER.getName()), "the app's app_user, always that one");
+            assertFalse(in.hasRole(SecurityModel.Role.APP_ADMIN.getName()));
+            dsm.logout();
+            RoleGrant[] grants = dsm.getRoleGrants(made.getGUID(), app);
+            assertEquals(1, grants.length);
+            assertEquals(created.registrar.getGUID(), grants[0].getBrokerGUID(), "the registrar is recorded as the grantor");
+
+            // again: no second subject, no second grant
+            assertEquals(made.getGUID(), asRegistrar(key, () -> dsm.registerSubject(newcomer, PASSWORD)).getGUID());
+            assertEquals(1, dsm.getRoleGrants(made.getGUID(), app).length);
+
+            // an existing account joins the app with its password, and only with it
+            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.registerSubject(existingPrincipal, "wrong-" + PASSWORD)));
+            assertEquals(0, dsm.getRoleGrants(existing.getGUID(), app).length, "nothing granted on a failed sign-up");
+            assertEquals(existing.getGUID(), asRegistrar(key, () -> dsm.registerSubject(existingPrincipal, PASSWORD)).getGUID());
+            assertTrue(loginApp(existingPrincipal, name).hasRole(SecurityModel.Role.APP_USER.getName()));
+            dsm.logout();
+
+            // the registrar may do nothing else
+            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.createApp(DOMAIN, name + "x")));
+            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.addRoleGrant(made, appRole(app, SecurityModel.Role.APP_ADMIN), app)));
+            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.deleteSubjectID(made)));
+            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.rotateRegistrarKey(app)));
+
+            // a failure inside the swap restores the thread as well
+            dsm.loginSubject(existingPrincipal, PASSWORD, null, null);
+            assertThrows(IllegalStateException.class, () -> asRegistrar(key, () -> {
+                throw new IllegalStateException("boom");
+            }));
+            assertEquals(existing.getGUID(), currentSubjectGUID());
+            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.registerSubject(uniquePrincipal(), PASSWORD), "nothing left bound after the swap");
+        } finally {
+            dsm.setEnforcePermissions(false);
+            dsm.logout();
+        }
+
+        // rotation: the old key is dead, the new one signs up
+        SubjectAPIKey rotated = dsm.rotateRegistrarKey(app);
+        assertNotNull(rotated.getAPIKeyAsBytes());
+        assertFalse(java.util.Arrays.equals(key.getAPIKeyAsBytes(), rotated.getAPIKeyAsBytes()));
+        assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.registerSubject(uniquePrincipal(), PASSWORD)), "the old key");
+        String late = uniquePrincipal();
+        assertNotNull(asRegistrar(rotated, () -> dsm.registerSubject(late, PASSWORD)));
+        assertTrue(loginApp(late, name).hasRole(SecurityModel.Role.APP_USER.getName()));
+        dsm.logout();
+
+        // with nobody logged in and enforcement off, a sign-up lands in the common app
+        String common = uniquePrincipal();
+        SubjectIdentifier inCommon = dsm.registerSubject(common, PASSWORD);
+        assertEquals(1, dsm.getRoleGrants(inCommon.getGUID(), dsm.commonApp()).length);
+        assertTrue(dsm.loginSubject(common, PASSWORD, null, null).hasRole(SecurityModel.Role.APP_USER.getName()));
+        dsm.logout();
+    }
+
+    @Test
+    public void appCatalog_isolated_managerWritesItsOwnAppOnly_sharesFollowTheData() {
+        String nameA = "isoa" + Long.toHexString(System.nanoTime()), nameB = "isob" + Long.toHexString(System.nanoTime());
+        String adminPrincipal = uniquePrincipal(), userPrincipal = uniquePrincipal();
+        SubjectIdentifier admin = newSubject(adminPrincipal);
+        SubjectIdentifier user = newSubject(userPrincipal);
+        AppIDDefault a = dsm.createApp(DOMAIN, nameA, admin).app;
+        AppIDDefault b = dsm.createApp(DOMAIN, nameB, null).app;
+        String labelA = ShiroUtil.appScope(a), labelB = ShiroUtil.appScope(b);
+
+        // a role of A may carry A's permissions only; a group of A, A's roles only
+        PermissionInfo readOfB = dsm.lookupPermission(labelB, SecurityModel.Permission.SUBJECT_READ.getName());
+        RoleInfo mixed = new RoleInfo("mixed-" + UUID.randomUUID(), "a's role with b's permission", readOfB);
+        mixed.setAppID(a);
+        assertThrows(IllegalArgumentException.class, () -> dsm.createRole(mixed));
+        RoleGroupInfo mixedGroup = new RoleGroupInfo(appRole(b, SecurityModel.Role.USER));
+        mixedGroup.setName("mixed-group-" + UUID.randomUUID());
+        mixedGroup.setAppID(a);
+        assertThrows(IllegalArgumentException.class, () -> dsm.createRoleGroup(mixedGroup));
+
+        dsm.setEnforcePermissions(true);
+        try {
+            loginApp(adminPrincipal, nameA);
+            // the manager of A creates A's permission and role, stamped as broker
+            PermissionInfo ownPerm = new PermissionInfo("report.read." + UUID.randomUUID().toString().replace("-", ""), "report:read");
+            ownPerm.setAppID(a);
+            ownPerm = dsm.createPermission(ownPerm);
+            assertEquals(a.getGUID(), ownPerm.getAppID().getGUID());
+            assertEquals(admin.getGUID(), ownPerm.getBrokerGUID());
+            RoleInfo ownRole = new RoleInfo("reporter-" + UUID.randomUUID(), "A's reporter", ownPerm);
+            ownRole.setAppID(a);
+            ownRole = dsm.createRole(ownRole);
+            assertEquals(a.getGUID(), ownRole.getAppID().getGUID());
+            assertEquals(ownRole.getGUID(), dsm.lookupRole(labelA, ownRole.getName()).getGUID());
+            assertNull(dsm.lookupRole(labelB, ownRole.getName()), "nothing of A exists in B");
+            assertNull(dsm.lookupRole(null, ownRole.getName()), "nor in the common app");
+
+            // not in B, not in the common app
+            PermissionInfo inB = new PermissionInfo("report.read.b." + UUID.randomUUID().toString().replace("-", ""), "report:read");
+            inB.setAppID(b);
+            assertThrows(AccessSecurityException.class, () -> dsm.createPermission(inB));
+            PermissionInfo inCommon = new PermissionInfo("report.read.c." + UUID.randomUUID().toString().replace("-", ""), "report:read");
+            assertThrows(AccessSecurityException.class, () -> dsm.createPermission(inCommon), "no app = the common app, not the manager's");
+            RoleInfo roleOfB = appRole(b, SecurityModel.Role.APP_USER);
+            assertThrows(AccessSecurityException.class, () -> dsm.updateRole(roleOfB));
+            assertThrows(AccessSecurityException.class, () -> dsm.deleteRole(roleOfB));
+
+            // A's role is grantable in A, and only there
+            RoleGrant grant = dsm.addRoleGrant(user, ownRole, a);
+            assertEquals(a.getGUID(), grant.getAppID().getGUID());
+            RoleInfo finalRole = ownRole;
+            assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, finalRole, b), "A's manager may not grant in B");
+            dsm.logout();
+            dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameA);
+            assertTrue(SecurityUtils.getSubject().isPermitted("report:read"));
+            assertTrue(SecurityUtils.getSubject().hasRole(ownRole.getName()));
+            dsm.logout();
+            dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameB);
+            assertFalse(SecurityUtils.getSubject().isPermitted("report:read"));
+            dsm.logout();
+        } finally {
+            dsm.setEnforcePermissions(false);
+            dsm.logout();
+        }
+        assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGrant(user, dsm.lookupRole(labelA, SecurityModel.Role.APP_USER.getName()), b),
+                "even unenforced, a role is grantable in its own app only");
+
+        // a share follows the data: granted on the resource, it applies in every login scope
+        PropertyDAO file = newResource(admin);
+        dsm.addPermissionGrant(user, mapOf(file), "resource:read");
+        String token = SecurityModel.toResourceToken(file.getGUID(), user.getGUID(), "read");
+        assertTrue(dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameA).isPermitted(token));
+        dsm.logout();
+        assertTrue(dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameB).isPermitted(token));
+        dsm.logout();
+        assertTrue(dsm.loginSubject(userPrincipal, PASSWORD, null, null).isPermitted(token));
+        dsm.logout();
+
+        assertTrue(dsm.deleteApp(a));
+        assertTrue(dsm.deleteApp(b));
+    }
+
+    // ------------------------------------------------------------------
     // instance grants and sharing (design page section 12, item 23)
     // ------------------------------------------------------------------
 
@@ -1188,15 +1529,16 @@ public class ShiroDSDomainSecurityManagerDBTest {
         PropertyDAO p = new PropertyDAO();
         p.setName("file-" + UUID.randomUUID());
         p.setSubjectGUID(owner.getGUID());
-        return ds.insert(p);
+        return sys.insert(p);
     }
 
     private static ResourceMap mapOf(NVEntity resource) {
         return new ResourceMap(resource);
     }
 
-    private static String nve(String verb, String guid) {
-        return SecurityModel.NVENTITY + ":" + verb + ":" + guid;
+    /** The standardized token the checker evaluates for {@code subject}: resource:<guid>:<subject guid>:<verb>. */
+    private static String nve(Subject subject, String verb, String guid) {
+        return SecurityModel.toResourceToken(guid, DSAuthorizingRealm.subjectGUIDOf(subject.getPrincipals()), verb);
     }
 
     private static Subject login(String principal) {
@@ -1205,7 +1547,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     }
 
     private static boolean mapRowExists(String mapGUID) {
-        return !ds.searchByID(ResourceMap.NVC_RESOURCE_MAP, mapGUID).isEmpty();
+        return !sys.searchByID(ResourceMap.NVC_RESOURCE_MAP, mapGUID).isEmpty();
     }
 
     @Test
@@ -1216,10 +1558,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(a.getGUID(), x.getSubjectGUID(), "resource must carry its owner");
 
         Subject shiroB = login(pb);
-        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())));
+        assertFalse(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())));
 
-        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
-        assertEquals("nventity:read,share", grant.getPermissionToken());
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "resource:read,share");
+        assertEquals("resource:read,share", grant.getPermissionToken());
         assertNull(grant.getPermissionGUID());
         assertEquals(b.getGUID(), grant.getSubjectGUID());
         assertNotNull(grant.getResourceMap().getGUID(), "map row gets its own GUID");
@@ -1227,14 +1569,14 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(PropertyDAO.class.getName(), grant.getResourceMap().getResourceType());
         assertTrue(mapRowExists(grant.getResourceMap().getGUID()));
 
-        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())), "read on X granted");
-        assertTrue(shiroB.isPermitted(nve("share", x.getGUID())), "share on X granted");
-        assertFalse(shiroB.isPermitted(nve("update", x.getGUID())), "update on X not granted");
-        assertFalse(shiroB.isPermitted(nve("delete", x.getGUID())));
-        assertFalse(shiroB.isPermitted(nve("read", y.getGUID())), "Y not shared");
-        assertFalse(shiroB.isPermitted("nventity:read"), "no global read");
+        assertTrue(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())), "read on X granted");
+        assertTrue(shiroB.isPermitted(nve(shiroB, "share", x.getGUID())), "share on X granted");
+        assertFalse(shiroB.isPermitted(nve(shiroB, "update", x.getGUID())), "update on X not granted");
+        assertFalse(shiroB.isPermitted(nve(shiroB, "delete", x.getGUID())));
+        assertFalse(shiroB.isPermitted(nve(shiroB, "read", y.getGUID())), "Y not shared");
+        assertFalse(shiroB.isPermitted("resource:read"), "no global read");
 
-        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:read,share:" + x.getGUID()));
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains(SecurityModel.toResourceToken(x.getGUID(), b.getGUID(), "read,share")));
 
         PermissionGrant[] stored = dsm.getPermissionGrants(b.getGUID());
         assertEquals(1, stored.length);
@@ -1248,12 +1590,17 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a);
 
-        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), " NVEntity:Read , Share ");
-        assertEquals("nventity:read,share", grant.getPermissionToken());
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), " Resource:Read , Share ");
+        assertEquals("resource:read,share", grant.getPermissionToken());
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
-        assertTrue(shiroB.isPermitted("NVENTITY:READ:" + x.getGUID().toUpperCase()), "ShiroUtil lower-cases checks; direct checks are case-insensitive by Shiro");
+        assertTrue(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())));
+        assertTrue(shiroB.isPermitted("RESOURCE:" + x.getGUID().toUpperCase() + ":" + b.getGUID().toUpperCase() + ":READ"),
+                "ShiroUtil lower-cases checks; direct checks are case-insensitive by Shiro");
+        // the synthesized self permission: B owns nothing here, but holds resource:B:B:read,update,delete,share
+        assertTrue(shiroB.isPermitted(SecurityModel.toResourceToken(b.getGUID(), b.getGUID(), "delete")), "self permission");
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions
+                .contains(SecurityModel.toResourceToken(b.getGUID(), b.getGUID(), SecurityModel.RESOURCE_SELF_VERBS)));
     }
 
     @Test
@@ -1262,8 +1609,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a);
 
-        String[] bad = {"nventity:create", "nventity:*", "nventity:read:" + x.getGUID(), "doc:read", "nventity:",
-                "nventity:read,,share", "nventity:read,bogus", "nventity", "", null};
+        String[] bad = {"resource:create", "resource:*", "resource:read:" + x.getGUID(), "doc:read", "resource:",
+                "resource:read,,share", "resource:read,bogus", "resource", "", null};
         for (String token : bad) {
             assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, mapOf(x), token),
                     "token must be rejected: " + token);
@@ -1279,16 +1626,16 @@ public class ShiroDSDomainSecurityManagerDBTest {
         PropertyDAO x = newResource(a);
 
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(UUID.randomUUID().toString(), PropertyDAO.class.getName()), "nventity:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(UUID.randomUUID().toString(), PropertyDAO.class.getName()), "resource:read"),
                 "unknown GUID");
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), "com.example.NoSuchClass"), "nventity:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), "com.example.NoSuchClass"), "resource:read"),
                 "unknown class");
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), null), "nventity:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), null), "resource:read"),
                 "blank type");
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(null, PropertyDAO.class.getName()), "nventity:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(null, PropertyDAO.class.getName()), "resource:read"),
                 "blank guid");
         assertEquals(0, dsm.getPermissionGrants(b.getGUID()).length);
     }
@@ -1298,7 +1645,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a), y = newResource(a);
-        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
 
         PermissionGrant grant = dsm.addPermissionGrant(b, update, mapOf(x));
         assertEquals(update.getGUID(), grant.getPermissionGUID());
@@ -1306,17 +1653,17 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(x.getGUID(), grant.getResourceMap().getResourceGUID());
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("update", x.getGUID())));
-        assertFalse(shiroB.isPermitted(nve("update", y.getGUID())));
-        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())));
-        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:update:" + x.getGUID()));
+        assertTrue(shiroB.isPermitted(nve(shiroB, "update", x.getGUID())));
+        assertFalse(shiroB.isPermitted(nve(shiroB, "update", y.getGUID())));
+        assertFalse(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())));
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains(SecurityModel.toResourceToken(x.getGUID(), b.getGUID(), "update")));
 
-        PermissionInfo scoped = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read:abc"));
+        PermissionInfo scoped = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:read:abc"));
         assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, scoped, mapOf(x)),
                 "a token that already has an instance part cannot be scoped");
-        PermissionInfo onePart = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity"));
+        PermissionInfo onePart = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource"));
         assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, onePart, mapOf(x)));
-        PermissionInfo unsaved = new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read");
+        PermissionInfo unsaved = new PermissionInfo("perm." + UUID.randomUUID(), "resource:read");
         unsaved.setGUID(UUID.randomUUID().toString());
         assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, unsaved, mapOf(x)), "unknown catalog row");
     }
@@ -1325,7 +1672,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_globalCatalogGrant_unchanged() {
         String pb = uniquePrincipal();
         SubjectIdentifier b = newSubject(pb);
-        PermissionInfo read = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:read"));
+        PermissionInfo read = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), SecurityModel.toResourceToken("*", "*", "read"))); // global: resource:*:*:read
 
         dsm.logout();
         PermissionGrant grant = dsm.addPermissionGrant(b, read);
@@ -1334,12 +1681,12 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertNull(grant.getBrokerGUID(), "nobody bound -> no grantor recorded");
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("read", UUID.randomUUID().toString())), "global read implies every instance");
-        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("nventity:read"));
+        assertTrue(shiroB.isPermitted(nve(shiroB, "read", UUID.randomUUID().toString())), "global read implies every instance");
+        assertTrue(GrantFlattener.flatten(dsm, b.getGUID()).permissions.contains("resource:*:*:read"));
 
         // exclusivity: a grant carrying both forms is refused before anything is written
         PermissionGrant both = new PermissionGrant(read.getGUID(), mapOf(newResource(b)));
-        both.setPermissionToken("nventity:read");
+        both.setPermissionToken("resource:read");
         assertThrows(IllegalArgumentException.class, both::validateShape);
     }
 
@@ -1348,20 +1695,20 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a);
-        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         String mapGUID = grant.getResourceMap().getGUID();
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
+        assertTrue(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())));
 
         assertTrue(dsm.deletePermissionGrant(grant));
-        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())), "revocation must evict the cached authorization");
+        assertFalse(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())), "revocation must evict the cached authorization");
         assertFalse(mapRowExists(mapGUID), "map row deleted with the grant");
-        assertTrue(ds.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
+        assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
         assertFalse(dsm.deletePermissionGrant(grant), "second revoke finds nothing");
 
         // a shell with only the GUID still cascades to the stored map
-        PermissionGrant again = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        PermissionGrant again = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         PermissionGrant shell = new PermissionGrant();
         shell.setGUID(again.getGUID());
         assertTrue(dsm.deletePermissionGrant(shell));
@@ -1377,47 +1724,54 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.setEnforcePermissions(true);
         try {
             dsm.logout();
-            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"), "nobody bound");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "resource:read"), "nobody bound");
             login(pb);
-            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"), "B does not own X");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "resource:read"), "B does not own X");
             assertEquals(0, dsm.getPermissionGrants(c.getGUID()).length);
 
             login(pa);
-            PermissionGrant grant = dsm.addPermissionGrant(c, mapOf(x), "nventity:read");
+            PermissionGrant grant = dsm.addPermissionGrant(c, mapOf(x), "resource:read");
             assertEquals(a.getGUID(), grant.getBrokerGUID(), "grantor recorded");
             assertEquals(c.getGUID(), grant.getSubjectGUID());
         } finally {
             dsm.setEnforcePermissions(false);
         }
         Subject shiroC = login(pc);
-        assertTrue(shiroC.isPermitted(nve("read", x.getGUID())));
+        assertTrue(shiroC.isPermitted(nve(shiroC, "read", x.getGUID())));
     }
 
     @Test
-    public void share_enforcement_shareHolderCanCatalogGrant_notInline() {
+    public void share_enforcement_shareHolderCanGrant_inlineAndCatalog() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
         PropertyDAO x = newResource(a), y = newResource(a);
-        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         // A shares X with B including the share verb (enforcement off: nobody needs to be bound)
-        dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
+        dsm.addPermissionGrant(b, mapOf(x), "resource:read,share");
 
         dsm.setEnforcePermissions(true);
         try {
             login(pb);
             PermissionGrant grant = dsm.addPermissionGrant(c, update, mapOf(x));
             assertEquals(b.getGUID(), grant.getBrokerGUID());
-            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "nventity:read"),
-                    "a share holder may not create an inlined grant");
+            // user decision 2026-09-29: share is a permission — a holder of resource:X:B:share may re-share, inlined too
+            PermissionGrant reshare = dsm.addPermissionGrant(c, mapOf(x), "resource:read");
+            assertEquals(b.getGUID(), reshare.getBrokerGUID(), "a share holder may create an inlined grant");
             assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, update, mapOf(y)),
                     "no share on Y and no global assign");
             assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(c, update), "global grant needs the assign permission");
+            // C received read (inlined) + update (catalog) on X but no share verb: C cannot share X
+            login(pc);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(b, mapOf(x), "resource:read"),
+                    "a grantee without the share verb may not share");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(b, update, mapOf(x)),
+                    "nor catalog-grant on it");
         } finally {
             dsm.setEnforcePermissions(false);
         }
         Subject shiroC = login(pc);
-        assertTrue(shiroC.isPermitted(nve("update", x.getGUID())));
-        assertFalse(shiroC.isPermitted(nve("update", y.getGUID())));
+        assertTrue(shiroC.isPermitted(nve(shiroC, "update", x.getGUID())));
+        assertFalse(shiroC.isPermitted(nve(shiroC, "update", y.getGUID())));
     }
 
     @Test
@@ -1427,10 +1781,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
         PropertyDAO x = newResource(a);
         PermissionInfo canRemove = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), SecurityModel.PERM_REMOVE_PERMISSION));
         dsm.addPermissionGrant(admin, canRemove);
-        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
 
         login(pa);
-        PermissionGrant aToB = dsm.addPermissionGrant(b, mapOf(x), "nventity:read,share");
+        PermissionGrant aToB = dsm.addPermissionGrant(b, mapOf(x), "resource:read"); // no share verb
         assertEquals(a.getGUID(), aToB.getBrokerGUID());
 
         dsm.setEnforcePermissions(true);
@@ -1440,16 +1794,22 @@ public class ShiroDSDomainSecurityManagerDBTest {
             login(pc);
             assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "C is nobody here");
             login(pb);
-            assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "the grantee cannot revoke its own grant");
+            assertThrows(AccessSecurityException.class, () -> dsm.deletePermissionGrant(aToB), "a grantee without share cannot revoke its own grant");
             login(pa);
             assertTrue(dsm.deletePermissionGrant(aToB), "the grantor revokes");
 
-            // B (share holder) grants C; the owner A, not the grantor, revokes
-            PermissionGrant aToB2 = dsm.addPermissionGrant(b, mapOf(x), "nventity:share");
+            // B (share holder) grants C; the owner A, not the grantor, revokes (owner = self permission)
+            PermissionGrant aToB2 = dsm.addPermissionGrant(b, mapOf(x), "resource:share");
             login(pb);
             PermissionGrant bToC = dsm.addPermissionGrant(c, update, mapOf(x));
             login(pa);
             assertTrue(dsm.deletePermissionGrant(bToC), "the resource owner revokes");
+
+            // a share holder may revoke a grant on the resource it may share (decision 2026-09-29)
+            login(pa);
+            PermissionGrant aToC = dsm.addPermissionGrant(c, mapOf(x), "resource:read");
+            login(pb);
+            assertTrue(dsm.deletePermissionGrant(aToC), "share holder revokes");
 
             // global remove permission revokes anything
             login(pb);
@@ -1463,17 +1823,241 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
     }
 
+    /**
+     * The standardized resource check end to end (user decision 2026-09-29): ownership is the
+     * synthesized self permission, a share is a grant token, a stranger holds neither — through
+     * {@code ShiroUtil.checkResourcePermission} and the {@code SecurityController} the datastores call.
+     */
+    @Test
+    public void resource_checkResourcePermission_ownerGranteeStranger() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
+        PropertyDAO x = newResource(a);
+        dsm.addPermissionGrant(b, mapOf(x), "resource:read,share");
+        io.xlogistx.shiro.mgt.ShiroSecurityController controller = new io.xlogistx.shiro.mgt.ShiroSecurityController();
+
+        // nobody bound: denied, never an exception from the boolean forms
+        dsm.logout();
+        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        assertNull(controller.currentSubjectGUID());
+
+        // owner: every self verb, through the self permission (no grant row exists for A)
+        login(pa);
+        for (String verb : new String[]{"create", "read", "update", "delete", "share"}) {
+            assertEquals(a.getGUID(), ShiroUtil.checkResourcePermission(x, verb), verb);
+        }
+        assertEquals(a.getGUID(), controller.checkNVEntityAccess(x, org.zoxweb.shared.util.CRUD.READ, org.zoxweb.shared.util.CRUD.UPDATE));
+        assertTrue(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.DELETE));
+        assertEquals(a.getGUID(), controller.currentSubjectGUID());
+        assertTrue(ShiroUtil.isResourcePermitted(a.getGUID(), a.getGUID(), "create"), "create is a self verb: a subject creates its own rows");
+        assertFalse(ShiroUtil.isResourcePermitted(b.getGUID(), b.getGUID(), "create"), "but not rows owned by someone else");
+
+        // grantee: read and share, nothing else; the owner GUID comes back as the key-chain root
+        login(pb);
+        assertFalse(ShiroUtil.isResourcePermitted(x.getGUID(), x.getSubjectGUID(), "create"), "a share never carries create");
+        assertEquals(a.getGUID(), ShiroUtil.checkResourcePermission(x, "read"));
+        assertEquals(a.getGUID(), controller.checkNVEntityAccess(Const.LogicalOperator.OR, x,
+                org.zoxweb.shared.util.CRUD.UPDATE, org.zoxweb.shared.util.CRUD.READ), "OR: read suffices");
+        assertThrows(AccessSecurityException.class, () -> controller.checkNVEntityAccess(x,
+                org.zoxweb.shared.util.CRUD.UPDATE, org.zoxweb.shared.util.CRUD.READ), "AND: update missing");
+        assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "delete"));
+        assertTrue(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.UPDATE));
+
+        // stranger: nothing
+        login(pc);
+        assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "read"));
+        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        // but its own resource is fine
+        PropertyDAO own = newResource(c);
+        assertEquals(c.getGUID(), controller.checkNVEntityAccess(own, org.zoxweb.shared.util.CRUD.UPDATE));
+    }
+
+    /**
+     * Datastore access control end to end (user rule 2026-09-30, built 2026-10-02): with the Shiro
+     * controller on the store, every read and write through it is a resource permission check for
+     * the bound subject — plaintext rows included — while the manager (lookups, subject creation,
+     * login and its grant loading, sharing) keeps working through its system view of the store.
+     */
+    @Test
+    public void datastoreAccessControl_endToEnd_withTheShiroController() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        try {
+            assertTrue(ds.isAccessControlActive());
+
+            // nobody logged in: the store gives nothing and takes nothing ...
+            dsm.logout();
+            assertTrue(ds.searchByID(SubjectIdentifier.class.getName(), a.getGUID()).isEmpty());
+            PropertyDAO anonymous = new PropertyDAO();
+            anonymous.setName("acl-anonymous-" + UUID.randomUUID());
+            assertThrows(AccessSecurityException.class, () -> ds.insert(anonymous));
+            // ... yet the manager works with nobody logged in: lookups, a new subject, a login
+            assertEquals(a.getGUID(), dsm.lookupSubjectID(pa).getGUID());
+            SubjectIdentifier c = newSubject(pc);
+            assertNotNull(dsm.login(pc, PASSWORD));
+
+            // a logged-in subject: its own rows, its own subject record, nobody else's
+            login(pa);
+            PropertyDAO x = new PropertyDAO();
+            x.setName("acl-file-" + UUID.randomUUID());
+            x = ds.insert(x);
+            final PropertyDAO stored = x;
+            final String xGUID = x.getGUID();
+            assertEquals(a.getGUID(), x.getSubjectGUID(), "a new row belongs to the bound subject");
+            assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).size());
+            assertEquals(1, ds.searchByID(SubjectIdentifier.class.getName(), a.getGUID()).size(), "a subject owns its own record");
+            assertTrue(ds.searchByID(SubjectIdentifier.class.getName(), b.getGUID()).isEmpty(), "and reads no other subject's");
+            PropertyDAO planted = new PropertyDAO();
+            planted.setName("acl-planted-" + UUID.randomUUID());
+            planted.setSubjectGUID(b.getGUID());
+            assertThrows(AccessSecurityException.class, () -> ds.insert(planted), "no rows in somebody else's name");
+
+            // a stranger: the plaintext row is not there, and a forged owner does not open it
+            login(pb);
+            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
+            PropertyDAO forged = new PropertyDAO();
+            forged.setGUID(xGUID);
+            forged.setName("hacked");
+            forged.setSubjectGUID(b.getGUID());
+            assertThrows(AccessSecurityException.class, () -> ds.update(forged));
+            assertThrows(AccessSecurityException.class, () -> ds.delete(forged, false));
+
+            // the owner shares it for reading through the manager; the grant is what the store honours
+            login(pa);
+            PermissionGrant share = dsm.addPermissionGrant(b, mapOf(stored), "resource:read");
+            login(pb);
+            List<PropertyDAO> shared = ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID);
+            assertEquals(1, shared.size(), "a read share returns the row");
+            assertEquals(a.getGUID(), shared.get(0).getSubjectGUID());
+            shared.get(0).setName("renamed by a reader");
+            assertThrows(AccessSecurityException.class, () -> ds.update(shared.get(0)), "read is not update");
+            assertThrows(AccessSecurityException.class, () -> ds.delete(shared.get(0), false), "read is not delete");
+
+            // the share is revoked: the row is gone again for b
+            login(pa);
+            assertTrue(dsm.deletePermissionGrant(share));
+            login(pb);
+            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
+
+            // the system context reads it with nobody logged in, and ends with the call
+            dsm.logout();
+            assertEquals(1, ShiroUtil.runAsSystem(() -> ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID)).size());
+            assertFalse(ShiroUtil.isSystemContext());
+            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
+
+            // the owner deletes its row; the manager deletes a subject with its rows
+            login(pa);
+            assertTrue(ds.delete(stored, false));
+            dsm.logout();
+            assertTrue(dsm.deleteSubjectID(c));
+        } finally {
+            dsm.logout();
+        }
+    }
+
+    /**
+     * Key chain root (user decisions 2026-09-29 and 2026-10-02): a new subject gets its
+     * EncapsulatedKey wrapped under the master key in the same transaction, and deleting the subject
+     * removes it; a KeyMaker without master key, or no KeyMaker at all, fails the creation — there is
+     * no keyless subject.
+     */
+    @Test
+    public void subjectKey_createdWithSubject_removedWithSubject() {
+        org.zoxweb.server.security.KeyMakerProvider km = org.zoxweb.server.security.KeyMakerProvider.SINGLETON;
+        try {
+            String pa = uniquePrincipal();
+            SubjectIdentifier a = newSubject(pa);
+            List<org.zoxweb.shared.crypto.EncapsulatedKey> keys = sys.search(org.zoxweb.shared.crypto.EncapsulatedKey.NVCE_ENCAPSULATED_KEY, null,
+                    new QueryMatch<>(Const.RelationalOperator.EQUAL, a.getGUID(), MetaToken.SUBJECT_GUID.getName()));
+            assertEquals(1, keys.size(), "one subject key");
+            org.zoxweb.shared.crypto.EncapsulatedKey sk = keys.get(0);
+            assertEquals(a.getGUID(), sk.getReferenceGUID(), "bound to the subject");
+            assertEquals(a.getGUID(), sk.getSubjectGUID());
+            assertEquals(org.zoxweb.shared.crypto.KeyLockType.SUBJECT_ID, sk.getKeyLockType());
+            assertEquals(32, sk.getKeySize(), "wrapped under the 32-byte master key");
+            // the chain opens: master -> subject key material
+            byte[] material = km.getKey(sys, null, a.getGUID());
+            assertEquals(32, material.length);
+
+            assertTrue(dsm.deleteSubjectID(a));
+            assertTrue(sys.search(org.zoxweb.shared.crypto.EncapsulatedKey.NVCE_ENCAPSULATED_KEY, null,
+                    new QueryMatch<>(Const.RelationalOperator.EQUAL, a.getGUID(), MetaToken.SUBJECT_GUID.getName())).isEmpty(),
+                    "subject key removed with the subject");
+
+        } finally {
+            dsm.logout();
+        }
+        // master key not loaded: the database is closed — no subject, not even a lookup
+        String pb = uniquePrincipal();
+        km.setMasterSecretKey((javax.crypto.SecretKey) null);
+        try {
+            assertThrows(AccessSecurityException.class, () -> newSubject(pb));
+            assertThrows(AccessSecurityException.class, () -> dsm.lookupSubjectID(pb), "no database without the master key");
+        } finally {
+            TestVault.load(); // the master key back
+        }
+        assertNull(dsm.lookupSubjectID(pb), "nothing was created");
+        // no key maker on the store: the same
+        String pc = uniquePrincipal();
+        ds.getAPIConfigInfo().setKeyMaker(null);
+        try {
+            assertThrows(AccessSecurityException.class, () -> newSubject(pc));
+            assertThrows(AccessSecurityException.class, () -> dsm.lookupSubjectID(pc), "no database without the key maker");
+        } finally {
+            ds.getAPIConfigInfo().setKeyMaker(km);
+        }
+        assertNull(dsm.lookupSubjectID(pc), "nothing was created");
+    }
+
+    /**
+     * The controller opens a sealed value in its storage form, the packed {@code CipherCodecs} record
+     * (never canonical text): the owner and a read grantee get the clear text through the owner's key
+     * chain, a stranger is denied, bytes that are not a record are refused.
+     */
+    @Test
+    public void controller_decryptValue_opensPackedRecord() {
+        org.zoxweb.server.security.KeyMakerProvider km = org.zoxweb.server.security.KeyMakerProvider.SINGLETON;
+        try {
+            String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+            SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+            newSubject(pc);
+            PropertyDAO x = newResource(a);
+            km.createNVEntityKey(sys, x, km.getKey(sys, null, a.getGUID()));
+            dsm.addPermissionGrant(b, mapOf(x), "resource:read");
+            io.xlogistx.shiro.mgt.ShiroSecurityController controller = new io.xlogistx.shiro.mgt.ShiroSecurityController();
+
+            login(pa);
+            Object sealed = controller.encryptValue(ds, x, null,
+                    new org.zoxweb.shared.util.NVPair("secret", "s3cr3t-value", org.zoxweb.shared.filters.FilterType.ENCRYPT), null);
+            byte[] packed = org.zoxweb.server.security.CipherCodecs.EDEncoder.encode(
+                    assertInstanceOf(org.zoxweb.shared.crypto.EncryptedData.class, sealed));
+            assertEquals("s3cr3t-value", controller.decryptValue(ds, x, packed, null), "owner");
+            assertNull(controller.decryptValue(ds, x, null, null));
+            assertThrows(IllegalArgumentException.class, () -> controller.decryptValue(ds, x,
+                    "s3cr3t-value".getBytes(java.nio.charset.StandardCharsets.UTF_8), null), "clear text is not a record");
+
+            login(pb);
+            assertEquals("s3cr3t-value", controller.decryptValue(ds, x, packed, null), "read grantee, owner's chain");
+
+            login(pc);
+            assertThrows(AccessSecurityException.class, () -> controller.decryptValue(ds, x, packed, null), "stranger");
+        } finally {
+            dsm.logout();
+        }
+    }
+
     @Test
     public void share_deleteSubjectID_cleansGranteeMapRows() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a);
-        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
+        PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         String mapGUID = grant.getResourceMap().getGUID();
         assertEquals(1, dsm.getPermissionGrantsByResource(x.getGUID()).length);
 
         assertTrue(dsm.deleteSubjectID(b));
-        assertTrue(ds.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
+        assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, grant.getGUID()).isEmpty());
         assertFalse(mapRowExists(mapGUID), "map row must not be orphaned");
         assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
     }
@@ -1483,9 +2067,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd);
         PropertyDAO x = newResource(a), y = newResource(a);
-        PermissionGrant gb = dsm.addPermissionGrant(b, mapOf(x), "nventity:read");
-        PermissionGrant gc = dsm.addPermissionGrant(c, mapOf(x), "nventity:read,update");
-        PermissionGrant gd = dsm.addPermissionGrant(d, mapOf(y), "nventity:read");
+        PermissionGrant gb = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
+        PermissionGrant gc = dsm.addPermissionGrant(c, mapOf(x), "resource:read,update");
+        PermissionGrant gd = dsm.addPermissionGrant(d, mapOf(y), "resource:read");
 
         PermissionGrant[] onX = dsm.getPermissionGrantsByResource(x.getGUID());
         assertEquals(2, onX.length);
@@ -1496,10 +2080,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(0, dsm.getPermissionGrantsByResource(null).length);
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("read", x.getGUID())));
+        assertTrue(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())));
 
         assertEquals(2, dsm.deletePermissionGrantsByResource(x.getGUID()));
-        assertFalse(shiroB.isPermitted(nve("read", x.getGUID())), "grantee evicted");
+        assertFalse(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())), "grantee evicted");
         assertFalse(mapRowExists(gb.getResourceMap().getGUID()));
         assertFalse(mapRowExists(gc.getResourceMap().getGUID()));
         assertEquals(0, dsm.getPermissionGrantsByResource(x.getGUID()).length);
@@ -1513,16 +2097,16 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
         PropertyDAO x = newResource(a);
-        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "nventity:update"));
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         dsm.addPermissionGrant(b, update, mapOf(x));
 
         Subject shiroB = login(pb);
-        assertTrue(shiroB.isPermitted(nve("update", x.getGUID())));
+        assertTrue(shiroB.isPermitted(nve(shiroB, "update", x.getGUID())));
 
         assertTrue(dsm.deletePermission(update));
         Subject again = login(pb);
         assertTrue(again.isAuthenticated(), "a dangling grant must not break login");
-        assertFalse(again.isPermitted(nve("update", x.getGUID())));
+        assertFalse(again.isPermitted(nve(again, "update", x.getGUID())));
         assertEquals(1, dsm.getPermissionGrants(b.getGUID()).length, "the grant row itself stays");
     }
 
@@ -1535,7 +2119,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     }
 
     private static PasswordResetToken[] tokensOf(String subjectGUID) {
-        java.util.List<PasswordResetToken> list = ds.search(PasswordResetToken.NVC_PASSWORD_RESET_TOKEN, null,
+        java.util.List<PasswordResetToken> list = sys.search(PasswordResetToken.NVC_PASSWORD_RESET_TOKEN, null,
                 new org.zoxweb.shared.db.QueryMatch<>(org.zoxweb.shared.util.MetaToken.SUBJECT_GUID.getName(), subjectGUID,
                         Const.RelationalOperator.EQUAL));
         return list.toArray(new PasswordResetToken[0]);
@@ -1545,7 +2129,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         for (PasswordResetToken t : tokensOf(subjectGUID)) {
             if (t.getStatus() == SecConst.SecStatus.ACTIVE) {
                 t.setExpiryTS(System.currentTimeMillis() - 1);
-                ds.update(t);
+                sys.update(t);
             }
         }
     }

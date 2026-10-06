@@ -8,10 +8,8 @@ import io.xlogistx.opsec.OPSecUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.datastore.test.CommonDataStoreTest;
-import org.zoxweb.server.security.DomainSecurityManagerDefault;
 import org.zoxweb.server.security.HashUtil;
 import org.zoxweb.server.security.SecUtil;
-import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
@@ -22,13 +20,7 @@ import org.zoxweb.shared.util.NVGenericMap;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for {@link DomainSecurityManager} backed by the real
@@ -62,7 +54,7 @@ public class DomainSecurityManagerDBTest {
         MongoTestUtil.assumeMongoAvailable(mongoDataStore, DB_URL);
         OPSecUtil.singleton();
         cdst = new CommonDataStoreTest<>(mongoDataStore);
-        domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(mongoDataStore).addCredentialType(CIPassword.class);
+        //domainSecurityManager = new DomainSecurityManagerDefault().setDataStore(mongoDataStore).addCredentialType(CIPassword.class);
     }
 
     /** A unique principal per invocation so reruns never collide on the unique index. */

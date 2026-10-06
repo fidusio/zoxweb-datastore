@@ -46,13 +46,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * asserted by <b>semantic value</b> (per key), not by raw-JSON-string equality. Data is UUID-suffixed
  * so re-runs against a persistent server stay isolated.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class H2PPostgresDataStoreTest {
 
     private static H2PDataStore ds;
 
     /** Target database name; auto-created if missing. Override with -Dh2p.pg.db. */
-    private static final String DB_NAME = System.getProperty("h2p.pg.db", "testpostgres");
+    /** Target database: {@code -Dh2p.pg.db}, else the database of the vault's {@code db.url}, else {@code testpostgres}. */
+    private static String DB_NAME = System.getProperty("h2p.pg.db");
 
     // Kept for tests that need FRESH store instances against the same DB (schema evolution).
     private static String pgTargetUrl;
@@ -64,11 +66,27 @@ public class H2PPostgresDataStoreTest {
     public static void setup() throws Exception {
         // h2p.pg.url is the BASE endpoint, e.g. jdbc:postgresql://lax2.xlogistx.io:5432 (db optional).
 
+        // The vault comes first (master key; and, when it names a PostgreSQL database, the target).
         String raw = System.getProperty("h2p.pg.url");
-        Assumptions.assumeTrue(raw != null && !raw.isEmpty(),
-                "set -Dh2p.pg.url=jdbc:postgresql://host:port (+ -Dh2p.pg.user / -Dh2p.pg.password) to run the live PostgreSQL test");
         String user = System.getProperty("h2p.pg.user");
         String password = System.getProperty("h2p.pg.password");
+        String vaultUrl = CryptoTestSupport.vaultPostgresURL();
+        if ((raw == null || raw.isEmpty()) && vaultUrl != null) {
+            raw = vaultUrl;
+            if (user == null) user = CryptoTestSupport.db("db.user");
+            if (password == null) password = CryptoTestSupport.db("db.password");
+            int slash = vaultUrl.indexOf('/', vaultUrl.indexOf("://") + 3);
+            if (DB_NAME == null && slash >= 0 && slash + 1 < vaultUrl.length()) {
+                String db = vaultUrl.substring(slash + 1);
+                DB_NAME = db.contains("?") ? db.substring(0, db.indexOf('?')) : db;
+            }
+        }
+        if (DB_NAME == null || DB_NAME.isEmpty()) {
+            DB_NAME = "testpostgres";
+        }
+        Assumptions.assumeTrue(raw != null && !raw.isEmpty(),
+                "set -Dstore=<vault with a PostgreSQL db.url> -Dstore.password=..., or -Dh2p.pg.url=jdbc:postgresql://host:port"
+                        + " (+ -Dh2p.pg.user / -Dh2p.pg.password), to run the live PostgreSQL test");
 
         Class.forName("org.postgresql.Driver");
 
@@ -94,7 +112,7 @@ public class H2PPostgresDataStoreTest {
         APIConfigInfo cfg = new H2PDSCreator().toAPIConfigInfo(pgTargetUrl, pgUser, pgPassword);
         cfg.getProperties().build(H2PDSCreator.H2PParam.DRIVER.getName(), "org.postgresql.Driver");
         H2PDataStore store = new H2PDataStore();
-        store.setAPIConfigInfo(cfg);
+        store.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         store.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         return store;
     }
@@ -224,8 +242,14 @@ public class H2PPostgresDataStoreTest {
         fid.setFileType(org.zoxweb.shared.data.FileInfo.FileType.FILE);
         fid.setCreationTime(System.currentTimeMillis());
 
-        ds.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
-        ds.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+        // file content is sealed under its owner's key chain: the file needs an owner with a subject key
+        TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(ds);
+        try {
+            ds.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
+            ds.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+        } finally {
+            TestSecurityController.currentSubject = null;
+        }
 
         java.io.ByteArrayOutputStream head = new java.io.ByteArrayOutputStream();
         ds.readFile(fid, head, true);
@@ -260,9 +284,9 @@ public class H2PPostgresDataStoreTest {
     @Test
     @Order(8)
     public void h2DumpRestoresIntoPostgres() throws java.io.IOException {
-        H2PDataStore h2 = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
+        H2PDataStore h2 = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:pg_mig_src_" + Math.abs(UUID.randomUUID().hashCode())
-                        + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"));
+                        + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL")));
         try {
             String tag = UUID.randomUUID().toString();
             PropertyDAO pd = new PropertyDAO();
@@ -292,8 +316,14 @@ public class H2PPostgresDataStoreTest {
             org.zoxweb.shared.data.FileInfo fid = new org.zoxweb.shared.data.FileInfo();
             fid.setFullPathName("mig_file_" + tag);
             fid.setFileType(org.zoxweb.shared.data.FileInfo.FileType.FILE);
-            h2.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
-            h2.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+            // file content is sealed under its owner's key chain; the dump and the restore then run with nobody bound
+            TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(h2);
+            try {
+                h2.createFile(null, fid, new java.io.ByteArrayInputStream(v1), true);
+                h2.updateFile(fid, new java.io.ByteArrayInputStream(v2), true);
+            } finally {
+                TestSecurityController.currentSubject = null;
+            }
 
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
             org.zoxweb.shared.util.NVGenericMap dumpStats = h2.dump(bos);
@@ -328,9 +358,9 @@ public class H2PPostgresDataStoreTest {
             java.io.ByteArrayOutputStream back = new java.io.ByteArrayOutputStream();
             long dumped = ds.dump(H2PRegressionTest.CyclicDAO.NVC_CYCLIC_DAO, back);
             assertTrue(dumped >= 2, "PG per-type dump must include the migrated entities");
-            H2PDataStore h2Back = new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
+            H2PDataStore h2Back = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(
                     "jdbc:h2:mem:pg_mig_back_" + Math.abs(UUID.randomUUID().hashCode())
-                            + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"));
+                            + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL")));
             try {
                 h2Back.restore(new java.io.ByteArrayInputStream(back.toByteArray()),
                         H2PDataStore.RestoreMode.MERGE);

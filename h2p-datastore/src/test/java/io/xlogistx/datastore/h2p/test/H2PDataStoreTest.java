@@ -44,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * sequences, transactions, URL/DSType/dialect wiring. The parallel {@code H2PPostgresDataStoreTest}
  * runs the same scenarios against a live PostgreSQL server when one is configured.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 public class H2PDataStoreTest {
 
     private static H2PDataStore h2DataStore;
@@ -59,7 +60,7 @@ public class H2PDataStoreTest {
 //        APIConfigInfo configInfo = H2PDSCreator.toAPIConfigInfo(DB_URL);
 //        System.out.println("Config\n" + GSONUtil.toJSONDefault(configInfo, true));
 
-        h2DataStore = creator.createAPI(null, H2PDSCreator.toAPIConfigInfo(DB_URL));
+        h2DataStore = creator.createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(DB_URL)));
 //        h2DataStore.setAPIConfigInfo(configInfo);
 //        h2DataStore.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         OPSecUtil.singleton();
@@ -72,7 +73,7 @@ public class H2PDataStoreTest {
         H2PDSCreator creator = new H2PDSCreator();
         APIConfigInfo cfg = creator.toAPIConfigInfo("jdbc:h2:mem:h2_url_test;DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         H2PDataStore ds = new H2PDataStore();
-        ds.setAPIConfigInfo(cfg);
+        ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
             PropertyDAO pd = createPropertyDAO("url-cfg-" + UUID.randomUUID(), "url config", 5);
@@ -95,7 +96,7 @@ public class H2PDataStoreTest {
         assertTrue(uri.contains("MODE=PostgreSQL"), "default compatibility mode must be PostgreSQL: " + uri);
 
         H2PDataStore ds = new H2PDataStore();
-        ds.setAPIConfigInfo(cfg);
+        ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
             PropertyDAO pd = createPropertyDAO("pg-mode-" + UUID.randomUUID(), "pg mode", 3);
@@ -713,7 +714,7 @@ public class H2PDataStoreTest {
 
     public  static H2PDataStore newStore(APIConfigInfo cfg) {
         H2PDataStore ds = new H2PDataStore();
-        ds.setAPIConfigInfo(cfg);
+        ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         return ds;
     }

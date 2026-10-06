@@ -39,11 +39,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Each test builds its own store(s) on a unique in-memory URL so content is fully controlled.
  */
+@org.junit.jupiter.api.extension.ExtendWith(SystemContext.class)
 public class H2PDumpRestoreTest {
 
     private static H2PDataStore newStore(String dbName) {
-        return new H2PDSCreator().createAPI(null, H2PDSCreator.toAPIConfigInfo(
-                "jdbc:h2:mem:" + dbName + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"));
+        return new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(H2PDSCreator.toAPIConfigInfo(
+                "jdbc:h2:mem:" + dbName + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL")));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    public void unbind() {
+        TestSecurityController.currentSubject = null;
     }
 
     private static String db(String prefix) {
@@ -146,9 +152,13 @@ public class H2PDumpRestoreTest {
             FileInfo fid = new FileInfo();
             fid.setFullPathName("dump_file_" + UUID.randomUUID());
             fid.setFileType(FileInfo.FileType.FILE);
+            // file content is sealed under its owner's key chain: the file needs an owner with a subject key
+            TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(source);
             source.createFile(null, fid, new ByteArrayInputStream(v1), true);
             source.updateFile(fid, new ByteArrayInputStream(v2), true);
             source.rollbackFile(fid, 1);
+            // the dump and the restore run in the system context with nobody bound (a bound subject would be stamped as owner of ownerless rows)
+            TestSecurityController.currentSubject = null;
 
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             NVGenericMap dumpStats = source.dump(bos);
@@ -163,8 +173,8 @@ public class H2PDumpRestoreTest {
 
             NVGenericMap restoreStats = target.restore(
                     new ByteArrayInputStream(bos.toByteArray()), RestoreMode.WIPE_AND_LOAD);
-            // 5 PropertyDAO + 1 Range + 2 CyclicDAO + 1 FileInfo
-            assertEquals(Long.valueOf(9), restoreStats.getValue("entities"));
+            // 5 PropertyDAO + 1 Range + 2 CyclicDAO + 1 FileInfo + 2 EncapsulatedKey (the owner's subject key and the file's key)
+            assertEquals(Long.valueOf(11), restoreStats.getValue("entities"));
 
             // Entities: JSON-identical to the source's stored form.
             for (PropertyDAO r : target.<PropertyDAO>userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null)) {
@@ -271,7 +281,7 @@ public class H2PDumpRestoreTest {
         APIConfigInfo cfg = H2PDSCreator.toAPIConfigInfo(
                 "jdbc:h2:mem:" + db("clamp") + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
         cfg.getProperties().build(H2PDSCreator.H2PParam.MAX_SELECT_RESULTS.getName(), "3");
-        H2PDataStore capped = new H2PDSCreator().createAPI(null, cfg);
+        H2PDataStore capped = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(cfg));
         try {
             for (int i = 0; i < 10; i++) {
                 capped.insert(newPropertyDAO("clamp-" + i, i));
@@ -353,6 +363,8 @@ public class H2PDumpRestoreTest {
             FileInfo fid = new FileInfo();
             fid.setFullPathName("zip_file_" + UUID.randomUUID());
             fid.setFileType(FileInfo.FileType.FILE);
+            // file content is sealed under its owner's key chain: the file needs an owner with a subject key
+            TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(source);
             source.createFile(null, fid, new ByteArrayInputStream(v1), true);
             source.updateFile(fid, new ByteArrayInputStream(v2), true);
             source.rollbackFile(fid, 1); // head != highest version
@@ -411,6 +423,8 @@ public class H2PDumpRestoreTest {
             FileInfo fid = new FileInfo();
             fid.setFullPathName("zip_miss_" + UUID.randomUUID());
             fid.setFileType(FileInfo.FileType.FILE);
+            // file content is sealed under its owner's key chain: the file needs an owner with a subject key
+            TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(source);
             source.createFile(null, fid,
                     new ByteArrayInputStream("content".getBytes(StandardCharsets.UTF_8)), true);
 
