@@ -3,7 +3,7 @@ package io.xlogistx.shiro.ds.test;
 import io.xlogistx.opsec.OPSecUtil;
 import io.xlogistx.opsec.SecretStore;
 import io.xlogistx.shiro.ShiroUtil;
-import io.xlogistx.shiro.ds.tools.SecurityAdminTool;
+import io.xlogistx.opsec.tools.ds.SecurityAdminTool;
 import io.xlogistx.shiro.mgt.ShiroSecurityController;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.shared.api.APIConfigInfo;

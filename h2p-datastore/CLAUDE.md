@@ -7,7 +7,8 @@
 > `test.store` / `h2mem.store` / `h2persist.store`, the persistent encrypted H2 file and
 > `shiro-ds.ini` in `src/test/resources/`, and the documents `SHIRO-DS.md` (that module's notes and
 > session log — read it for anything about the Shiro manager, realm, admin tool or these tests),
-> `app-model.md`, `datastore-acl.md` and `no-sneak-plan.md` beside this file. The classes under test
+> `app-model.md`, `datastore-acl.md`, `no-sneak-plan.md` and `sharing-gaps-plan.md` (decided
+> 2026-10-06, to be built after the session restart on the user's word) beside this file. The classes under test
 > live in io-xlogistx (`shiro` and `opsec` modules). Older text that names
 > `xlogistx-shiro-ds/src/main/resources/test.store` means `h2p-datastore/src/test/resources/test.store`.
 
@@ -29,6 +30,7 @@ JDBC driver + URL.
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
 | `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
 | `H2PFieldCrypto.java` | **Encryption at rest** (package-private): ENCRYPT* field records via the `SecurityController`, AESCrypt VX file content, entity-key lifecycle on the `KeyMaker` chain, raw mode for dumps — see the dedicated section |
+| `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the optional default app id (`app.id`, `<domain>-<app>`), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app when one was given (`create-app`, registrar key printed once) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `mode=read store= [store.password=]` opens an existing store and prints only `super-admin-id=` and `db.url=` (2026-10-09). First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
 
 ## Storage model (fully normalized — no binary blobs)
 
@@ -548,9 +550,10 @@ Public API on `H2PDataStore` (engine in package-private `H2PDumpRestore`):
   `file_versions`, `file_heads`, `cycles_skipped`).
 - `NVGenericMap dumpZip(OutputStream[, includeFiles], NVConfigEntity... types)` — same dump as a
   **zip archive**: entry `dump.jsonl` first (its `file_version` records carry an
-  `entry:"files/<file_guid>/<version>"` pointer instead of inline base64), then one raw
-  deflate-compressed content entry per stored version. The right form when file content dominates
-  (no base64 ~33% inflation). Stream is `finish()`ed, not closed.
+  `entry:"files/<file_guid>/<version>"` pointer instead of inline base64), then `README.TXT`
+  (2026-10-06: how to read the archive without this code — text in `H2PDumpRestore.README`;
+  restore skips it), then one raw deflate-compressed content entry per stored version. The right
+  form when file content dominates (no base64 ~33% inflation). Stream is `finish()`ed, not closed.
 - `NVGenericMap restore(InputStream, RestoreMode)` — **auto-detects the container** (`PK` magic ⇒
   zip, else plain JSONL). `MERGE` (guid-keyed upsert, idempotent, sequences raise-only) or
   `WIPE_AND_LOAD` (clears every discoverable entity table — join tables first, FK columns nulled —
@@ -679,6 +682,14 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   -Dds.url=jdbc:h2:file:./data/dsm;CIPHER=AES;MODE=PostgreSQL -Dds.file_password=encPass -Dds.user=sa -Dds.password=userPass
   -Dds.url=jdbc:postgresql://host:5432 -Dds.user=… -Dds.password=…   # -Dds.db optional
   ```
+
+- `H2PSetupTest` — `H2PSetup` without a console, every answer on the command line, fresh
+  directories under `target/h2psetup-test/`: encrypted H2 file set-up (vault with every mandatory
+  entry and generated secrets, H2 file created, `list-apps` through the new vault from a second
+  tool run, INI written and loaded, no secret printed), the refusals (existing store or INI,
+  in-memory URL, PostgreSQL URL without database, missing answer without a console) leave nothing
+  behind, and the URL/path checks (`typeOf`, `h2FileDirectory`, `h2Path`, `generatePassword`).
+  Also `givenURL_encPasswordImpliesCipher` (a given cipherless H2 URL with `db.enc-password=` gets `;CIPHER=AES`). 4/4 offline on 2026-10-09.
 
 ## Session log — 2026-09-15
 

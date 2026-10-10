@@ -2092,6 +2092,282 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(0, dsm.deletePermissionGrantsByResource(x.getGUID()), "idempotent");
     }
 
+    // ------------------------------------------------------------------
+    // share rules (user decision 2026-10-06): inlined shares only, catalog-scoped grants unchanged
+    // ------------------------------------------------------------------
+
+    private static long keyRowCount() {
+        return sys.search(org.zoxweb.shared.crypto.EncapsulatedKey.NVCE_ENCAPSULATED_KEY, null).size();
+    }
+
+    private static int inlinedSharesOf(SubjectIdentifier grantee, NVEntity resource) {
+        int n = 0;
+        for (PermissionGrant g : dsm.getPermissionGrantsByResource(resource.getGUID())) {
+            if (g.getPermissionToken() != null && grantee.getGUID().equals(g.getSubjectGUID())) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Enforcement off, nobody bound: removes what a share-rule test created on the shared database. */
+    private static void cleanupShareTest(PropertyDAO[] resources, SubjectIdentifier... subjects) {
+        dsm.setEnforcePermissions(false);
+        dsm.logout();
+        for (PropertyDAO r : resources) {
+            dsm.deletePermissionGrantsByResource(r.getGUID());
+            sys.delete(r, false);
+        }
+        for (SubjectIdentifier s : subjects) {
+            dsm.deleteSubjectID(s);
+        }
+    }
+
+    @Test
+    public void shareRules_oneSharePerGranteePerResource() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
+        long keys = keyRowCount();
+        try {
+            dsm.setEnforcePermissions(true);
+            login(pa);
+            PermissionGrant first = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                    () -> dsm.addPermissionGrant(b, mapOf(x), "resource:read,update"), "second share to the same grantee on the same resource");
+            assertTrue(e.getMessage().contains(first.getGUID()), "the refusal names the existing share");
+            assertEquals(1, inlinedSharesOf(b, x));
+            // another resource is another share
+            dsm.addPermissionGrant(b, mapOf(y), "resource:read");
+            assertEquals(1, inlinedSharesOf(b, y));
+            // a catalog-scoped grant is not a share: it is not counted and not refused
+            PermissionGrant catalog = dsm.addPermissionGrant(b, update, mapOf(x));
+            assertNull(catalog.getPermissionToken());
+            assertEquals(1, inlinedSharesOf(b, x));
+            assertEquals(2, dsm.getPermissionGrantsByResource(x.getGUID()).length, "one share + one catalog-scoped grant");
+            assertEquals(keys, keyRowCount(), "no key row touched");
+        } finally {
+            cleanupShareTest(new PropertyDAO[]{x, y}, a, b);
+            dsm.deletePermission(update);
+        }
+    }
+
+    /** Logs {@code principal} in and asks Shiro; a login logs the previous subject out, so re-login the actor afterwards. */
+    private static boolean permitted(String principal, String verb, NVEntity resource) {
+        Subject s = login(principal);
+        return s.isPermitted(nve(s, verb, resource.getGUID()));
+    }
+
+    @Test
+    public void shareRules_ownerChangesShareInPlace_ownerOnly() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
+        PropertyDAO x = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
+        long keys = keyRowCount();
+        try {
+            dsm.setEnforcePermissions(true);
+            login(pa);
+            PermissionGrant share = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
+            PermissionGrant catalog = dsm.addPermissionGrant(c, update, mapOf(x));
+
+            assertTrue(permitted(pb, "read", x));
+            assertFalse(permitted(pb, "update", x));
+            // the grantee cannot change its own share, nor can a stranger, nor nobody
+            login(pb);
+            assertThrows(AccessSecurityException.class, () -> dsm.updatePermissionGrant(share, "resource:read,update"), "grantee is not the owner");
+            login(pc);
+            assertThrows(AccessSecurityException.class, () -> dsm.updatePermissionGrant(share, "resource:read,update"), "C is not the owner");
+            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.updatePermissionGrant(share, "resource:read,update"), "nobody bound");
+            assertFalse(permitted(pb, "update", x), "nothing changed");
+
+            login(pa);
+            PermissionGrant changed = dsm.updatePermissionGrant(share, " Resource:Update, read ");
+            assertEquals(share.getGUID(), changed.getGUID(), "changed in place");
+            assertEquals("resource:update,read", changed.getPermissionToken(), "normalized");
+            assertEquals(b.getGUID(), changed.getSubjectGUID());
+            assertEquals(a.getGUID(), changed.getBrokerGUID(), "grantor kept");
+            assertEquals(x.getGUID(), changed.getResourceMap().getResourceGUID());
+            assertEquals(1, inlinedSharesOf(b, x), "still one share");
+            assertTrue(permitted(pb, "update", x), "the grantee's cached permissions follow the change");
+            assertTrue(permitted(pb, "read", x));
+
+            login(pa);
+            PermissionGrant back = dsm.updatePermissionGrant(changed, "resource:read");
+            assertEquals(share.getGUID(), back.getGUID());
+            assertFalse(permitted(pb, "update", x), "update taken back");
+            assertTrue(permitted(pb, "read", x));
+
+            // invalid tokens and non-shares are refused
+            login(pa);
+            assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(share, "resource:create"));
+            assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(share, "doc:read"));
+            assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(share, ""));
+            assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(catalog, "resource:read"), "a catalog-scoped grant is not a share");
+            PermissionGrant unknown = new PermissionGrant();
+            unknown.setGUID(UUID.randomUUID().toString());
+            assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(unknown, "resource:read"));
+            assertEquals(keys, keyRowCount(), "no key row touched");
+        } finally {
+            cleanupShareTest(new PropertyDAO[]{x}, a, b, c);
+            dsm.deletePermission(update);
+        }
+    }
+
+    @Test
+    public void shareRules_nonOwnerSharerGivesReadOrReadShareOnly_andNeverChangesAnExistingShare() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal(), pe = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd), e = newSubject(pe);
+        PropertyDAO x = newResource(a);
+        long keys = keyRowCount();
+        try {
+            dsm.setEnforcePermissions(true);
+            login(pa);
+            dsm.addPermissionGrant(b, mapOf(x), "resource:read,update,share");
+
+            login(pb);
+            PermissionGrant bToC = dsm.addPermissionGrant(c, mapOf(x), "resource:read");
+            assertEquals(b.getGUID(), bToC.getBrokerGUID());
+            PermissionGrant bToD = dsm.addPermissionGrant(d, mapOf(x), "resource:read,share");
+            assertEquals("resource:read,share", bToD.getPermissionToken());
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(e, mapOf(x), "resource:read,update"), "B is not the owner: no update");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(e, mapOf(x), "resource:delete"), "B is not the owner: no delete");
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(e, mapOf(x), "resource:read,share,update"), "not even with share");
+            assertEquals(0, dsm.getPermissionGrants(e.getGUID()).length);
+
+            // C holds read only: C may not share at all
+            login(pc);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(e, mapOf(x), "resource:read"), "no share verb");
+
+            // D holds read,share: D may share with E, but B's existing share is the owner's to change
+            login(pd);
+            PermissionGrant dToE = dsm.addPermissionGrant(e, mapOf(x), "resource:read");
+            assertEquals(d.getGUID(), dToE.getBrokerGUID());
+            assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, mapOf(x), "resource:read,share"), "B already has a share");
+            assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(c, mapOf(x), "resource:read,share"), "C already has a share");
+            assertEquals(1, inlinedSharesOf(b, x));
+            assertEquals(1, inlinedSharesOf(c, x));
+
+            // the owner itself is held to one share per grantee too: it changes B's share in place instead
+            login(pa);
+            assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, mapOf(x), "resource:read"));
+            assertEquals(keys, keyRowCount(), "no key row touched");
+        } finally {
+            cleanupShareTest(new PropertyDAO[]{x}, a, b, c, d, e);
+        }
+    }
+
+    @Test
+    public void shareRules_revokeCascadesToWhatTheGranteeIssued() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd);
+        PropertyDAO x = newResource(a), y = newResource(a);
+        PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
+        long keys = keyRowCount();
+        try {
+            dsm.setEnforcePermissions(true);
+            login(pa);
+            PermissionGrant aToB = dsm.addPermissionGrant(b, mapOf(x), "resource:read,update,share");
+            PermissionGrant aToBonY = dsm.addPermissionGrant(b, mapOf(y), "resource:read");
+            login(pb);
+            PermissionGrant bToC = dsm.addPermissionGrant(c, mapOf(x), "resource:read,share");
+            PermissionGrant bToCcatalog = dsm.addPermissionGrant(c, update, mapOf(x)); // catalog-scoped: left alone by the cascade
+            login(pc);
+            PermissionGrant cToD = dsm.addPermissionGrant(d, mapOf(x), "resource:read");
+            assertTrue(permitted(pd, "read", x));
+            assertTrue(permitted(pc, "read", x));
+            assertTrue(permitted(pb, "read", x));
+            assertEquals(4, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+
+            // the grantor of C's share revokes it: D's goes with it, B's stays
+            login(pb);
+            assertTrue(dsm.deletePermissionGrant(bToC));
+            assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, cToD.getGUID()).isEmpty(), "C->D revoked with B->C");
+            assertFalse(mapRowExists(cToD.getResourceMap().getGUID()), "and its map row");
+            assertFalse(mapRowExists(bToC.getResourceMap().getGUID()));
+            assertFalse(permitted(pc, "read", x), "C evicted");
+            assertFalse(permitted(pd, "read", x), "D evicted");
+            assertTrue(permitted(pb, "read", x), "B untouched");
+            assertFalse(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, bToCcatalog.getGUID()).isEmpty(), "catalog-scoped grant left alone");
+            assertTrue(permitted(pc, "update", x), "C keeps its catalog-scoped update");
+
+            // rebuild the chain, then the owner revokes B: B, C and D go in one call
+            login(pb);
+            bToC = dsm.addPermissionGrant(c, mapOf(x), "resource:read,share");
+            login(pc);
+            cToD = dsm.addPermissionGrant(d, mapOf(x), "resource:read");
+            assertTrue(permitted(pd, "read", x));
+            login(pa);
+            assertTrue(dsm.deletePermissionGrant(aToB));
+            for (PermissionGrant gone : new PermissionGrant[]{aToB, bToC, cToD}) {
+                assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, gone.getGUID()).isEmpty(), "revoked: " + gone.getPermissionToken());
+                assertFalse(mapRowExists(gone.getResourceMap().getGUID()));
+            }
+            assertFalse(permitted(pb, "read", x));
+            assertFalse(permitted(pc, "read", x));
+            assertFalse(permitted(pd, "read", x));
+            assertEquals(1, dsm.getPermissionGrantsByResource(x.getGUID()).length, "only the catalog-scoped grant remains");
+            assertFalse(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, aToBonY.getGUID()).isEmpty(), "B's share on another resource untouched");
+            assertTrue(permitted(pb, "read", y));
+            assertEquals(keys, keyRowCount(), "no key row touched");
+        } finally {
+            cleanupShareTest(new PropertyDAO[]{x, y}, a, b, c, d);
+            dsm.deletePermission(update);
+        }
+    }
+
+    @Test
+    public void shareRules_takingShareAwayCascades_granteeKeepsReducedShare() {
+        String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal(), pe = uniquePrincipal();
+        SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd), e = newSubject(pe);
+        PropertyDAO x = newResource(a);
+        long keys = keyRowCount();
+        try {
+            dsm.setEnforcePermissions(true);
+            login(pa);
+            PermissionGrant aToB = dsm.addPermissionGrant(b, mapOf(x), "resource:read,update,share");
+            login(pb);
+            PermissionGrant bToC = dsm.addPermissionGrant(c, mapOf(x), "resource:read,share");
+            login(pc);
+            PermissionGrant cToD = dsm.addPermissionGrant(d, mapOf(x), "resource:read");
+            assertTrue(permitted(pd, "read", x));
+            assertTrue(permitted(pb, "update", x));
+
+            // A keeps B's update but takes share away: C and D go, B keeps read,update
+            login(pa);
+            PermissionGrant reduced = dsm.updatePermissionGrant(aToB, "resource:read,update");
+            assertEquals(aToB.getGUID(), reduced.getGUID());
+            assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, bToC.getGUID()).isEmpty(), "B->C revoked");
+            assertTrue(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, cToD.getGUID()).isEmpty(), "C->D revoked");
+            assertFalse(mapRowExists(bToC.getResourceMap().getGUID()));
+            assertFalse(mapRowExists(cToD.getResourceMap().getGUID()));
+            assertFalse(permitted(pc, "read", x));
+            assertFalse(permitted(pd, "read", x));
+            assertTrue(permitted(pb, "read", x), "B keeps its reduced share");
+            assertTrue(permitted(pb, "update", x));
+            assertFalse(permitted(pb, "share", x));
+            assertEquals(1, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+            login(pb);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(e, mapOf(x), "resource:read"), "B can no longer share");
+
+            // a change that keeps share cascades nothing
+            login(pa);
+            dsm.updatePermissionGrant(aToB, "resource:read,share");
+            login(pb);
+            PermissionGrant bToE = dsm.addPermissionGrant(e, mapOf(x), "resource:read");
+            login(pa);
+            dsm.updatePermissionGrant(aToB, "resource:read,update,share");
+            assertFalse(sys.searchByID(PermissionGrant.NVC_PERMISSION_GRANT, bToE.getGUID()).isEmpty(), "share kept: nothing cascaded");
+            assertEquals(2, dsm.getPermissionGrantsByResource(x.getGUID()).length);
+            assertTrue(permitted(pe, "read", x));
+            assertEquals(keys, keyRowCount(), "no key row touched");
+        } finally {
+            cleanupShareTest(new PropertyDAO[]{x}, a, b, c, d, e);
+        }
+    }
+
     @Test
     public void share_flattenerSkipsGrantWithMissingCatalogRow() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();

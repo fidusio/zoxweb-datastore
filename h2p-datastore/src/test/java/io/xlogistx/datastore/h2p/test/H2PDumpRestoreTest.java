@@ -375,25 +375,31 @@ public class H2PDumpRestoreTest {
             assertEquals(Long.valueOf(2), dumpStats.getValue("file_versions"));
             assertTrue(zip.length > 2 && zip[0] == 'P' && zip[1] == 'K', "must be a zip archive");
 
-            // Container layout: dump.jsonl first (entry pointers, no base64), then the raw content.
+            // Container layout: dump.jsonl first (entry pointers, no base64), README.TXT, then the raw content.
             java.util.List<String> entries = new java.util.ArrayList<>();
             String jsonl = null;
+            String readme = null;
             try (java.util.zip.ZipInputStream zis =
                          new java.util.zip.ZipInputStream(new ByteArrayInputStream(zip))) {
                 java.util.zip.ZipEntry e;
                 while ((e = zis.getNextEntry()) != null) {
                     entries.add(e.getName());
-                    if ("dump.jsonl".equals(e.getName())) {
+                    if ("dump.jsonl".equals(e.getName()) || "README.TXT".equals(e.getName())) {
                         ByteArrayOutputStream sb = new ByteArrayOutputStream();
                         byte[] buf = new byte[8192];
                         int n;
                         while ((n = zis.read(buf)) > 0) sb.write(buf, 0, n);
-                        jsonl = sb.toString("UTF-8");
+                        if ("dump.jsonl".equals(e.getName())) jsonl = sb.toString("UTF-8");
+                        else readme = sb.toString("UTF-8");
                     }
                 }
             }
             assertEquals("dump.jsonl", entries.get(0), "JSONL entry must lead the archive");
-            assertEquals(3, entries.size(), "dump.jsonl + one content entry per stored version");
+            assertEquals("README.TXT", entries.get(1), "the README follows the JSONL entry");
+            assertEquals(4, entries.size(), "dump.jsonl + README.TXT + one content entry per stored version");
+            assertNotNull(readme);
+            assertTrue(readme.contains("dump.jsonl") && readme.contains("file_version"),
+                    "the README must explain the archive");
             assertNotNull(jsonl);
             assertTrue(jsonl.contains("\"entry\":\"files/" + fid.getGUID() + "/1\""));
             assertFalse(jsonl.contains("\"content\""), "zip dump must not inline base64 content");

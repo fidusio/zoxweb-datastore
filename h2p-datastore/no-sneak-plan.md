@@ -22,6 +22,23 @@ Status: **plan only, 2026-10-03. Nothing in no-sneak has been changed, compiled 
 > (D1) and nothing creates the app `xlogistx.com-nosneak` in a real store yet (D4); the plan below
 > is otherwise unchanged.
 
+> **Update 2026-10-05, evening (built, in the no-sneak repo, uncommitted).** Phases 3–6 are done
+> on the decisions below: `no-sneak-app/.../NoSneakStore` opens the store through a vault next to
+> the database (`no-sneak.store`: master key + `db.*`, its own password — D1), `Main` takes
+> `ds.location` + `ds.store-password`, the setup screen creates the vault on a first run;
+> `Session` logs a Shiro subject in unbound, scoped to `xlogistx.com-nosneak` (the four lines of
+> the missing `loginUnboundSubject(principal, password, domain, app)` live there — Phase 2 is
+> still open upstream), and exposes a `Proxy` store view that binds it per call with
+> `SubjectSwap`; `loginAPIKey` and the login screen's API-key card are gone; a vendor's domain/app
+> on an external key is metadata (`vendor-domain`/`vendor-app`), never the key's `app_id` — the
+> 3 failing cases are closed by that. Taken on the maintainer's behalf: D3 = direct
+> `createSubjectID` (no registrar, no `app_user` grant), D4 = no super-admin in a desktop vault,
+> D5 = internal keys left as they are, D7 = BCrypt kept, D8 = a temp vault + encrypted H2 file
+> per test (`DataStoreSetupFlowTest`: two users, pool threads, isolation, logout, wrong vault
+> password, reopen), D9 = Mongo path untouched, D6 = no migration. no-sneak-app **78/78**.
+> Record: `no-sneak-app/CLAUDE.md` (2026-10-05 block) and `PENDING-ISSUES.md` → Status check
+> (2026-10-05) in the no-sneak repo.
+
 ## 1. Goal
 
 no-sneak logs a person in as a Shiro subject through `ShiroDSDomainSecurityManager`, on a store

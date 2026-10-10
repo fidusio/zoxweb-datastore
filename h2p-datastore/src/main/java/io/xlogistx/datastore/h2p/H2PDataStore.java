@@ -3736,9 +3736,10 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
      * Dumps the whole store as a <b>zip archive</b>: entry {@code dump.jsonl} holds the same JSONL
      * stream as {@link #dump(OutputStream, boolean, NVConfigEntity...)}, but file content is stored
      * as raw {@code files/<file_guid>/<version>} entries (deflate-compressed by the zip layer)
-     * instead of inline base64 — the right form when file content dominates the store. Restore the
-     * archive with {@link #restore} — it auto-detects the container. The stream is finalized
-     * ({@code finish()}) but not closed.
+     * instead of inline base64 — the right form when file content dominates the store. A
+     * {@code README.TXT} entry explains how to read the archive. Restore the archive with
+     * {@link #restore} — it auto-detects the container. The stream is finalized ({@code finish()})
+     * but not closed.
      *
      * @return the same per-kind counts as the JSONL dump
      */

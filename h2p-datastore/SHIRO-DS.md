@@ -11,14 +11,14 @@
 > **Where the code lives since 2026-10-04.** `ShiroDSDomainSecurityManager`, `DSAuthorizingRealm`,
 > `GrantFlattener` and `SecuritySetup` were moved to the io-xlogistx repo, module `shiro` (artifact
 > `xlogistx-shiro`), **same package `io.xlogistx.shiro.ds`**. `tools.SecurityAdminTool` followed on 2026-10-05, to the
-> io-xlogistx module `opsec` (artifact `xlogistx-opsec`), same package `io.xlogistx.shiro.ds.tools`:
+> io-xlogistx module `opsec` (artifact `xlogistx-opsec`), package `io.xlogistx.opsec.tools.ds` (since 2026-10-08; `io.xlogistx.shiro.ds.tools` before):
 > it needs opsec's `SecretStore`, and `opsec` depends on `shiro`, not the other way round. This
 > module now holds no main Java class: only the integration tests (`src/test`), the test keystores
 > and `shiro-ds.ini`. Everything below still describes those four classes; read their paths as
 > `io-xlogistx/shiro/src/main/java/io/xlogistx/shiro/ds/`.
 
-Second `DomainSecurityManager` implementation (the first is `DomainSecurityManagerDefault` in
-zoxweb-core): persistence through **any** `APIDataStore`, authentication / authorization / caching
+The `DomainSecurityManager` implementation (core's `DomainSecurityManagerDefault` was deleted on
+2026-10-05): persistence through **any** `APIDataStore`, authentication / authorization / caching
 through **Apache Shiro 1.13**. Package `io.xlogistx.shiro.ds`, JDK 25 (same as h2p-datastore, which
 the tests run against). Design page (architecture, decisions, phases):
 https://claude.ai/code/artifact/61b80405-b4b9-48f6-a1b1-dd915e119f5e
@@ -153,7 +153,7 @@ Every principal goes through `SecConst.SubjectIDFilter.SINGLETON.validate` (zoxw
 2026-09-02): trimmed, lower-cased, invisible characters rejected, non-email handles must be ≥ 8
 chars (emails bypass the length rule). Writes (`createSubjectID`, `addPrincipalID`) throw
 `SecurityException("Invalid principal ID: <filter reason>")`; lookups treat a rejected ID as unknown
-(`null` / empty array / login failure) — same as `DomainSecurityManagerDefault.resolvePrincipal`.
+(`null` / empty array / login failure).
 `DomainUsernamePasswordToken` lower-cases the username too, and the realm passes the token username
 as the primary principal so `CredentialsInfoMatcher`'s principal-equality check holds. Mixed-case rows
 created before the filter existed will not match.
@@ -169,12 +169,12 @@ Used by `createSubjectID`, `updateCredential` (both paths), `deletePrincipalID`,
 Stores without transactions (mock, or defaults left as no-ops) still work; they lose atomicity and
 the row-lock below.
 
-## Behaviour that differs from DomainSecurityManagerDefault
+## Behaviour notes (written as the differences from core's `DomainSecurityManagerDefault`, deleted 2026-10-05)
 
 - `updateCredential`: GUID path verifies **both** the given entity and the stored row belong to the
   subject (`SecurityException` otherwise; a missing `subject_guid` on the entity is stamped). No-GUID
   path accepts only `CIPassword`, deletes **every** old password row, inserts the new one. Anything
-  else → `IllegalArgumentException` (the default silently ignored it).
+  else → `IllegalArgumentException`.
 - `deletePrincipalID`: inside the transaction, `ds.update(subject)` first (row lock → concurrent
   removals on one subject serialize), then count → delete → recount; `false` when the principal is the
   last one. H2's default `LOCK_TIMEOUT` is 1 s, so the loser of a lock race may get an exception
@@ -419,8 +419,9 @@ no wildcard, no instance part; rejects everything else), accessors renamed
 |---|---|---|
 | `addPermissionGrant(subject, perm)` | global catalog grant | global `permission:assign:permission` |
 | `addPermissionGrant(subject, perm, ResourceMap)` | catalog grant scoped to one entity; the catalog token must be `resource:<verbs>` (`isInstanceScopable` + `ResourcePermissionTokenFilter`) | caller holds `share` on the resource (owner via self permission, or a share grantee), **or** global assign |
-| `addPermissionGrant(subject, ResourceMap, token)` | inlined share; token validated by the filter | caller holds `share` on the resource (owner, or a grantee whose share carries `share`) |
-| `deletePermissionGrant(grant)` | reloads by GUID, deletes grant **then its map row** | global `permission:remove:permission`, **or** caller is the grantor (`broker_guid`), **or** holds `share` on the resource |
+| `addPermissionGrant(subject, ResourceMap, token)` | inlined share; token validated by the filter; **one share per grantee per resource** (a second one → `IllegalArgumentException` naming the existing share, inside the transaction, enforcement or not) | caller holds `share` on the resource (owner, or a grantee whose share carries `share`); a caller who is **not the owner** may give only `read` or `read,share` |
+| `updatePermissionGrant(grant, token)` (2026-10-06) | inlined share only (catalog-scoped → `IllegalArgumentException`); reloads by GUID, rewrites `permission_token` in place (same GUID, grantee, map, `broker_guid`), evicts the grantee; if the new token drops `share` → cascade (below) in the same transaction | **owner only** through the owner token `resource:<owner>:<caller>:share` (a grantee's `share` does not qualify) |
+| `deletePermissionGrant(grant)` | reloads by GUID, deletes grant **then its map row**; for an inlined share also the **cascade**: every inlined share on the resource whose `broker_guid` is the grantee, recursively, in the same transaction, all grantees evicted | global `permission:remove:permission`, **or** caller is the grantor (`broker_guid`), **or** holds `share` on the resource |
 | `getPermissionGrantsByResource(guid)` | two queries: `resource_map` rows by `resource_guid`, then grants `resource_map IN (…)` | none (read) |
 | `deletePermissionGrantsByResource(guid)` | all of the above in one transaction | per grant as for delete |
 
@@ -436,6 +437,28 @@ keeps grantee scope (grants *received*) and now also removes their map rows; gra
 `delete(grant, true)` (it would chase `app_id` too); the H2P formatter now binds a String/NVEntity
 criterion on an `ENTITY_REF` column as `uuid` (needed for the `IN` query on PostgreSQL).
 Store requirement added: grants must load `resource_map` eagerly (H2P does), otherwise map rows leak.
+
+**Share rules (built 2026-10-06; user decisions of that day, plan `sharing-gaps-plan.md`).** They
+apply to **inlined shares only**; catalog-scoped grants (`permission_guid` + map) keep the behaviour
+above, are not counted by the uniqueness check and are left alone by the cascade. With A the owner
+of X: (1) one share per grantee per resource; (2) the owner changes a share in place
+(`updatePermissionGrant`) and the grantee's cache follows; (3) an existing share is changed by the
+owner only — a `share` holder who shares with someone who already has a share is refused; (4) only
+a `share` holder may share; (5) a sharer who is not the owner gives only `read` or `read,share`
+(`update`/`delete` come from the owner); (6) revoking a share revokes what the grantee issued on
+the resource, recursively (`broker_guid` chain), one transaction; (7) a change that drops `share`
+cascades the same way, the grantee keeps its reduced share; (8) no `encapsulated_key` row is
+touched by any of it — the grantee still reads through the owner's key chain in the system
+context. Rules 1, 6, 7 are structural (enforcement on or off); 3, 4, 5 and the owner-only change
+are caller rules and, like every `enforce…`, no-ops with enforcement off (nobody bound,
+`broker_guid` null, so the cascade finds nothing). Manager internals: `ownsResource` (owner half of
+`holdsResource`), `verbsOf`, `enforceSharerVerbs`, `enforceOwnerChange`, `inlinedShareOf`,
+`revokeIssuedShares(resource, broker, evicted, visited)` (the `visited` set guards cycles in
+pre-rule data). `deletePermissionGrantsByResource` is unchanged (it already deletes every grant on
+the resource). Core: `DomainSecurityManager.updatePermissionGrant(PermissionGrant, String)` added
+(abstract, like the other grant methods; the Shiro manager is the only implementor).
+Tests `shareRules_*` (5) in `ShiroDSDomainSecurityManagerDBTest`, enforcement on, logged-in
+subjects, key-row count before/after, clean up their subjects, resources and grants.
 Not done (still pending): ABAC conditions (A1), `SecurityModel` rework/seeder (item 20).
 
 ## What a store must provide (for "works with any APIDataStore")
@@ -859,7 +882,7 @@ grant. Tests: `appGrant_loginScopeSelectsGrants_andRevokeAppRemovesThem`,
 (lax-2/testdb, 2026-09-18), which proves the `app_id` reference column on the three grant tables.
 
 **Previously pending (now done):** run
-`java -cp "$(cat cp-shiro.txt)" io.xlogistx.shiro.ds.tools.SecurityAdminTool command=bootstrap-super-admin db.url=jdbc:postgresql://lax-2.xlogistx.io:5432/testdb db.user=dbuser db.password=… principal.id=… password=…`
+`java -cp "$(cat cp-shiro.txt)" io.xlogistx.opsec.tools.ds.SecurityAdminTool command=bootstrap-super-admin db.url=jdbc:postgresql://lax-2.xlogistx.io:5432/testdb db.user=dbuser db.password=… principal.id=… password=…`
 from `.claude/test-runner` (the super-admin password was not supplied yet), expect `wildcard=verified`, rerun without `password=` to confirm idempotency, then `command=list-catalog`.
 
 **2026-09-29 (resource permission model + key chain root; plan `spicy-forging-russell.md`)** —
@@ -1445,7 +1468,7 @@ catalog 21/21, manager 72/72; `h2persist.store` — catalog 21/21, manager 72/72
 `test.store` (PostgreSQL, lax-2 `testdb`) — catalog 21/21, manager 72/72, swap 2/2. Tool
 `list-apps` through `test.store` and through `h2persist.store`: exit 0, and `-verbose:class`
 shows the class loaded from the opsec jar. The start command is unchanged
-(`java -cp "$(cat cp-shiro.txt)" io.xlogistx.shiro.ds.tools.SecurityAdminTool …`). The opsec
+(`java -cp "$(cat cp-shiro.txt)" io.xlogistx.opsec.tools.ds.SecurityAdminTool …`). The opsec
 `SecretStoreTest` was not rerun. The rows were not checked after these runs. Nothing committed.
 
 **2026-10-05 (module `xlogistx-shiro-ds` removed; its content is in `h2p-datastore`)** — user:
@@ -1508,3 +1531,93 @@ were not kept. The rows were not checked after the run. Nothing committed.
 `xlogistx.com-nosneak` and the three open test cases, and `CLAUDE.md` (session log 2026-10-05) for
 the deletion of core's `DomainSecurityManagerDefault` and the port of
 `H2PDomainSecurityManagerDBTest` to the Shiro manager. Nothing committed.
+
+**2026-10-06 (share rules built; plan `sharing-gaps-plan.md`)** — the user's dictation before the
+restart ("after the restart you implement the new recommendations"), with two decisions taken at
+the start of the session: catalog-scoped grants stay as they are (the rules are for inlined shares
+only), and the structural/caller split plus the inlined-only cascade were confirmed. Built in
+io-xlogistx `ShiroDSDomainSecurityManager` (uniqueness, non-owner verb limit, `updatePermissionGrant`,
+cascade on revoke and on a dropped `share`) and zoxweb-core `DomainSecurityManager`
+(`updatePermissionGrant` declared); see "Instance grants and sharing" above. Five `shareRules_*`
+tests added here. Builds: zoxweb-core and `xlogistx-shiro` installed offline (`-Dgpg.skip=true`,
+tests skipped; the Javadoc report error is pre-existing). Runs through the offline runner with the
+vault password given by the user: `ShiroDSDomainSecurityManagerDBTest` 77/77 on `h2mem.store`,
+77/77 on `h2persist.store` (from the `h2p-datastore` directory), 77/77 on `test.store`
+(PostgreSQL lax-2 `testdb`); `SecurityCatalogDBTest` 21/21 on h2mem and testdb;
+`SubjectSwapSignUpDBTest` 2/2 on testdb (on h2mem it stops at its own precondition, the database
+is not bootstrapped — an in-memory database never is). Rows checked on testdb after the run with
+`.claude/test-runner/rowcheck` (`RowCheck`, read-only JDBC through the vault): 0 orphan map rows,
+0 maps pointing at a deleted `property_dao`, 0 grants with a missing subject; the 72 inlined shares
+present were left by the older `share_*` tests, which do not clean up (a pre-existing habit, not
+touched). Nothing committed.
+
+**2026-10-07 (fresh `testdb` on lax-2, set up only)** — the user recreated `testdb` empty (0 tables)
+and asked for the setup, not the tests. Run through `test.store` with the vault password:
+`SecurityAdminTool command=bootstrap-super-admin` (exit 0: schema created, `super-admin@xlogistx.io`
+created with the vault's initial password, login and wildcard verified, common app + registrar +
+catalog 24/7/4 created) and `command=create-app app.id=xlogistx.io-swapsignup` (exit 0). Rows
+after (read-only check): 13 tables, 3 subjects (super-admin, `registrar.xlogistx.com-common`,
+`registrar.xlogistx.io-swapsignup`), 2 apps, 38 permissions / 12 roles / 7 role groups, 3 role
+grants, 5 `encapsulated_key` rows (3 subject keys + the 2 registrar key rows), 2 API keys; no
+`permission_grant` / `resource_map` table yet (they appear on the first grant). The two registrar
+secrets were printed once by the tool and handed to the user in chat, not kept in any file. The
+rows the older `share_*` tests used to leave are gone with the old database. No suite was run on
+the new database. Nothing committed.
+
+**2026-10-08 (questions on testdb; `SecurityAdminTool` repackaged by the user; stale references
+removed)** — Read-only JDBC check of lax-2 `testdb` for the user's question about the 38
+`permission_info` rows: 24 belong to `xlogistx.com-common` (the full `SecurityModel.Permission`
+catalog seeded by `bootstrap-super-admin`) and 14 to `xlogistx.io-swapsignup` (the starter set
+seeded by `create-app`: app_admin's permissions, which is also the union of every non platform-only
+role). The 10 that exist only in the common app are `*`, `subject:delete`, `app:create`,
+`app:delete` and the six `resource:*` wildcards. `swapsignup` explained: the fixture app that
+`SubjectSwapSignUpDBTest` requires; on the current database only its registrar exists, the test
+has not run (3 subjects, 2 API keys, 3 role grants). Not deleted — the user asked what it was, no
+deletion was dictated. Then the user moved `SecurityAdminTool` to package
+`io.xlogistx.opsec.tools.ds` (io-xlogistx `opsec`, file
+`opsec/src/main/java/io/xlogistx/opsec/tools/ds/SecurityAdminTool.java`) and fixed the two h2p test
+imports (`SecurityCatalogDBTest`, `TestVault`); opsec jar reinstalled by the user at 16:39; h2p
+`test-compile` offline exit 0. On instruction the old FQN was replaced in `SecuritySetup` javadoc,
+`.claude/test-runner/README.md` and this file (lines 14, 885, 1471). Then, on "DomainSecurityManagerDefault
+was deleted remove stale references": descriptive text reworded in `ShiroDSDomainSecurityManager`
+javadoc (Persistence paragraph), this file (intro, principal-filter paragraph, the "Behaviour notes"
+section header and one aside) and `H2PDomainSecurityManagerDBTest` javadoc; session-log entries,
+`no-sneak-plan.md`, the no-sneak repo comments and the standby `xlogistx-datastore` module left as
+they are. No suite run, no DB change, nothing committed.
+
+**2026-10-09 (`H2PSetup` built on the user's dictation)** — "Create H2PSetup a CLI app that create
+SecretStore interactively via the command line, based on the build database url it will create H2
+database file or connect to a Postgres db setup the db and create a shiro.ini file that will be
+used later to bootstrap the application." Built `io.xlogistx.datastore.h2p.H2PSetup` in
+`h2p-datastore` main (the module's first compile-time use of opsec and shiro; both are parent-pom
+dependencies). `key=value` arguments in the style of the other tools; every missing value is asked
+on the console (secrets without echo, twice where it matters); without a console a value that has
+a default takes it and one without stops the run with exit 1. Steps: (1) a new `SecretStore`
+(never overwritten) holding every `StoreParam`: a generated AES `master-key`, `super-admin-id`,
+`super-admin-password`, `db.url`, `db.user`, `db.password` and, for an encrypted H2 file,
+`db.enc-password`; a password left empty is generated (32 letters/digits) and lives only in the
+vault. (2) The URL is built through `H2PParam.dataStoreURI` from `db.path`/`db.name`/`db.encrypt`
+(H2, `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]`) or
+`db.host=host[:port]`/`db.name` (PostgreSQL, no port = 5432), or taken as given with `db.url=`; refused before
+anything is written: in-memory and tcp H2, other engines, a PostgreSQL URL without database, an
+implicitly relative H2 path (H2 itself refuses `data/x`; a typed location is normalised to
+`./data/x`). Prompt order fixed by the user the same day ("you start with db type h2 or postgres,
+for h2 you ask about the file location, for postgres host:port if port no setup you use the default
+port"): database type, H2 file location / PostgreSQL `host:port` + database, credentials,
+super-admin, store, INI; `db.port` was replaced by `host[:port]` in `db.host`. Then, on "you should
+also ask about the db name as well", H2 asks the file location (`db.path`, a directory) and the
+database name (`db.name`) as two answers (a short-lived single `db.file` answer was dropped).
+(2b) On "you should also ask for the default app-id" (answers: create the app, store it, write it into shiro.ini; optional): an optional `app.id=<domain>-<app>` question after the super-admin; the id is validated with `AppIDDefault.create`, the common app refused; after the bootstrap the app is created through `SecurityAdminTool create-app` (starter catalog, registrar key printed once), the id is the store's `app-id` text entry (not a `StoreParam`; opsec untouched) and the `[xlogistx] app.id` line of the INI, a section Shiro ignores and the application reads with `Ini.getSection("xlogistx")`. (2c) On "add read mode where you ingest the vault password the vault file name and you expose only the super-admin id and the db url": `mode=read` (default `setup`) opens the store named by `store=` with `store.password=` or a console prompt and prints exactly `super-admin-id=<id>` and `db.url=<url>`; wrong password exit 2, missing store or unknown mode exit 1. (3) The database set-up is `SecurityAdminTool.run(... command=bootstrap-super-admin)` (user, same day: "for the h2 file if does not exist you have to create it" — the tool now says before the step whether the `.mv.db` file exists or will be created, and verifies afterwards that it does)
+through the new vault — the one sanctioned bootstrap path: it creates the H2 file or connects to
+PostgreSQL, seeds the catalog, creates the super-admin with the vault's initial password, the
+common app and its registrar (key printed once by that tool). On failure the vault is kept (its
+master key may already wrap rows) and the rerun command is printed. (4) `shiro.ini` written beside
+the vault (or at `shiro.ini=`), never overwritten, same content as the test `shiro-ds.ini` (realm,
+`CredentialsInfoMatcher`, cache manager, session manager; no data store, no super-admin id, per the
+user's rules), then loaded once through `ShiroUtil.loadSecurityManager` as a check. Verified:
+scratch run on an encrypted H2 file (vault with 7 entries, catalog 24/7/4, `login=verified
+wildcard=verified`, `SecurityAdminTool list-apps` from a fresh JVM through the new vault), the
+refusal paths create nothing; new `H2PSetupTest` (`io.xlogistx.datastore.h2p.test`) 4/4 offline;
+`h2p-datastore` reinstalled (the Javadoc stack trace during install is the pre-existing one on
+`H2PDataStore.dump`, build passes). PostgreSQL path not run (nothing dictated for testdb). Nothing
+committed.

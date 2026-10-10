@@ -105,6 +105,85 @@ final class H2PDumpRestore {
     // zip container layout
     static final String JSONL_ENTRY = "dump.jsonl";
     static final String FILES_PREFIX = "files/";
+    static final String README_ENTRY = "README.TXT";
+
+    /** Text of the {@value #README_ENTRY} zip entry: how to read the archive without this code. */
+    static final String README =
+            FORMAT + " - format version " + FORMAT_VERSION + "\n"
+            + "================================\n"
+            + "\n"
+            + "This archive is a dump of an h2p datastore, written by H2PDumpRestore.\n"
+            + "\n"
+            + "CONTENTS\n"
+            + "  " + JSONL_ENTRY + "                   every record of the store, as JSON\n"
+            + "  " + README_ENTRY + "                   this file\n"
+            + "  " + FILES_PREFIX + "<file_guid>/<version>  the stored bytes of one version of one file\n"
+            + "                               (absent when the dump was made without files)\n"
+            + "\n"
+            + "HOW TO READ " + JSONL_ENTRY + "\n"
+            + "  " + JSONL_ENTRY + " is UTF-8 text in the JSON Lines format: each line is one\n"
+            + "  complete JSON object. The file as a whole is NOT one JSON document, so do\n"
+            + "  not hand it to a JSON parser in one piece: read it line by line and parse\n"
+            + "  each line on its own.\n"
+            + "\n"
+            + "  Every line has the same shape:\n"
+            + "\n"
+            + "    {\"k\":\"<kind>\",\"v\":{...}}\n"
+            + "\n"
+            + "    k    the kind of record (see RECORD KINDS)\n"
+            + "    v    the record itself\n"
+            + "    enc  only on some entity lines (see ENCRYPTED VALUES)\n"
+            + "\n"
+            + "RECORD KINDS\n"
+            + "  header        The first line. \"format\" is \"" + FORMAT + "\", \"version\" the\n"
+            + "                format version, \"ts\" the time of the dump (milliseconds since\n"
+            + "                1970-01-01 UTC), \"ds_type\" the database engine it came from.\n"
+            + "\n"
+            + "  entity        One stored object. \"class_type\" is its Java class, \"guid\" its\n"
+            + "                identity. An object that references other objects carries\n"
+            + "                them inline, in full; an object referenced from several places\n"
+            + "                therefore appears several times, always with the same guid.\n"
+            + "                Objects whose references form a cycle cannot be written as\n"
+            + "                JSON and are not in the dump.\n"
+            + "\n"
+            + "  dem           One dynamic enum map (a named set of values).\n"
+            + "\n"
+            + "  seq           One sequence: \"name\", \"value\" (its current value), \"increment\".\n"
+            + "\n"
+            + "  file_version  One version of one file: \"file_guid\" (the guid of the file_info\n"
+            + "                entity that describes the file), \"version\", \"length\" (bytes of\n"
+            + "                the clear content), \"created_ts\" (milliseconds since 1970-01-01\n"
+            + "                UTC), \"enc\" (0 = stored in clear, 1 = stored encrypted) and\n"
+            + "                \"entry\" (the name of the entry of this archive that holds the\n"
+            + "                bytes of that version).\n"
+            + "\n"
+            + "  file_head     Which version of a file is the current one: \"file_guid\",\n"
+            + "                \"current_version\".\n"
+            + "\n"
+            + "ENCRYPTED VALUES\n"
+            + "  Attributes that are encrypted in the database are left out of \"v\". Their\n"
+            + "  stored bytes are in \"enc\", beside \"v\": one name per attribute, the value in\n"
+            + "  base64. They are still encrypted. So is a " + FILES_PREFIX + " entry whose file_version\n"
+            + "  record says \"enc\":1. Both can only be opened by restoring the dump into a\n"
+            + "  datastore that uses the same master key.\n"
+            + "\n"
+            + "EXAMPLES (replace dump.zip with the name of this archive)\n"
+            + "  Count the records of each kind, with unzip and jq:\n"
+            + "    unzip -p dump.zip " + JSONL_ENTRY + " | jq -r .k | sort | uniq -c\n"
+            + "\n"
+            + "  Print the entities of one class, with unzip and jq:\n"
+            + "    unzip -p dump.zip " + JSONL_ENTRY + " | jq -c 'select(.k==\"entity\" and .v.class_type==\"<class>\") | .v'\n"
+            + "\n"
+            + "  Read every record, with Python:\n"
+            + "    import json, zipfile\n"
+            + "    with zipfile.ZipFile(\"dump.zip\") as z, z.open(\"" + JSONL_ENTRY + "\") as f:\n"
+            + "        for line in f:\n"
+            + "            record = json.loads(line)\n"
+            + "            print(record[\"k\"], record[\"v\"])\n"
+            + "\n"
+            + "RESTORE\n"
+            + "  H2PDumpRestore restore --store <vault> --in <this archive>\n"
+            + "  The restore reads " + JSONL_ENTRY + " and the " + FILES_PREFIX + " entries; this file is ignored.\n";
 
     private final H2PDataStore ds;
 
@@ -149,9 +228,10 @@ final class H2PDumpRestore {
     /**
      * Zip-container dump: entry {@value #JSONL_ENTRY} holds the JSONL stream (identical to
      * {@link #dumpStore} except {@code file_version} records carry an {@code entry} name instead of
-     * inline base64 content), followed by one raw {@code files/<file_guid>/<version>} entry per
-     * stored file version — content deflated by the zip layer, no base64 inflation. The zip is
-     * {@code finish()}ed but the underlying stream is not closed.
+     * inline base64 content), followed by {@value #README_ENTRY} (how to read the archive) and one
+     * raw {@code files/<file_guid>/<version>} entry per stored file version — content deflated by
+     * the zip layer, no base64 inflation. The zip is {@code finish()}ed but the underlying stream is
+     * not closed.
      */
     NVGenericMap dumpZip(OutputStream out, boolean includeFiles, NVConfigEntity... types) {
         try {
@@ -160,6 +240,10 @@ final class H2PDumpRestore {
             Writer w = new BufferedWriter(new OutputStreamWriter(zos, StandardCharsets.UTF_8));
             NVGenericMap stats = writeStore(w, includeFiles, false, types);
             w.flush(); // flush the writer, never close it — that would close the zip stream
+            zos.closeEntry();
+            // after the JSONL entry, never before it: restore requires dump.jsonl to lead the archive
+            zos.putNextEntry(new ZipEntry(README_ENTRY));
+            zos.write(README.getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
             if (includeFiles) {
                 writeZipContentEntries(zos);
@@ -520,6 +604,7 @@ final class H2PDumpRestore {
             long versions = 0;
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
+                if (README_ENTRY.equals(entry.getName())) continue; // for the human reader, not data
                 JsonObject meta = pending.remove(entry.getName());
                 if (meta == null) {
                     if (H2PDataStore.log.isEnabled()) {
@@ -886,7 +971,7 @@ final class H2PDumpRestore {
             + "\n"
             + "dump options:\n"
             + "  --out <file>              output file; a .zip extension selects the zip container\n"
-            + "                            (dump.jsonl + raw files/* content), anything else JSONL\n"
+            + "                            (dump.jsonl + README.TXT + raw files/* content), anything else JSONL\n"
             + "                            with inline base64 content\n"
             + "  --format zip|jsonl        override the container inferred from the extension\n"
             + "  --types <c1,c2,...>       explicit entity types (Java class names or registered\n"

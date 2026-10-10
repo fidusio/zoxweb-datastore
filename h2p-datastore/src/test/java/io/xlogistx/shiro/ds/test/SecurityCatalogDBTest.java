@@ -1,18 +1,15 @@
 package io.xlogistx.shiro.ds.test;
 
-import io.xlogistx.shiro.ShiroUtil;
 import io.xlogistx.datastore.h2p.H2PDSCreator;
 import io.xlogistx.datastore.h2p.H2PDataStore;
 import io.xlogistx.datastore.h2p.H2PUtil;
 import io.xlogistx.opsec.OPSecUtil;
 import io.xlogistx.opsec.SecretStore;
+import io.xlogistx.opsec.tools.ds.SecurityAdminTool;
+import io.xlogistx.shiro.ShiroUtil;
 import io.xlogistx.shiro.ds.GrantFlattener;
 import io.xlogistx.shiro.ds.SecuritySetup;
 import io.xlogistx.shiro.ds.ShiroDSDomainSecurityManager;
-import io.xlogistx.shiro.ds.tools.SecurityAdminTool;
-import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.config.Ini;
-import org.apache.shiro.env.BasicIniEnvironment;
 import org.apache.shiro.subject.Subject;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -25,17 +22,12 @@ import org.zoxweb.shared.security.*;
 import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.util.BaseSubjectID;
 import org.zoxweb.shared.util.NVGenericMap;
-import org.zoxweb.shared.util.ResourceManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.PrintStream;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 

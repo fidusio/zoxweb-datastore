@@ -29,8 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Integration tests for {@link DomainSecurityManager} backed by the real {@link H2PDataStore}
  * (H2 or PostgreSQL, selected by one JDBC URL).
  * <p>
- * These mirror {@code DomainSecurityManagerDefaultTest} (which runs against a mock store) but
- * exercise the actual SQL persistence path: subjects, principals, credentials, permissions,
+ * These exercise the actual SQL persistence path: subjects, principals, credentials, permissions,
  * roles, role groups, their grants, and transactional rollback.
  * <p>
  * The suite is auto-skipped unless {@code -Dds.url} is set. The URL is parsed with
