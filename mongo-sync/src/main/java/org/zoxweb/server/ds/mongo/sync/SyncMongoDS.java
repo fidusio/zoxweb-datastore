@@ -1041,7 +1041,7 @@ public class SyncMongoDS
         SecurityController securityController = getAPIConfigInfo().getSecurityController();
 
         if (securityController != null)
-            securityController.associateNVEntityToSubjectGUID(nve, null);
+            securityController.associateResourceToSubject(nve, null);
 
         if (SUS.isEmpty(nve.getGUID())) {
             nve.setGUID(IDGs.UUIDV7.genID());
@@ -1573,7 +1573,7 @@ public class SyncMongoDS
             if (getAPIConfigInfo().getSecurityController() != null)
                 getAPIConfigInfo()
                         .getSecurityController()
-                        .associateNVEntityToSubjectGUID(nve, null);
+                        .associateResourceToSubject(nve, null);
 
             if (nve.lookupValue(MetaToken.GUID) == null) {
                 return insert(nve);
@@ -2614,7 +2614,7 @@ public class SyncMongoDS
                     String guid = MongoUtil.ReservedID.GUID.decode(dbObject);//(String) dbObject.get(MetaToken.GUID.getName());
                     String subjectGUID = MongoUtil.ReservedID.SUBJECT_GUID.decode(dbObject);//(String) dbObject.get(MetaToken.SUBJECT_GUID.getName());
                     // check if the user has access to the object
-                    if (guid != null && subjectGUID != null && getAPIConfigInfo().getSecurityController().isNVEntityAccessible(guid, subjectGUID, CRUD.READ)) {
+                    if (guid != null && subjectGUID != null && getAPIConfigInfo().getSecurityController().isResourceAccessible(guid, subjectGUID, CRUD.READ)) {
                         list.add((T) guid);
                     }
                 }

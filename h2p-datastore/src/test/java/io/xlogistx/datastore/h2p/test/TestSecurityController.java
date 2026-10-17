@@ -7,15 +7,10 @@ import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.filters.BytesValueFilter;
 import org.zoxweb.shared.filters.ChainedFilter;
 import org.zoxweb.shared.filters.FilterType;
-import org.zoxweb.shared.security.AccessSecurityException;
-import org.zoxweb.shared.security.CredentialInfo;
-import org.zoxweb.shared.security.SecurityController;
-import org.zoxweb.shared.util.CRUD;
-import org.zoxweb.shared.util.NVBase;
-import org.zoxweb.shared.util.NVConfig;
-import org.zoxweb.shared.util.NVEntity;
-import org.zoxweb.shared.util.NVPair;
 import org.zoxweb.shared.filters.ValueFilter;
+import org.zoxweb.shared.security.AccessSecurityException;
+import org.zoxweb.shared.security.SecurityController;
+import org.zoxweb.shared.util.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -116,13 +111,7 @@ public class TestSecurityController implements SecurityController {
         return ChainedFilter.isFilterSupported(f, FilterType.ENCRYPT_MASK);
     }
 
-    @Override
-    public void validateCredential(CredentialInfo ci, String input) {
-    }
 
-    @Override
-    public void validateCredential(CredentialInfo ci, byte[] input) {
-    }
 
     @Override
     public Object encryptValue(APIDataStore<?, ?> dataStore, NVEntity container, NVConfig nvc, NVBase<?> nvb, byte[] msKey) {
@@ -197,7 +186,7 @@ public class TestSecurityController implements SecurityController {
     }
 
     @Override
-    public void associateNVEntityToSubjectGUID(NVEntity nve, String subjectGUID) {
+    public void associateResourceToSubject(NVEntity nve, String subjectGUID) {
         if (nve.getSubjectGUID() == null) {
             String s = subjectGUID != null ? subjectGUID : currentSubject;
             if (s != null) nve.setSubjectGUID(s);
@@ -205,7 +194,7 @@ public class TestSecurityController implements SecurityController {
     }
 
     @Override
-    public String currentSubjectID() {
+    public String currentPrincipalID() {
         return currentSubject;
     }
 
@@ -225,7 +214,7 @@ public class TestSecurityController implements SecurityController {
     }
 
     @Override
-    public boolean isNVEntityAccessible(String nveRefID, String nveUserID, CRUD... crud) {
+    public boolean isResourceAccessible(String nveRefID, String nveUserID, CRUD... crud) {
         if (crud == null || crud.length == 0) return false;
         for (CRUD c : crud) {
             if (!permitted(nveRefID, nveUserID, c.name().toLowerCase())) return false;

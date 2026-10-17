@@ -1200,7 +1200,7 @@ public class XlogistxMongoDataStore
         SecurityController securityController = getAPIConfigInfo().getSecurityController();
 
         if (securityController != null)
-            securityController.associateNVEntityToSubjectGUID(nve, null);
+            securityController.associateResourceToSubject(nve, null);
 
         if (SUS.isEmpty(nve.getGUID())) {
             nve.setGUID(IDGs.UUIDV7.genID());
@@ -1472,7 +1472,7 @@ public class XlogistxMongoDataStore
             if (getAPIConfigInfo().getSecurityController() != null)
                 getAPIConfigInfo()
                         .getSecurityController()
-                        .associateNVEntityToSubjectGUID(nve, null);
+                        .associateResourceToSubject(nve, null);
 
             if (nve.getGUID() == null) {
                 return insert(nve);
@@ -2547,7 +2547,7 @@ public class XlogistxMongoDataStore
                     // Otherwise allow the match.
                     boolean allowed;
                     if (sc != null) {
-                        allowed = guid != null && subjectGUID != null && sc.isNVEntityAccessible(guid, subjectGUID, CRUD.READ);
+                        allowed = guid != null && subjectGUID != null && sc.isResourceAccessible(guid, subjectGUID, CRUD.READ);
                     } else {
                         allowed = true;
                     }

@@ -46,16 +46,17 @@ import java.util.Locale;
 /**
  * One-shot, interactive set-up of a deployment from the command line: it creates the
  * {@link SecretStore}, creates the H2 database file or connects to the PostgreSQL database
- * the secret store names, sets the database up (catalog, super-admin, common app and its registrar) and
+ * the secret store names, sets the database up (catalog, super-admin, common app, the default app and its registrar) and
  * writes the {@code shiro.ini} the application is bootstrapped with later.
  * <pre>
- *   java io.xlogistx.datastore.h2p.H2PSetup                         fully interactive
- *   java io.xlogistx.datastore.h2p.H2PSetup store=... db.type=h2 ... any value given as key=value is not asked for
- *   java io.xlogistx.datastore.h2p.H2PSetup mode=read store=...    print the super-admin id and db.url of an existing store
+ *   java io.xlogistx.datastore.h2p.H2PSetup                           no parameter: prints the usage, does nothing
+ *   java io.xlogistx.datastore.h2p.H2PSetup command=create [key=value ...]   the set-up; any value given as key=value is not asked for
+ *   java io.xlogistx.datastore.h2p.H2PSetup command=print store=...   display the parameters of an existing store (super-admin id, db.url)
  * </pre>
- * Every value is taken from the command line when given, else asked on the console; without a
- * console a value that has no default stops the run. Secrets are read without echo and never
- * printed. The steps, in order:
+ * {@code command=} selects what the run does ({@link Command}; {@code create} when absent). For
+ * {@code create} every value is taken from the command line when given, else asked on the console;
+ * without a console a value that has no default stops the run. Secrets are read without echo and
+ * never printed. The steps of {@code create}, in order:
  * <ol>
  * <li><b>The secret store.</b> A new {@link SecretStore} (a {@link SecretStore#TYPE BCFKS} keystore) is created, never
  *     overwritten, with every {@link SecretStore.StoreParam}: a generated {@code master-key}
@@ -75,13 +76,13 @@ import java.util.Locale;
  *     through the new secret store, the only sanctioned way to create the super-admin: the datastore is
  *     opened with the master key and the Shiro security controller (this creates the H2 file),
  *     the catalog is seeded, the super-admin account is created with the secret store's initial password
- *     and granted the reserved role, the common app and its registrar are created. The registrar
- *     key is printed once by that tool. The step is idempotent: when it fails the secret store is kept
+ *     and granted the reserved role, the common app is created (without a registrar, user
+ *     2026-10-12). The step is idempotent: when it fails the secret store is kept
  *     (its master key already wraps whatever was written) and the same command is rerun by hand.
- *     When a default app id was answered ({@code app.id}, optional, {@code <domain>-<app>}), that
- *     app is then created the same way ({@code create-app}: starter catalog, registrar key printed
- *     once); the id is also the secret store's {@value #APP_ID_ENTRY} entry and the
- *     {@code [xlogistx] app.id} line of the INI.</li>
+ *     Then the deployment's default app ({@code app.id}, mandatory since 2026-10-12,
+ *     {@code <domain>-<app>}) is created the same way ({@code create-app}: starter catalog and the
+ *     deployment's only registrar, its key printed once); the id is also the secret store's
+ *     {@value #APP_ID_ENTRY} entry and the {@code [xlogistx] app.id} line of the INI.</li>
  * <li><b>{@code shiro.ini}</b> is written beside the secret store (or at {@code shiro.ini=}), never
  *     overwritten, and loaded once through {@link ShiroUtil#loadSecurityManager(String)} to prove
  *     it parses. It holds the realm, matcher, cache and session manager only: the data store is
@@ -105,7 +106,7 @@ public class H2PSetup {
     public static final String DEFAULT_H2_DB_NAME = "xlogistx";
     /** The suffix H2 gives its database file. */
     public static final String H2_FILE_SUFFIX = ".mv.db";
-    /** Text entry of the secret store that names the deployment's default app ({@code <domain>-<app>}); absent when none. */
+    /** Text entry of the secret store that names the deployment's default app ({@code <domain>-<app>}). */
     public static final String APP_ID_ENTRY = "app-id";
     /** Section of the generated INI that carries the deployment's own settings; Shiro ignores it, the application reads it. */
     public static final String INI_APP_SECTION = "xlogistx";
@@ -135,16 +136,16 @@ public class H2PSetup {
         }
     }
 
-    /** What a run does: the set-up (default), or a read of an existing store. */
-    public enum Mode implements GetName {
+    /** What a run does ({@code command=}): create the deployment (default), or print the parameters of an existing store. */
+    public enum Command implements GetName {
         /** Create the secret store, the database and the INI. */
-        SETUP("setup"),
-        /** Open an existing secret store and print its super-admin id and database URL, nothing else. */
-        READ("read"),
+        CREATE("create"),
+        /** Open an existing secret store and display its parameters: the super-admin id and the database URL, nothing else. */
+        PRINT("print"),
         ;
         private final String name;
 
-        Mode(String name) {
+        Command(String name) {
             this.name = name;
         }
 
@@ -156,8 +157,8 @@ public class H2PSetup {
 
     /** Command-line parameters; each one is asked on the console when absent. */
     public enum Param implements GetName {
-        /** {@code setup} (default) or {@code read}. */
-        MODE("mode"),
+        /** {@code create} (default) or {@code print}. */
+        COMMAND("command"),
         STORE("store"),
         STORE_PASSWORD("store.password"),
         DB_TYPE("db.type"),
@@ -174,7 +175,7 @@ public class H2PSetup {
         DB_ENC_PASSWORD(SecretStore.StoreParam.DB_ENC_PASSWORD.getName()),
         SUPER_ADMIN_ID(SecretStore.StoreParam.SUPER_ADMIN_ID.getName()),
         SUPER_ADMIN_PASSWORD(SecretStore.StoreParam.SUPER_ADMIN_PASSWORD.getName()),
-        /** The default app of the deployment, {@code <domain>-<app>}; optional. */
+        /** The default app of the deployment, {@code <domain>-<app>}; mandatory (2026-10-12). */
         APP_ID("app.id"),
         SHIRO_INI("shiro.ini"),
         ;
@@ -191,11 +192,12 @@ public class H2PSetup {
     }
 
     public static final String USAGE =
-            "Usage: H2PSetup [key=value ...]   every value not given is asked on the console\n"
-                    + "       H2PSetup mode=read store=<file> [store.password=<pw>]   print the super-admin id and the db.url of an\n"
-                    + "                                                               existing secret store, nothing else\n"
+            "Usage: H2PSetup command=create [key=value ...]   the set-up; every value not given is asked on the console\n"
+                    + "       H2PSetup command=print store=<file> [store.password=<pw>]   display the parameters of an existing secret\n"
+                    + "                                                                   store: super-admin-id= and db.url=, nothing else\n"
+                    + "       H2PSetup                                   no parameter: this usage\n"
                     + "\n"
-                    + "  mode=setup|read              default setup\n"
+                    + "  command=create|print         default create\n"
                     + "  store=<file>                 the secret store to create (never overwritten); default " + DEFAULT_STORE + "\n"
                     + "  store.password=<pw>          its password (asked twice on the console)\n"
                     + "  db.type=h2|postgres          the database engine; default h2\n"
@@ -209,13 +211,14 @@ public class H2PSetup {
                     + "  db.enc-password=<pw>         encrypted H2 file password; empty = generated\n"
                     + "  super-admin-id=<id>          the super-admin's username or email address\n"
                     + "  super-admin-password=<pw>    its initial password (asked twice); empty = generated\n"
-                    + "  app.id=<domain-app>          the deployment's default app, e.g. xlogistx.io-shop; optional (empty = none):\n"
-                    + "                               created with its starter catalog and registrar (create-app), stored as the\n"
+                    + "  app.id=<domain-app>          the deployment's default app, e.g. xlogistx.io-shop (required, not the common app):\n"
+                    + "                               created with its starter catalog and its registrar (create-app), stored as the\n"
                     + "                               secret store's " + APP_ID_ENTRY + " entry and written to shiro.ini [" + INI_APP_SECTION + "] " + INI_APP_ID_KEY + "\n"
                     + "  shiro.ini=<file>             the Shiro INI to write (never overwritten); default " + DEFAULT_SHIRO_INI + " beside the store\n"
                     + "\n"
-                    + "Steps: create the secret store (master-key, super-admin-id, super-admin-password, db.*), create the H2 file or\n"
-                    + "connect to PostgreSQL and set the database up (SecurityAdminTool bootstrap-super-admin), write shiro.ini.\n"
+                    + "Steps: create the secret store (master-key, super-admin-id, super-admin-password, db.*, app-id), create the H2 file or\n"
+                    + "connect to PostgreSQL and set the database up (SecurityAdminTool bootstrap-super-admin, then create-app for app.id:\n"
+                    + "the deployment's only registrar, key printed once), write shiro.ini.\n"
                     + "Generated passwords are only in the store: SecretStore store=<file> command=get name=<entry>.\n"
                     + "Exit codes: 0 success, 1 usage error, 2 a step failed.";
 
@@ -228,6 +231,11 @@ public class H2PSetup {
      * {@code args} are asked on {@link System#console()}.
      */
     public static int run(PrintStream out, PrintStream err, String... args) {
+        if (args == null || args.length == 0) {
+            // no parameter at all: the usage, nothing asked, nothing written
+            out.println(USAGE);
+            return EXIT_USAGE;
+        }
         ParamUtil.ParamMap params;
         try {
             params = ParamUtil.parse("=", args);
@@ -242,19 +250,19 @@ public class H2PSetup {
         }
         OPSecUtil.singleton();
         Prompter in = new Prompter(params, System.console(), out);
-        Mode mode;
+        Command command;
         try {
-            mode = params.nameExists(Param.MODE.getName()) ? params.enumValue(Param.MODE, Mode.values()) : Mode.SETUP;
-            if (mode == null) {
-                throw new IllegalArgumentException(Param.MODE.getName() + " must be setup or read");
+            command = params.nameExists(Param.COMMAND.getName()) ? params.enumValue(Param.COMMAND, Command.values()) : Command.CREATE;
+            if (command == null) {
+                throw new IllegalArgumentException(Param.COMMAND.getName() + " must be create or print");
             }
         } catch (RuntimeException e) {
             err.println(e.getMessage());
             err.println(USAGE);
             return EXIT_USAGE;
         }
-        if (mode == Mode.READ) {
-            return read(in, out, err);
+        if (command == Command.PRINT) {
+            return print(in, out, err);
         }
         Plan plan;
         try {
@@ -272,11 +280,12 @@ public class H2PSetup {
     }
 
     /**
-     * Read mode (user, 2026-10-09): opens the existing secret store named by {@code store=} with
-     * its password ({@code store.password=} or a console prompt) and prints two lines,
-     * {@code super-admin-id=<id>} and {@code db.url=<url>}. No other entry is shown or named.
+     * {@code command=print} (user, 2026-10-09 as {@code mode=read}, renamed 2026-10-12): opens the
+     * existing secret store named by {@code store=} with its password ({@code store.password=} or
+     * a console prompt) and displays its parameters as two lines, {@code super-admin-id=<id>} and
+     * {@code db.url=<url>}. No other entry is shown or named.
      */
-    static int read(Prompter in, PrintStream out, PrintStream err) {
+    static int print(Prompter in, PrintStream out, PrintStream err) {
         File file;
         char[] password;
         try {
@@ -328,7 +337,7 @@ public class H2PSetup {
         String superAdminID;
         char[] superAdminPassword;
         boolean superAdminPasswordGenerated;
-        /** The default app, canonical {@code <domain>-<app>}; null when none was given. */
+        /** The default app, canonical {@code <domain>-<app>}; always set (mandatory since 2026-10-12). */
         String appID;
         File shiroIni;
 
@@ -394,16 +403,15 @@ public class H2PSetup {
             plan.superAdminPassword = generatePassword();
         }
 
-        String appID = in.optional(Param.APP_ID, "Default app id (<domain>-<app>, e.g. xlogistx.io-shop; empty = none)");
-        if (appID != null) {
-            try {
-                plan.appID = AppIDDefault.create(appID).getDomainAppID();
-            } catch (RuntimeException e) {
-                throw new IllegalArgumentException(Param.APP_ID.getName() + " must be <domain>-<app>: " + e.getMessage(), e);
-            }
-            if (ShiroUtil.COMMON_SCOPE.equalsIgnoreCase(plan.appID)) {
-                throw new IllegalArgumentException(Param.APP_ID.getName() + " " + plan.appID + " is the common app, which the set-up creates anyway");
-            }
+        // mandatory (user, 2026-10-12): the default app carries the deployment's only registrar, the common app has none
+        String appID = in.value(Param.APP_ID, "Default app id (<domain>-<app>, e.g. xlogistx.io-shop)", null);
+        try {
+            plan.appID = AppIDDefault.create(appID).getDomainAppID();
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException(Param.APP_ID.getName() + " must be <domain>-<app>: " + e.getMessage(), e);
+        }
+        if (ShiroUtil.COMMON_SCOPE.equalsIgnoreCase(plan.appID)) {
+            throw new IllegalArgumentException(Param.APP_ID.getName() + " " + plan.appID + " is the common app, which the set-up creates anyway (and which has no registrar)");
         }
 
         plan.store = new File(in.value(Param.STORE, "Secret store file to create", DEFAULT_STORE));
@@ -599,9 +607,7 @@ public class H2PSetup {
                 if (plan.dbEncPassword != null) {
                     store.put(SecretStore.StoreParam.DB_ENC_PASSWORD.getName(), new String(plan.dbEncPassword));
                 }
-                if (plan.appID != null) {
-                    store.put(APP_ID_ENTRY, plan.appID);
-                }
+                store.put(APP_ID_ENTRY, plan.appID);
                 store.save();
                 if (!store.missingMandatory().isEmpty()) {
                     throw new IllegalStateException("secret store lacks " + store.missingMandatory());
@@ -619,7 +625,7 @@ public class H2PSetup {
                 + ", " + SecretStore.StoreParam.DB_USER.getName() + "=" + plan.dbUser
                 + ", " + SecretStore.StoreParam.DB_PASSWORD.getName() + (plan.dbPasswordGenerated ? " (generated)" : "")
                 + (plan.dbEncPassword != null ? ", " + SecretStore.StoreParam.DB_ENC_PASSWORD.getName() + (plan.dbEncPasswordGenerated ? " (generated)" : "") : "")
-                + (plan.appID != null ? ", " + APP_ID_ENTRY + "=" + plan.appID : ""));
+                + ", " + APP_ID_ENTRY + "=" + plan.appID);
 
         // 2. the database: the H2 file is created when it does not exist (H2 does it on the first
         //    connection), PostgreSQL is connected to; then the set-up through the secret store
@@ -646,8 +652,8 @@ public class H2PSetup {
             }
             out.println((h2FileExisted ? "set up H2 database file " : "created H2 database file ") + plan.h2File);
         }
-        if (plan.appID != null) {
-            // the deployment's default app: its own starter catalog and registrar (key printed once by the tool)
+        {
+            // the deployment's default app: its own starter catalog and the deployment's only registrar (key printed once by the tool)
             out.println("creating app " + plan.appID + " ...");
             code = SecurityAdminTool.run(out, err,
                     SecurityAdminTool.Param.STORE.getName() + "=" + plan.store,
@@ -677,7 +683,7 @@ public class H2PSetup {
         }
         out.println("wrote " + plan.shiroIni + " (realm " + ShiroUtil.REALM_NAME + ", loads)");
         out.println("setup complete: secret store " + plan.store + ", database " + plan.dbURL + ", super-admin " + plan.superAdminID
-                + (plan.appID != null ? ", app " + plan.appID : ", no default app") + ", shiro ini " + plan.shiroIni);
+                + ", app " + plan.appID + ", shiro ini " + plan.shiroIni);
         return EXIT_OK;
     }
 
@@ -686,7 +692,7 @@ public class H2PSetup {
      * data store and the super-admin id are not in it (see the class comment).
      */
     static String shiroIni(File store, File ini, String appID) {
-        String appSection = appID == null ? "" : "\n"
+        String appSection = "\n"
                 + "# The deployment's own settings. Shiro ignores this section; the application reads it\n"
                 + "# (org.apache.shiro.config.Ini: getSection(\"" + INI_APP_SECTION + "\")). The same app id is the secret store's\n"
                 + "# " + APP_ID_ENTRY + " entry; the app itself was created by the set-up (create-app).\n"

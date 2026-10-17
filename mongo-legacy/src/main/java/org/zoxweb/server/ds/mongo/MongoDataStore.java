@@ -1191,7 +1191,7 @@ public class MongoDataStore
         NVConfigEntity nvce = (NVConfigEntity) nve.getNVConfig();
         // TODO need to revisit
 
-        configInfo.getSecurityController().associateNVEntityToSubjectGUID(nve, null);
+        configInfo.getSecurityController().associateResourceToSubject(nve, null);
 
         if (nve.getReferenceID() == null) {
             nve.setReferenceID(ObjectId.get().toHexString());
@@ -1721,7 +1721,7 @@ public class MongoDataStore
                 updateLock.lock();
             }
             // TODO revisit logic
-            configInfo.getSecurityController().associateNVEntityToSubjectGUID(nve, null);
+            configInfo.getSecurityController().associateResourceToSubject(nve, null);
 
             if (nve.lookupValue(MetaToken.REFERENCE_ID) == null) {
                 return insert(nve);
@@ -2735,7 +2735,7 @@ public class MongoDataStore
                     String guid = (String) dbObject.get(MetaToken.GUID.getName());
                     String subjectGUID = (String) dbObject.get(MetaToken.SUBJECT_GUID.getName());
                     // check if the user has access to the object
-                    if (guid != null && subjectGUID != null && configInfo.getSecurityController().isNVEntityAccessible(guid, subjectGUID, CRUD.READ)) {
+                    if (guid != null && subjectGUID != null && configInfo.getSecurityController().isResourceAccessible(guid, subjectGUID, CRUD.READ)) {
                         list.add((T) guid);
                     }
                 }

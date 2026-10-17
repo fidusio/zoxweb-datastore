@@ -2,8 +2,9 @@
 
 > **Since 2026-10-05 there is no `xlogistx-shiro-ds` module.** Its tests are in
 > `h2p-datastore/src/test/java/io/xlogistx/shiro/ds/test/`, its keystores, the persistent H2 file and
-> `shiro-ds.ini` in `h2p-datastore/src/test/resources/` (including `test.store`, which used to be under
-> `src/main/resources`), and its documents (`app-model.md`, `datastore-acl.md`, `no-sneak-plan.md`,
+> `shiro-ds.ini` in `h2p-datastore/src/test/resources/` (`test.store`, which used to be under
+> `src/main/resources`, was deleted by the user on 2026-10-13: PostgreSQL runs go through the user's
+> `D:/dev/data/java/projects/temp/ds/xlogistx.store`), and its documents (`app-model.md`, `datastore-acl.md`, `no-sneak-plan.md`,
 > this file) in the `h2p-datastore` directory. Wherever the text below says "this module" or
 > `xlogistx-shiro-ds/…`, read `h2p-datastore/…` with those locations; runs start from the
 > `h2p-datastore` directory. The session log below is history and keeps the paths of its time.
@@ -346,7 +347,11 @@ the principal and credential rows are now written unenforced (`subject:create` c
 registrar holds no `subject:update`). The registrar logs in by JWT only, which looks the key up by
 its id; there is no raw-key login and no lookup of a key by its secret (both removed 2026-10-03).
 **Not built:** the opsec HTTP sign-up endpoint beside `PasswordReset` (reads the registrar key from
-the app's vault and calls `loginUnboundSubjectJWT` + `SubjectSwap` + `registerSubject`) — the next step when an application needs it.
+the app's vault and calls `loginUnboundSubjectJWT` + `SubjectSwap` + `registerSubject`) — the next step when an application needs it;
+and **app-owned resources** (decided 2026-10-16, plan `app-resources-plan.md`): rows of a type the
+app's catalog declares with a `<type>:create` permission are created through a manager method that
+swaps to the app's registrar for the insert, so the registrar owns them and the creator, who holds
+`create` only, keeps nothing on them.
 
 **Setup and CLI.** `SecuritySetup.seedCatalog` creates the common app first (owner = the
 super-admin when it exists) and seeds its catalog with `app_id` = the record; rows seeded before
@@ -1621,3 +1626,91 @@ refusal paths create nothing; new `H2PSetupTest` (`io.xlogistx.datastore.h2p.tes
 `h2p-datastore` reinstalled (the Javadoc stack trace during install is the pre-existing one on
 `H2PDataStore.dump`, build passes). PostgreSQL path not run (nothing dictated for testdb). Nothing
 committed.
+
+**2026-10-12 (`H2PSetup` usage + `command=`, user dictation)** — "in H2PSetup add usage if no
+parameter is set and add command=create/print based on command you create or print will display the
+parameters." A run without any parameter now prints `USAGE` on stdout and exits 1 (nothing asked,
+nothing written; before, it went fully interactive). `mode=setup|read` is replaced by
+`command=create|print` (`Command` enum, `Param.COMMAND`; `create` when absent): `create` is the
+set-up as before, `print` is the former read mode and displays the store's parameters, still only
+`super-admin-id=` and `db.url=`. `mode=` is no longer recognised. `H2PSetupTest` follows
+(`command=print`, unknown command message, bare run asserts the usage and no default store).
+
+**2026-10-12 (common app without registrar, `app.id` mandatory; user decision)** — On the H2PSetup
+run the user saw three subjects (`super-admin@xlogistx.io`, `registrar.xlogistx.com-common`,
+`registrar.xlogistx.io-api`) and ruled: "since H2PSetup requires now a default app-id it is no
+longer needed", choosing "both" when asked. Built: `SecuritySetup.bootstrapSuperAdmin` no longer
+calls `ensureRegistrar(commonApp)`; `Result.registrar` / `registrarKey` removed (toString too);
+`SecurityAdminTool bootstrap-super-admin` no longer prints a registrar key (create-app /
+rotate-registrar-key / list-apps unchanged). `H2PSetup`: `app.id` is mandatory (asked with no
+default; without a console `app.id= required`), always stored as `app-id` and written to the INI;
+usage and class comment say the default app carries the deployment's only registrar.
+`SecurityCatalogDBTest` asserts the bootstrap leaves the common app without registrar (test renamed
+`…_bootstrapAddsNoRegistrar`); `H2PSetupTest` gives every run an `app.id`, asserts the printed
+registrar is the default app's only and a missing `app.id` is refused. io-xlogistx shiro + opsec
+installed offline (`-Dmaven.test.skip=true -Dgpg.skip=true`; the javadoc plugin reports a
+pre-existing `unknown tag: guid` at `ShiroDSDomainSecurityManager` ~2462 from the sharing-rules
+comment, non-fatal). Runs: `H2PSetupTest` 4/4, `SecurityCatalogDBTest` 21/21,
+`ShiroDSDomainSecurityManagerDBTest` 77/77 (in-memory H2, throw-away vault). Existing databases keep any
+`registrar.xlogistx.com-common` row already created (testdb, the user's new H2 file): removing it
+there is a manual step, not done. Nothing committed.
+
+**2026-10-12 (`ShiroIniRealmMain`, user dictation)** — first attempt (a JUnit class `ShiroIniLoginDBTest`
+with five login tests) was rejected: "the class will take a main function with StoreSecret file and
+store secret password, it will build the datastore only, it will [not] setup anything, based on the
+shiro.ini build the realm". The JUnit class and its records were removed. Built instead
+`src/test/java/io/xlogistx/shiro/ds/test/ShiroIniRealmMain.java`: `main` with `store=`,
+`store.password=` (or console prompt) and `shiro.ini=`; `build(File, char[], String)` opens the vault
+(mandatory entries, master key → `KeyMakerProvider`, `db.*`, super-admin id), creates the
+`H2PDataStore` with controller + key maker on the vault's `db.url` (PostgreSQL, or H2 file with
+`db.enc-password`), registers it in `ResourceManager`, loads the INI with
+`ShiroUtil.loadSecurityManager`, installs it as the global security manager, attaches
+`ShiroDSDomainSecurityManager.fromGlobal()` and hands it the vault's super-admin id; reads
+`[xlogistx] app.id` from the INI when present. Nothing is set up: no bootstrap, no DDL (the pool is
+lazy; the only datastore log line of a run is its `close`). Returns a `Built` holder (`AutoCloseable`) for the user's
+login tests; `main` prints it and closes. **Run** on the scratch `H2PSetup` deployment in the session
+scratchpad (encrypted H2 file, app `xlogistx.io-inilogin`): prints store, db.url, super-admin-id
+`admin.local`, app.id, realm `shiro-ds`, `DefaultSecurityManager`, attached=true, exit 0; no
+arguments → usage, exit 1. Not run on testdb or the user's files. Nothing committed.
+
+**2026-10-13 (`ShiroUtil` rename follow-up, user dictation).** The user renamed the io-xlogistx `ShiroUtil`
+login entry points (`login(domain, realm, user, pw)` → `loginStatus(principalID, pw, domain, realm)`, renamed `tryLogin` the same day on my suggestion (shiro jar reinstalled, manager 77/77 on h2mem), with a
+`char[]` overload, `loginSubject(…)` → `login(principalID, char[] credentials, domainID, appID, autoLogin)`,
+`subjectUserID()` → `subjectPrincipalID()`, `login(token)` now returns the `Subject` and clears a
+`UsernamePasswordToken`; `DomainUsernamePasswordToken` got `char[]` constructors, the String ones deprecated).
+On the user's word ("don't change xlogistx, just here") `ShiroDSDomainSecurityManagerDBTest` was moved to
+the new names: 7 call sites in `shiroUtil_loginEntryPoints_workAgainstThisManager` and the two INI tests
+(`loginStatus(principal, PASSWORD, null, null)`, `login(principal, PASSWORD.toCharArray(), …)`,
+`login(principal, (char[]) null, null, null, true)` for auto-login, `subjectPrincipalID()`), the user had
+already done the others. First run on h2mem: 76/77, the wrong-password `loginStatus` threw
+`AccessSecurityException` because the io-xlogistx `loginStatus` caught only `ShiroException` while its own
+`login(token)` rethrows `AccessSecurityException`; the user changed it to catch `RuntimeException` and
+reinstalled the jar. **Runs after that:** manager suite 77/77 on `h2mem.store`, 77/77 on `h2persist.store`,
+77/77 on PostgreSQL lax-2 `testdb` through the user's `D:/dev/data/java/projects/temp/ds/xlogistx.store`
+(`test.store` deleted by the user, `git rm`). `ShiroIniRealmMain` got a `login(principalID, char[])` through
+Shiro only (`SecurityUtils.getSubject().login(DomainUsernamePasswordToken)`), and the user's `main` now logs
+the super-admin in with `admin-password=` or a console prompt. Nothing committed.
+
+**2026-10-14 (`DomainPrincipalCollection` fix, user).** The user's io-xlogistx `DomainPrincipalCollection` now
+implements `SubjectGUIDBase` + `PrincipalIDBase`: `getPrincipalID()` = the primary principal, `getSubjectGUID()` = the
+subject GUID (`getUserID`/`getSubjectID` gone). `ShiroUtil.subjectPrincipalID()` therefore returns what the subject
+logged in with: the login id for a password login (`DomainAuthenticationInfo(username, guid, …)`), the subject GUID
+for a JWT login (`DomainAuthenticationInfo(guid, guid, …)`). Six assertions of `ShiroDSDomainSecurityManagerDBTest`
+that expected the GUID after a password login now expect `principal` (lines 790, 812, 828, 841, 901, 940); the JWT
+one (805) keeps the GUID. Also today: `ShiroUtil.login(token)` takes `subject()` outside its try, `tryLogin` catches
+`AccessSecurityException` only, so a missing security manager fails loudly on every login path (user's intent).
+Manager suite 77/77 on `h2mem.store` after a fresh `test-compile` (the module's `target` had been cleaned). Not rerun
+on `h2persist.store` or PostgreSQL. Nothing committed.
+
+**2026-10-16 (app-owned resources: decided, not built).** Planning session, no code changed. The
+user's need: some entity types belong to an app in that app's context (the app `RubusPI` owns or
+has full access to every `DeviceSession`), any subject with the create permission for the class
+type may create one, and the same type may serve another app differently. Decisions (user): the
+owner is the app's **registrar**; the creator holds a **CREATE-only** permission for the class type
+(`<type>:create`, a permission row in the app's catalog, which is the whole declaration — no new
+entity type); creation = `SubjectSwap` to the registrar, insert, swap back, inside a **manager
+method**; the row does not record its creator. Settled by Claude, to be vetoed if wrong: the token
+is derived from the entity's `NVConfigEntity` name, and the method accepts **new rows only** (every
+GUID in the graph empty), so a `create` holder can never overwrite a registrar-owned row. Full
+design, test and verification steps: `app-resources-plan.md`; row 9 of the decision table in
+`app-model.md`. Nothing committed.

@@ -1399,7 +1399,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     private <V extends NVEntity> V insertRow(Connection con, V nve, NVConfigEntity nvce, WriteCtx ctx) throws SQLException {
         SecurityController sc = crypto.controller();
-        if (sc != null) sc.associateNVEntityToSubjectGUID(nve, null);
+        if (sc != null) sc.associateResourceToSubject(nve, null);
         if (SUS.isEmpty(nve.getGUID())) nve.setGUID(IDGs.UUIDV7.genID());
         checkCreate(nvce, nve);
         MetaUtil.initTimeStamp(nve);
@@ -3215,7 +3215,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                         }
                     }
                     SecurityController sc = crypto.controller();
-                    sc.associateNVEntityToSubjectGUID(info, null);
+                    sc.associateResourceToSubject(info, null);
                     if (SUS.isEmpty(info.getSubjectGUID())) {
                         throw new AccessSecurityException("encrypted file without subject_guid (no bound subject): " + info.getName());
                     }

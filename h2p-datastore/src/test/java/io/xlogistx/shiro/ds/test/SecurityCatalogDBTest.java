@@ -389,7 +389,7 @@ public class SecurityCatalogDBTest {
      * nothing is duplicated — and the bootstrap gives the common app its registrar.
      */
     @Test
-    public void seedCatalog_attachesPreAppModelRowsToTheCommonApp_bootstrapAddsItsRegistrar() {
+    public void seedCatalog_attachesPreAppModelRowsToTheCommonApp_bootstrapAddsNoRegistrar() {
         String url = "jdbc:h2:mem:preapp-" + UUID.randomUUID().toString().replace("-", "") + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
         H2PDataStore store = SecurityAdminTool_openStore(url);
         try {
@@ -416,13 +416,11 @@ public class SecurityCatalogDBTest {
             SecuritySetup.Result boot = SecuritySetup.bootstrapSuperAdmin(local, PASSWORD);
             assertTrue(boot.wildcardVerified, boot.toString());
             assertEquals(boot.subject.getGUID(), local.commonApp().getSubjectGUID(), "the bootstrap hands the common app to the super-admin");
-            assertNotNull(boot.registrar, "and gives it its registrar");
-            assertNotNull(boot.registrarKey, "whose secret is shown once");
-            assertEquals(ShiroDSDomainSecurityManager.registrarPrincipal(common), local.lookupAllPrincipalIdentifiers(boot.registrar.getGUID())[0].getPrincipalID());
-            assertNull(SecuritySetup.bootstrapSuperAdmin(local, null).registrarKey, "not a second time");
-            assertTrue(local.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(boot.registrarKey, null, 60_000), null)
-                    .hasRole(SecurityModel.Role.APP_REGISTRAR.getName()));
-            local.logout();
+            // the common app has no registrar (user, 2026-10-12): sign-ups go through the deployment's default app
+            assertNull(local.lookupRegistrar(common), "the bootstrap gives the common app no registrar");
+            assertNull(local.lookupSubjectID(ShiroDSDomainSecurityManager.registrarPrincipal(common)));
+            assertTrue(SecuritySetup.bootstrapSuperAdmin(local, null).wildcardVerified, "idempotent");
+            assertNull(local.lookupRegistrar(common), "not on a rerun either");
         } finally {
             store.close();
         }

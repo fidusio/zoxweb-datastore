@@ -23,6 +23,7 @@ Written 2026-10-02. Repos: zoxweb-core, io-xlogistx (shiro, opsec), zoxweb-datas
 | 6 | `super-admin@xlogistx.io` is the super-admin: the `super_admin` role through a `RoleGrant`, whose permission is `*`; no domain/app; applies in every login. | 2026-10-01 |
 | 7 | Seeder + bootstrap are one class, `SecuritySetup`, and it creates `xlogistx.com-common`. | 2026-10-01 |
 | 8 | First-time creation of a subject by an app = a **subject swap**: the app runs the creation as a subject of that app holding the right. A dedicated **registrar subject** per app, not the human app-admin. | 2026-10-02 |
+| 9 | **App-owned resources** (NOT built): some entity types belong to an app in that app's context (e.g. `RubusPI` owns every `DeviceSession`). The owner is the app's **registrar**; the creator holds a **CREATE-only** permission `<type>:create` in the app's catalog (that permission row is the whole declaration, no new entity type); creation = swap to the registrar, insert, swap back, in a **manager method**; the row records no creator. The same type in another app without that row behaves as today. Plan: `app-resources-plan.md`. | 2026-10-16 |
 
 Standing assumptions (stated to the user, not objected to):
 - A new app starts with a starter set of its own roles and permissions.
@@ -86,7 +87,7 @@ One service subject per app whose only job is the first-time creation of a subje
 - Key rotation: an `app_admin` of the app replaces the registrar's key (the new secret is returned by the call and printed by the CLI).
 - Turning sign-up off for an app: deactivate the registrar subject or its key.
 - Deleting an app removes its registrar.
-- `xlogistx.com-common` gets a registrar like any other app, created by `SecuritySetup`.
+- ~~`xlogistx.com-common` gets a registrar like any other app, created by `SecuritySetup`.~~ Reversed 2026-10-12 (user): the common app has **no registrar**; `H2PSetup` requires a default app (`app.id`), whose registrar is the deployment's only one.
 
 ## 4. The rest of the app model, in build order
 
@@ -118,7 +119,7 @@ One service subject per app whose only job is the first-time creation of a subje
 3. Its principal is not email-shaped.
 4. A known principal signing up in another app proves its password and gets that app's role; no
    second subject.
-5. Every app has a registrar, the common app included.
+5. Every app created with `create-app` has a registrar. The common app has none since 2026-10-12 (user: with `H2PSetup` requiring a default app, the common registrar is no longer needed).
 
 ## 6. Tests to write (in-memory H2; PostgreSQL only when asked)
 

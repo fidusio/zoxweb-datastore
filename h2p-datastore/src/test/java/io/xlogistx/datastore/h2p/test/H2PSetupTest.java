@@ -92,10 +92,10 @@ public class H2PSetupTest {
         assertTrue(out.toString().contains("xlogistx.io-setuptest"), "the default app was created: " + out);
         assertTrue(printed.contains("creating app xlogistx.io-setuptest"), printed);
 
-        // read mode: the super-admin id and the db.url, nothing else
+        // command=print: displays the parameters, the super-admin id and the db.url, nothing else
         out.reset();
         err.reset();
-        code = setup(out, err, "mode=read", "store=" + store, "store.password=" + STORE_PASSWORD);
+        code = setup(out, err, "command=print", "store=" + store, "store.password=" + STORE_PASSWORD);
         assertEquals(H2PSetup.EXIT_OK, code, err.toString());
         String[] lines = out.toString().trim().split("\\r?\\n");
         assertEquals(2, lines.length, out.toString());
@@ -103,12 +103,22 @@ public class H2PSetupTest {
         assertEquals("db.url=" + url, lines[1]);
         assertFalse(out.toString().contains("app-id") || out.toString().contains("password"), out.toString());
         err.reset();
-        assertEquals(H2PSetup.EXIT_FAILURE, setup(out, err, "mode=read", "store=" + store, "store.password=wrong"), "wrong password");
+        assertEquals(H2PSetup.EXIT_FAILURE, setup(out, err, "command=print", "store=" + store, "store.password=wrong"), "wrong password");
         assertTrue(err.toString().contains("cannot open secret store"), err.toString());
         err.reset();
-        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "mode=read", "store=" + new File(dir, "none.store"), "store.password=x"), "missing store");
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=print", "store=" + new File(dir, "none.store"), "store.password=x"), "missing store");
         err.reset();
-        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "mode=other", "store=" + store), "unknown mode");
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=other", "store=" + store), "unknown command");
+        assertTrue(err.toString().contains("command must be create or print"), err.toString());
+
+        // no parameter at all: the usage on out, nothing asked, nothing written, no store touched
+        out.reset();
+        err.reset();
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err), "no parameter");
+        assertTrue(out.toString().startsWith("Usage: H2PSetup command=create"), out.toString());
+        assertTrue(out.toString().contains("command=print store=<file>"), out.toString());
+        assertEquals("", err.toString(), "nothing on err for a bare run");
+        assertFalse(new File("xlogistx.store").exists(), "a bare run must not create the default store");
 
         // the INI: written where asked, names the realm, loads
         assertTrue(ini.isFile());
@@ -132,18 +142,24 @@ public class H2PSetupTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int code = setup(out, err, "store=" + store, "store.password=" + STORE_PASSWORD,
-                "db.url=" + plainURL, "db.password=", "db.enc-password=", "super-admin-id=admin.local", "super-admin-password=");
+                "db.url=" + plainURL, "db.password=", "db.enc-password=", "super-admin-id=admin.local", "super-admin-password=",
+                "app.id=xlogistx.io-given");
         assertEquals(H2PSetup.EXIT_OK, code, err + "\n" + out);
         try (SecretStore vault = SecretStore.open(store, STORE_PASSWORD.toCharArray())) {
             assertEquals(plainURL + ";CIPHER=AES", vault.get(SecretStore.StoreParam.DB_URL.getName()), "the cipher is added to the stored URL");
             assertNotNull(vault.get(SecretStore.StoreParam.DB_ENC_PASSWORD.getName()));
-            assertNull(vault.get(H2PSetup.APP_ID_ENTRY), "no default app was asked for: no entry");
+            assertEquals("xlogistx.io-given", vault.get(H2PSetup.APP_ID_ENTRY), "the mandatory default app is stored");
         }
         assertTrue(new File(dir, "data/given.mv.db").isFile());
         assertTrue(new File(dir, "shiro.ini").isFile(), "default INI beside the store");
         String ini = new String(Files.readAllBytes(new File(dir, "shiro.ini").toPath()), StandardCharsets.UTF_8);
-        assertFalse(ini.contains("[" + H2PSetup.INI_APP_SECTION + "]"), "no app section without a default app");
-        assertTrue(out.toString().contains("no default app"), out.toString());
+        assertTrue(ini.contains("[" + H2PSetup.INI_APP_SECTION + "]\n" + H2PSetup.INI_APP_ID_KEY + " = xlogistx.io-given"), ini);
+        String printed = out.toString();
+        assertTrue(printed.contains(", app xlogistx.io-given"), printed);
+        // the registrars of the deployment: the default app's only, the common app has none (user, 2026-10-12)
+        assertTrue(printed.contains("registrar of xlogistx.io-given"), printed);
+        assertFalse(printed.contains("registrar of " + ShiroUtil.COMMON_SCOPE), "the common app got a registrar: " + printed);
+        assertFalse(printed.contains("registrar." + ShiroUtil.COMMON_SCOPE), "the common app got a registrar: " + printed);
     }
 
     @Test
@@ -156,7 +172,7 @@ public class H2PSetupTest {
 
         // an existing store is never overwritten (the store is asked after the database and the super-admin)
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "store=" + existing, "store.password=x",
-                "db.path=" + new File(dir, "d"), "db.name=x", "super-admin-id=a", "super-admin-password="), err.toString());
+                "db.path=" + new File(dir, "d"), "db.name=x", "super-admin-id=a", "super-admin-password=", "app.id=xlogistx.io-t"), err.toString());
         assertTrue(err.toString().contains("already exists"), err.toString());
         assertEquals(0, existing.length());
 
@@ -180,6 +196,11 @@ public class H2PSetupTest {
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "store=" + store, "store.password=x",
                 "db.path=" + new File(dir, "d"), "db.name=x", "super-admin-id=a", "super-admin-password=", "app.id=xlogistx.com-common"), err.toString());
         assertTrue(err.toString().contains("is the common app"), err.toString());
+        // the default app id is mandatory (user, 2026-10-12): without a console a missing one stops the run
+        err.reset();
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "store=" + store, "store.password=x",
+                "db.path=" + new File(dir, "d"), "db.name=x", "super-admin-id=a", "super-admin-password="), err.toString());
+        assertTrue(err.toString().contains("app.id= required"), err.toString());
         // a value without default and without a console stops the run
         err.reset();
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "store=" + store, "store.password=x",
@@ -191,7 +212,7 @@ public class H2PSetupTest {
         err.reset();
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "store=" + store, "store.password=x",
                 "db.path=" + new File(dir, "d"), "db.name=x", "db.password=", "db.enc-password=", "super-admin-id=a", "super-admin-password=",
-                "shiro.ini=" + ini), err.toString());
+                "app.id=xlogistx.io-t", "shiro.ini=" + ini), err.toString());
         assertTrue(err.toString().contains("shiro ini already exists"), err.toString());
 
         assertFalse(store.exists(), "a refused run must not create the store");

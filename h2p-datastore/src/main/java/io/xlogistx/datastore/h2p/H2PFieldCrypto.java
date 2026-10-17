@@ -437,7 +437,7 @@ final class H2PFieldCrypto {
             return false;
         }
         try {
-            return sc.isNVEntityAccessible(resourceGUID, ownerGUID, crud);
+            return sc.isResourceAccessible(resourceGUID, ownerGUID, crud);
         } catch (RuntimeException e) {
             return false;
         }

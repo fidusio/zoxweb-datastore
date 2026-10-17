@@ -784,13 +784,13 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.installAsGlobal();
         ThreadContext.remove();
         try {
-            // login(domain, realm, username, password)
-            assertTrue(ShiroUtil.login(null, null, principal, PASSWORD));
+            // tryLogin(principalID, password, domain, realm)
+            assertTrue(ShiroUtil.tryLogin(principal, PASSWORD,null, null));
             assertTrue(SecurityUtils.getSubject().isAuthenticated());
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             SecurityUtils.getSubject().logout();
             ThreadContext.remove();
-            assertFalse(ShiroUtil.login(null, null, principal, "wrong-" + PASSWORD));
+            assertFalse(ShiroUtil.tryLogin(principal, "wrong-" + PASSWORD,null, null));
             assertFalse(SecurityUtils.getSubject().isAuthenticated());
             ThreadContext.remove();
 
@@ -802,22 +802,22 @@ public class ShiroDSDomainSecurityManagerDBTest {
             // login(AuthenticationToken): JWT
             String compact = ShiroDSDomainSecurityManager.mintJWT(signing, null, 30_000);
             ShiroUtil.login(new JWTAuthenticationToken(new JWTToken(SecUtil.parseJWT(compact), compact)));
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(subject.getGUID(), ShiroUtil.subjectPrincipalID(), "JWT login: primary principal = the subject GUID");
             assertEquals(signing.getSubjectID(), ShiroUtil.subjectJWTID(), "key ID visible through ShiroUtil");
             SecurityUtils.getSubject().logout();
             ThreadContext.remove();
 
             // login(AuthenticationToken): password token
             ShiroUtil.login(new io.xlogistx.shiro.authc.DomainUsernamePasswordToken(principal, PASSWORD, false, null, null, null));
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             SecurityUtils.getSubject().logout();
             ThreadContext.remove();
 
             assertThrows(AccessSecurityException.class, () -> ShiroUtil.login(new APIKeyAuthenticationToken("key-" + UUID.randomUUID())));
             ThreadContext.remove();
 
-            // loginSubject(subjectID, credentials, domainID, appID, autoLogin=false) + loginBySessionID
-            Subject s = ShiroUtil.loginSubject(principal, PASSWORD, "xlogistx.io", "shirods", false);
+            // login(principalID, credentials, domainID, appID, autoLogin=false) + loginBySessionID
+            Subject s = ShiroUtil.login(principal, PASSWORD.toCharArray(), "xlogistx.io", "shirods", false);
             assertTrue(s.isAuthenticated());
             assertEquals("xlogistx.io", ShiroUtil.subjectDomainID());
             assertEquals("shirods", ShiroUtil.subjectAppID());
@@ -825,25 +825,25 @@ public class ShiroDSDomainSecurityManagerDBTest {
             ThreadContext.remove(); // another request thread: nothing bound, session still alive
             assertTrue(ShiroUtil.loginBySessionID(sessionID));
             assertTrue(SecurityUtils.getSubject().isAuthenticated());
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             SecurityUtils.getSubject().logout();
             ThreadContext.remove();
             assertFalse(ShiroUtil.loginBySessionID(sessionID), "logged-out session must not resume");
             assertFalse(ShiroUtil.loginBySessionID("no-such-session"));
             ThreadContext.remove();
 
-            assertThrows(AccessSecurityException.class, () -> ShiroUtil.loginSubject(principal, "wrong-" + PASSWORD, null, null, false));
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.login(principal, ("wrong-" + PASSWORD).toCharArray(), null, null, false));
             ThreadContext.remove();
 
             // autoLogin=true is the trusted-caller path: password not checked, status rules still apply
-            Subject auto = ShiroUtil.loginSubject(principal, null, null, null, true);
+            Subject auto = ShiroUtil.login(principal, (char[]) null, null, null, true);
             assertTrue(auto.isAuthenticated());
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             auto.logout();
             ThreadContext.remove();
             subject.setSubjectStatus(SecConst.SecStatus.DEACTIVATED);
             dsm.updateSubjectID(subject);
-            assertThrows(AccessSecurityException.class, () -> ShiroUtil.loginSubject(principal, null, null, null, true), "auto-login must not bypass status gating");
+            assertThrows(AccessSecurityException.class, () -> ShiroUtil.login(principal, (char[]) null, null, null, true), "auto-login must not bypass status gating");
         } finally {
             ThreadContext.remove();
         }
@@ -895,10 +895,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
             String token = "ini:" + UUID.randomUUID().toString().replace("-", "") + ":read";
             PermissionInfo perm = iniDsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), token));
-            assertTrue(ShiroUtil.login(null, null, principal, PASSWORD));
+            assertTrue(ShiroUtil.tryLogin(principal, PASSWORD, null, null));
             Subject current = SecurityUtils.getSubject();
             assertTrue(current.isAuthenticated());
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             assertFalse(current.isPermitted(token));
             PermissionGrant grant = iniDsm.addPermissionGrant(subject, perm);
             assertTrue(current.isPermitted(token), "grant visible without re-login");
@@ -936,8 +936,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
             String principal = uniquePrincipal();
             SubjectIdentifier subject = newSubject(principal);
             assertEquals(subject.getGUID(), sample.login(principal, PASSWORD).getGUID());
-            assertTrue(ShiroUtil.login(null, null, principal, PASSWORD));
-            assertEquals(subject.getGUID(), ShiroUtil.subjectUserID());
+            assertTrue(ShiroUtil.tryLogin(principal, PASSWORD, null, null));
+            assertEquals(principal, ShiroUtil.subjectPrincipalID(), "primary principal = the login id");
             SecurityUtils.getSubject().logout();
         } finally {
             ThreadContext.remove();
@@ -1838,7 +1838,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
         // nobody bound: denied, never an exception from the boolean forms
         dsm.logout();
-        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        assertFalse(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
         assertNull(controller.currentSubjectGUID());
 
         // owner: every self verb, through the self permission (no grant row exists for A)
@@ -1847,7 +1847,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertEquals(a.getGUID(), ShiroUtil.checkResourcePermission(x, verb), verb);
         }
         assertEquals(a.getGUID(), controller.checkNVEntityAccess(x, org.zoxweb.shared.util.CRUD.READ, org.zoxweb.shared.util.CRUD.UPDATE));
-        assertTrue(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.DELETE));
+        assertTrue(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.DELETE));
         assertEquals(a.getGUID(), controller.currentSubjectGUID());
         assertTrue(ShiroUtil.isResourcePermitted(a.getGUID(), a.getGUID(), "create"), "create is a self verb: a subject creates its own rows");
         assertFalse(ShiroUtil.isResourcePermitted(b.getGUID(), b.getGUID(), "create"), "but not rows owned by someone else");
@@ -1861,13 +1861,13 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertThrows(AccessSecurityException.class, () -> controller.checkNVEntityAccess(x,
                 org.zoxweb.shared.util.CRUD.UPDATE, org.zoxweb.shared.util.CRUD.READ), "AND: update missing");
         assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "delete"));
-        assertTrue(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
-        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.UPDATE));
+        assertTrue(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        assertFalse(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.UPDATE));
 
         // stranger: nothing
         login(pc);
         assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "read"));
-        assertFalse(controller.isNVEntityAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
+        assertFalse(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
         // but its own resource is fine
         PropertyDAO own = newResource(c);
         assertEquals(c.getGUID(), controller.checkNVEntityAccess(own, org.zoxweb.shared.util.CRUD.UPDATE));

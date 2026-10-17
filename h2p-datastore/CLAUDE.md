@@ -3,14 +3,17 @@
 > **Since 2026-10-05 this module also holds what was the `xlogistx-shiro-ds` module** (removed on
 > the user's instruction): the security integration tests in
 > `src/test/java/io/xlogistx/shiro/ds/test/` (`SecurityCatalogDBTest`,
-> `ShiroDSDomainSecurityManagerDBTest`, `SubjectSwapSignUpDBTest`, `TestVault`), the test keystores
-> `test.store` / `h2mem.store` / `h2persist.store`, the persistent encrypted H2 file and
+> `ShiroDSDomainSecurityManagerDBTest`, `SubjectSwapSignUpDBTest`, `TestVault`, and the runnable `ShiroIniRealmMain`), the test keystores
+> `h2mem.store` / `h2persist.store` (`test.store` was deleted by the user on 2026-10-13; PostgreSQL runs
+> go through the user's own `D:/dev/data/java/projects/temp/ds/xlogistx.store`), the persistent encrypted H2 file and
 > `shiro-ds.ini` in `src/test/resources/`, and the documents `SHIRO-DS.md` (that module's notes and
 > session log — read it for anything about the Shiro manager, realm, admin tool or these tests),
-> `app-model.md`, `datastore-acl.md`, `no-sneak-plan.md` and `sharing-gaps-plan.md` (decided
-> 2026-10-06, to be built after the session restart on the user's word) beside this file. The classes under test
+> `app-model.md`, `datastore-acl.md`, `no-sneak-plan.md`, `sharing-gaps-plan.md` (decided
+> 2026-10-06, built the same day) and `app-resources-plan.md` (app-owned resources through the
+> registrar swap, decided 2026-10-16, NOT built) beside this file. The classes under test
 > live in io-xlogistx (`shiro` and `opsec` modules). Older text that names
-> `xlogistx-shiro-ds/src/main/resources/test.store` means `h2p-datastore/src/test/resources/test.store`.
+> `xlogistx-shiro-ds/src/main/resources/test.store` means `h2p-datastore/src/test/resources/test.store`,
+> which no longer exists.
 
 Scope: this module only (`io.xlogistx.datastore.h2p`). It is a **normalized, relational**
 implementation of zoxweb's `APIDataStore<Connection, Connection>` that runs on **both** H2 (in
@@ -30,7 +33,7 @@ JDBC driver + URL.
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
 | `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
 | `H2PFieldCrypto.java` | **Encryption at rest** (package-private): ENCRYPT* field records via the `SecurityController`, AESCrypt VX file content, entity-key lifecycle on the `KeyMaker` chain, raw mode for dumps — see the dedicated section |
-| `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the optional default app id (`app.id`, `<domain>-<app>`), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app when one was given (`create-app`, registrar key printed once) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `mode=read store= [store.password=]` opens an existing store and prints only `super-admin-id=` and `db.url=` (2026-10-09). First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
+| `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the default app id (`app.id`, `<domain>-<app>`, **mandatory since 2026-10-12**: it carries the deployment's only registrar), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app (`create-app`, registrar key printed once; since 2026-10-12 the bootstrap gives the common app **no registrar**, so this is the deployment's only one) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `command=create` (default when `command=` is absent) is the set-up; `command=print store= [store.password=]` opens an existing store and displays its parameters, only `super-admin-id=` and `db.url=` (2026-10-09 as `mode=read`, renamed 2026-10-12 on the user's word); a run **without any parameter prints the usage** on stdout and exits 1, nothing asked, nothing written (2026-10-12). First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
 
 ## Storage model (fully normalized — no binary blobs)
 
@@ -690,6 +693,18 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   in-memory URL, PostgreSQL URL without database, missing answer without a console) leave nothing
   behind, and the URL/path checks (`typeOf`, `h2FileDirectory`, `h2Path`, `generatePassword`).
   Also `givenURL_encPasswordImpliesCipher` (a given cipherless H2 URL with `db.enc-password=` gets `;CIPHER=AES`). 4/4 offline on 2026-10-09.
+- `ShiroIniRealmMain` (`io.xlogistx.shiro.ds.test`, 2026-10-12, user dictation; a `main`, not a
+  JUnit class) — builds a deployment's datastore and realm from its two files and **sets nothing
+  up**: `store=<vault> [store.password=<pw> | console prompt] shiro.ini=<file or classpath:…>`.
+  Vault: mandatory entries checked, `master-key` into `KeyMakerProvider.SINGLETON`, `db.*` →
+  `H2PDSCreator.toAPIConfigInfo` (PostgreSQL or H2 file with `db.enc-password`), super-admin id.
+  Datastore created with `ShiroSecurityController` + key maker (no table, catalog, subject or app
+  is created; the pool is lazy, no DDL runs). Realm: store registered under
+  `ResourceManager.Resource.DATA_STORE`, `ShiroUtil.loadSecurityManager(ini)` set as the global
+  security manager, `ShiroDSDomainSecurityManager.fromGlobal()` (attached), super-admin id from the
+  vault; `[xlogistx] app.id` of the INI reported when present. `build(...)` returns a `Built`
+  (datastore, security manager, realm, manager, ids; `AutoCloseable`) for login tests; `main`
+  builds, prints it and closes. Verified on a scratch `H2PSetup` deployment (encrypted H2 file).
 
 ## Session log — 2026-09-15
 
