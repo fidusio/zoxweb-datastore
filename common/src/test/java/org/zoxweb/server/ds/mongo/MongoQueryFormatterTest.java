@@ -4,7 +4,7 @@ import com.mongodb.DBObject;
 
 
 import org.junit.jupiter.api.Test;
-import org.zoxweb.shared.data.UserInfoDAO;
+import org.zoxweb.shared.data.UserIDDAO;
 import org.zoxweb.shared.security.SubjectPreference;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.util.Const;
@@ -20,7 +20,7 @@ public class MongoQueryFormatterTest {
 	@Test
 	public void testSingleQueryCriteria()
 	{
-        DBObject query = MongoQueryFormatter.formatQuery(UserInfoDAO.NVC_USER_INFO_DAO,
+        DBObject query = MongoQueryFormatter.formatQuery(UserIDDAO.NVC_USER_ID_DAO,
 				new QueryMatch<>("first_name", "John", RelationalOperator.EQUAL));
 
         assertNotNull(query);
@@ -32,7 +32,7 @@ public class MongoQueryFormatterTest {
 	@Test
 	public void testMultipleQueryCriteria()
 	{
-        DBObject query = MongoQueryFormatter.formatQuery(UserInfoDAO.NVC_USER_INFO_DAO,
+        DBObject query = MongoQueryFormatter.formatQuery(UserIDDAO.NVC_USER_ID_DAO,
                 new QueryMatch<>("first_name", "John", RelationalOperator.EQUAL),
                 Const.LogicalOperator.AND,
 				new QueryMatch<>("last_name", "Smith", RelationalOperator.NOT_EQUAL)
@@ -44,7 +44,7 @@ public class MongoQueryFormatterTest {
         assertNotNull(query.get("first_name"));
         assertNotNull(query.get("last_name"));
 
-        query = MongoQueryFormatter.formatQuery(UserInfoDAO.NVC_USER_INFO_DAO,
+        query = MongoQueryFormatter.formatQuery(UserIDDAO.NVC_USER_ID_DAO,
                 new QueryMatch<>("first_name", "John", RelationalOperator.EQUAL),
                 Const.LogicalOperator.AND,
                 new QueryMatch<>("last_name", "Smith", RelationalOperator.EQUAL),

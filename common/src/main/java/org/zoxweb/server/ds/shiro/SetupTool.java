@@ -28,7 +28,6 @@ import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.AppIDDAO;
 import org.zoxweb.shared.data.ApplicationConfigDAO;
 import org.zoxweb.shared.data.UserIDDAO;
-import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfo;
 import org.zoxweb.shared.security.SecurityController;
 import org.zoxweb.shared.security.model.PPEncoder;
@@ -283,13 +282,9 @@ public class SetupTool
 		UserIDDAO userID = new UserIDDAO();
 		
 		userID.setSubjectID(subjectID);
-		UserInfoDAO userInfo = new UserInfoDAO();
-		userInfo.setFirstName(name);
-		userInfo.setLastName(lastname);
-		userID.setUserInfo(userInfo);
 		APIAppManager appManager = ResourceManager.lookupResource(Resource.API_APP_MANAGER);
 		return appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
-		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
+		///appManager.registerSubjectAPIKey(appDeviceDAO, subjectID, password);
 	}
 	
 	public void readUserAuthz(String subjectID, String password, String domainID, String appID)

@@ -24,7 +24,6 @@ import org.zoxweb.shared.api.APISecurityManager;
 import org.zoxweb.shared.crypto.CryptoConst;
 import org.zoxweb.shared.data.StatCounter;
 import org.zoxweb.shared.data.UserIDDAO;
-import org.zoxweb.shared.data.UserInfoDAO;
 import org.zoxweb.shared.security.KeyStoreInfo;
 import org.zoxweb.shared.security.SubjectAPIKey;
 
@@ -117,10 +116,6 @@ public class MongoDSTest
 			UserIDDAO userID = new UserIDDAO();
 			
 			userID.setPrimaryEmail(subjectID);
-			UserInfoDAO userInfo = new UserInfoDAO();
-			userInfo.setFirstName("N/S");
-			userInfo.setLastName("N/S");
-			userID.setUserInfo(userInfo);
 			appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
 			
 		    

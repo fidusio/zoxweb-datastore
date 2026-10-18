@@ -188,9 +188,6 @@ public class MongoDSShiroTest
 	@Test
     public void testRegisterSubjectAPIKey() {
 //
-//	    UserInfoDAO userInfoDAO = new UserInfoDAO();
-//	    userInfoDAO.setFirstName("John");
-//	    userInfoDAO.setLastName("Smith");
 //
 //	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
 //        DeviceDAO deviceDAO = new DeviceDAO();
@@ -206,7 +203,7 @@ public class MongoDSShiroTest
 //
 //
 //        apiSecurityManager.logout();
-//        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, TEST_USER, TEST_PASSWORD);
+//        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(appDeviceDAO, TEST_USER, TEST_PASSWORD);
 //       
 //        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getAPIKey());
 //        log.info(""+val);
@@ -333,9 +330,6 @@ public class MongoDSShiroTest
 	 public static void registerSubjectAPIKey(String apiKey, String userID, String password)
 	 {
 
-	    UserInfoDAO userInfoDAO = new UserInfoDAO();
-	    userInfoDAO.setFirstName("John");
-	    userInfoDAO.setLastName("Smith");
 
 	    AppIDDAO appIDDAO = new AppIDDAO(DOMAIN_ID, APP_ID);
         DeviceDAO deviceDAO = new DeviceDAO();
@@ -354,7 +348,7 @@ public class MongoDSShiroTest
 
 
         apiSecurityManager.logout();
-        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, userID, password);
+        AppDeviceDAO temp = (AppDeviceDAO) appManager.registerSubjectAPIKey(appDeviceDAO, userID, password);
        
 //        AppDeviceDAO val = appManager.lookupSubjectAPIKey(temp.getSubjectID(), false);
 //        log.info(""+val);
@@ -366,12 +360,8 @@ public class MongoDSShiroTest
 		UserIDDAO userID = new UserIDDAO();
 		
 		userID.setSubjectID(subjectID);
-		UserInfoDAO userInfo = new UserInfoDAO();
-		userInfo.setFirstName("N/S");
-		userInfo.setLastName("N/S");
-		userID.setUserInfo(userInfo);
 		return appManager.createUserIDDAO(userID, CryptoConst.SubjectStatus.ACTIVE, password);
-		///appManager.registerSubjectAPIKey(userInfoDAO, appDeviceDAO, subjectID, password);
+		///appManager.registerSubjectAPIKey(appDeviceDAO, subjectID, password);
 	}
 	
 	public static void createAPP(String domainID, String appID)
@@ -381,10 +371,6 @@ public class MongoDSShiroTest
 //		UserIDDAO userID = new UserIDDAO();
 //		
 //		userID.setSubjectID(subjectID);
-//		UserInfoDAO userInfo = new UserInfoDAO();
-//		userInfo.setFirstName("N/S");
-//		userInfo.setLastName("N/S");
-//		userID.setUserInfo(userInfo);
 //		try
 //		{
 //			appManager.createUserIDDAO(userID, UserStatus.ACTIVE, password);
