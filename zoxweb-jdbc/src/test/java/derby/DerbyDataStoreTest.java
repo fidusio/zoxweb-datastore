@@ -26,7 +26,7 @@ import org.zoxweb.server.ds.derby.DerbyDataStore;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIConfigInfoImpl;
-import org.zoxweb.shared.data.AddressDAO;
+import org.zoxweb.shared.data.AddressInfo;
 import org.zoxweb.shared.data.DeviceInfo;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatch;
@@ -145,7 +145,7 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testRead() {
-        AddressDAO addressDAO = new AddressDAO();
+        AddressInfo addressDAO = new AddressInfo();
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
@@ -153,7 +153,7 @@ public class DerbyDataStoreTest {
         addressDAO = dataStore.insert(addressDAO);
         assert (null != addressDAO);
 
-        List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID());
+        List<AddressInfo> result = dataStore.searchByID(AddressInfo.class.getName(), addressDAO.getGUID());
 
 
         //assert (null !=result)
@@ -164,19 +164,19 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testUpdate() {
-        AddressDAO addressDAO = new AddressDAO();
+        AddressInfo addressDAO = new AddressInfo();
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
-        addressDAO = (AddressDAO) dataStore.update(addressDAO);
+        addressDAO = (AddressInfo) dataStore.update(addressDAO);
 
-        System.out.println("Original NVE: " + dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID()));
+        System.out.println("Original NVE: " + dataStore.searchByID(AddressInfo.class.getName(), addressDAO.getGUID()));
 
         addressDAO.setCity("New York");
         addressDAO.setStateOrProvince("NY");
-        addressDAO = (AddressDAO) dataStore.update(addressDAO);
+        addressDAO = (AddressInfo) dataStore.update(addressDAO);
 
-        System.out.println("Updated NVE: " + dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID()));
+        System.out.println("Updated NVE: " + dataStore.searchByID(AddressInfo.class.getName(), addressDAO.getGUID()));
     }
 
     @Test
@@ -240,14 +240,14 @@ public class DerbyDataStoreTest {
 
     @Test
     public void testDelete() throws IOException {
-        AddressDAO addressDAO = new AddressDAO();
+        AddressInfo addressDAO = new AddressInfo();
         addressDAO.setCity("Los Angeles");
         addressDAO.setStateOrProvince("CA");
         addressDAO.setCountry("USA");
-        addressDAO = (AddressDAO) dataStore.insert(addressDAO);
+        addressDAO = (AddressInfo) dataStore.insert(addressDAO);
 
         dataStore.delete(addressDAO, true);
-        List<AddressDAO> result = dataStore.searchByID(AddressDAO.class.getName(), addressDAO.getGUID());
+        List<AddressInfo> result = dataStore.searchByID(AddressInfo.class.getName(), addressDAO.getGUID());
         assert (result.isEmpty());
 
         DSConst.AllTypes at = DSConst.AllTypes.autoBuilder();

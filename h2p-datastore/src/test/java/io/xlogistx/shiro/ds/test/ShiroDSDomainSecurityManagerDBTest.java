@@ -1846,7 +1846,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         for (String verb : new String[]{"create", "read", "update", "delete", "share"}) {
             assertEquals(a.getGUID(), ShiroUtil.checkResourcePermission(x, verb), verb);
         }
-        assertEquals(a.getGUID(), controller.checkNVEntityAccess(x, org.zoxweb.shared.util.CRUD.READ, org.zoxweb.shared.util.CRUD.UPDATE));
+        assertEquals(a.getGUID(), controller.resourceAccessor(x, org.zoxweb.shared.util.CRUD.READ, org.zoxweb.shared.util.CRUD.UPDATE));
         assertTrue(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.DELETE));
         assertEquals(a.getGUID(), controller.currentSubjectGUID());
         assertTrue(ShiroUtil.isResourcePermitted(a.getGUID(), a.getGUID(), "create"), "create is a self verb: a subject creates its own rows");
@@ -1856,9 +1856,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
         login(pb);
         assertFalse(ShiroUtil.isResourcePermitted(x.getGUID(), x.getSubjectGUID(), "create"), "a share never carries create");
         assertEquals(a.getGUID(), ShiroUtil.checkResourcePermission(x, "read"));
-        assertEquals(a.getGUID(), controller.checkNVEntityAccess(Const.LogicalOperator.OR, x,
+        assertEquals(a.getGUID(), controller.resourceAccessor(Const.LogicalOperator.OR, x,
                 org.zoxweb.shared.util.CRUD.UPDATE, org.zoxweb.shared.util.CRUD.READ), "OR: read suffices");
-        assertThrows(AccessSecurityException.class, () -> controller.checkNVEntityAccess(x,
+        assertThrows(AccessSecurityException.class, () -> controller.resourceAccessor(x,
                 org.zoxweb.shared.util.CRUD.UPDATE, org.zoxweb.shared.util.CRUD.READ), "AND: update missing");
         assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "delete"));
         assertTrue(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
@@ -1870,7 +1870,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertFalse(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
         // but its own resource is fine
         PropertyDAO own = newResource(c);
-        assertEquals(c.getGUID(), controller.checkNVEntityAccess(own, org.zoxweb.shared.util.CRUD.UPDATE));
+        assertEquals(c.getGUID(), controller.resourceAccessor(own, org.zoxweb.shared.util.CRUD.UPDATE));
     }
 
     /**

@@ -11,8 +11,8 @@ import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.crypto.EncapsulatedKey;
 import org.zoxweb.shared.crypto.EncryptedData;
-import org.zoxweb.shared.data.CreditCardDAO;
-import org.zoxweb.shared.data.DetailedCreditCardDAO;
+import org.zoxweb.shared.data.CreditCardInfo;
+import org.zoxweb.shared.data.DetailedCreditCardInfo;
 import org.zoxweb.shared.data.PropertyDAO;
 import org.zoxweb.shared.data.SecureDocument;
 import org.zoxweb.shared.db.QueryMatch;
@@ -69,8 +69,8 @@ public class H2PFieldCryptoTest {
         return s;
     }
 
-    private static CreditCardDAO card(String number) {
-        CreditCardDAO c = new CreditCardDAO();
+    private static CreditCardInfo card(String number) {
+        CreditCardInfo c = new CreditCardInfo();
         c.setCardNumber(number);
         c.setCardHolderName("Test Owner");
         return c;
@@ -82,14 +82,14 @@ public class H2PFieldCryptoTest {
         return found.get(0);
     }
 
-    private static CreditCardDAO cardById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<CreditCardDAO>byId(store, CreditCardDAO.NVC_CREDIT_CARD_DAO, guid); }
-    private static DetailedCreditCardDAO detailedById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<DetailedCreditCardDAO>byId(store, DetailedCreditCardDAO.NVC_DETAILED_CREDIT_CARD_DAO, guid); }
+    private static CreditCardInfo cardById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<CreditCardInfo>byId(store, CreditCardInfo.NVC_CREDIT_CARD_INFO, guid); }
+    private static DetailedCreditCardInfo detailedById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<DetailedCreditCardInfo>byId(store, DetailedCreditCardInfo.NVC_DETAILED_CREDIT_CARD_INFO, guid); }
     private static SecureDocument docById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<SecureDocument>byId(store, SecureDocument.NVC_SECURE_DOCUMENT, guid); }
     private static PropertyDAO propById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<PropertyDAO>byId(store, PropertyDAO.NVC_PROPERTY_DAO, guid); }
 
     /** The stored bytes of the card_number column. */
     private static byte[] rawCard(H2PDataStore store, String guid) throws Exception {
-        Object v = CryptoTestSupport.rawColumn(store, CreditCardDAO.NVC_CREDIT_CARD_DAO.getName(), "card_number", guid);
+        Object v = CryptoTestSupport.rawColumn(store, CreditCardInfo.NVC_CREDIT_CARD_INFO.getName(), "card_number", guid);
         assertTrue(v == null || v instanceof byte[], "bytea column, got " + (v != null ? v.getClass() : null));
         return (byte[]) v;
     }
@@ -108,7 +108,7 @@ public class H2PFieldCryptoTest {
     @Test
     public void ownerRoundTrip_columnHoldsPackedRecordNotPlaintext() throws Exception {
         String owner = login(ds);
-        CreditCardDAO c = ds.insert(card(CARD));
+        CreditCardInfo c = ds.insert(card(CARD));
         assertEquals(owner, c.getSubjectGUID(), "associated with the bound subject");
         assertEquals(CARD, c.getCardNumber(), "the caller's object keeps its plaintext");
 
@@ -122,40 +122,40 @@ public class H2PFieldCryptoTest {
     @Test
     public void nonOwner_rowAbsent_grantReadsClear_nobodyBoundSeesNothing() throws Exception {
         login(ds);
-        CreditCardDAO masked = ds.insert(card(CARD));
-        DetailedCreditCardDAO plain = new DetailedCreditCardDAO();
+        CreditCardInfo masked = ds.insert(card(CARD));
+        DetailedCreditCardInfo plain = new DetailedCreditCardInfo();
         plain.setCardNumber(CARD);
         plain.setCardHolderName("Test Owner");
         plain = ds.insert(plain);
         final String plainGUID = plain.getGUID();
 
         String stranger = login(ds);
-        assertTrue(ds.searchByID(CreditCardDAO.NVC_CREDIT_CARD_DAO, masked.getGUID()).isEmpty(), "no read permission: the row is not returned");
-        assertTrue(ds.searchByID(DetailedCreditCardDAO.NVC_DETAILED_CREDIT_CARD_DAO, plainGUID).isEmpty());
+        assertTrue(ds.searchByID(CreditCardInfo.NVC_CREDIT_CARD_INFO, masked.getGUID()).isEmpty(), "no read permission: the row is not returned");
+        assertTrue(ds.searchByID(DetailedCreditCardInfo.NVC_DETAILED_CREDIT_CARD_INFO, plainGUID).isEmpty());
 
         // a share (resource:<guid>:<stranger>:read) returns the row and opens it under the OWNER's key chain
         TestSecurityController.grant(masked.getGUID(), stranger, "read");
         TestSecurityController.grant(plainGUID, stranger, "read");
         assertEquals(CARD, cardById(ds, masked.getGUID()).getCardNumber());
-        DetailedCreditCardDAO p = detailedById(ds, plainGUID);
+        DetailedCreditCardInfo p = detailedById(ds, plainGUID);
         assertEquals(CARD, p.getCardNumber());
         assertEquals("Test Owner", p.getCardHolderName());
 
         // nobody bound: nothing, never an exception
         TestSecurityController.currentSubject = null;
-        assertTrue(ds.searchByID(CreditCardDAO.NVC_CREDIT_CARD_DAO, masked.getGUID()).isEmpty());
-        assertTrue(ds.searchByID(DetailedCreditCardDAO.NVC_DETAILED_CREDIT_CARD_DAO, plainGUID).isEmpty());
+        assertTrue(ds.searchByID(CreditCardInfo.NVC_CREDIT_CARD_INFO, masked.getGUID()).isEmpty());
+        assertTrue(ds.searchByID(DetailedCreditCardInfo.NVC_DETAILED_CREDIT_CARD_INFO, plainGUID).isEmpty());
     }
 
     @Test
     public void maskWriteBackKeepsSecret_newValueReseals_emptyClears() throws Exception {
         String owner = login(ds);
-        CreditCardDAO c = ds.insert(card(CARD));
+        CreditCardInfo c = ds.insert(card(CARD));
         byte[] stored = rawCard(ds, c.getGUID());
 
         // the mask written back (a client that only ever showed ****1111) keeps the stored ciphertext byte for byte
         assertEquals(owner, c.getSubjectGUID());
-        CreditCardDAO maskedView = cardById(ds, c.getGUID());
+        CreditCardInfo maskedView = cardById(ds, c.getGUID());
         ((NVPair) maskedView.lookup("card_number")).setValueFilter(FilterType.ENCRYPT_MASK);
         ((NVPair) maskedView.lookup("card_number")).setValue("****1111");
         maskedView.setCardHolderName("Renamed Owner");
@@ -165,7 +165,7 @@ public class H2PFieldCryptoTest {
         assertEquals("Renamed Owner", cardById(ds, c.getGUID()).getCardHolderName());
 
         // a new value re-seals with a fresh nonce
-        CreditCardDAO fresh = cardById(ds, c.getGUID());
+        CreditCardInfo fresh = cardById(ds, c.getGUID());
         fresh.setCardNumber(CARD2);
         ds.update(fresh);
         byte[] stored2 = rawCard(ds, c.getGUID());
@@ -174,7 +174,7 @@ public class H2PFieldCryptoTest {
         assertEquals(CARD2, cardById(ds, c.getGUID()).getCardNumber());
 
         // empty clears
-        CreditCardDAO clear = cardById(ds, c.getGUID());
+        CreditCardInfo clear = cardById(ds, c.getGUID());
         ((NVPair) clear.lookup("card_number")).setValueFilter(FilterType.ENCRYPT_MASK);
         ((NVPair) clear.lookup("card_number")).setValue("");
         ds.update(clear);
@@ -201,10 +201,10 @@ public class H2PFieldCryptoTest {
     @Test
     public void nonOwnerWrite_deniedByController_updateGrantAllows() {
         login(ds);
-        CreditCardDAO c = ds.insert(card(CARD));
+        CreditCardInfo c = ds.insert(card(CARD));
         String other = login(ds);
         TestSecurityController.grant(c.getGUID(), other, "read");
-        CreditCardDAO view = cardById(ds, c.getGUID());
+        CreditCardInfo view = cardById(ds, c.getGUID());
         view.setCardNumber(CARD2);
         assertThrows(AccessSecurityException.class, () -> ds.update(view), "read is not update");
         TestSecurityController.grant(c.getGUID(), other, "update");
@@ -216,9 +216,9 @@ public class H2PFieldCryptoTest {
     public void queryOnEncryptedColumnRejected_nullTestAllowed() {
         login(ds);
         ds.insert(card(CARD));
-        assertThrows(IllegalArgumentException.class, () -> ds.search(CreditCardDAO.NVC_CREDIT_CARD_DAO, null,
+        assertThrows(IllegalArgumentException.class, () -> ds.search(CreditCardInfo.NVC_CREDIT_CARD_INFO, null,
                 new QueryMatch<>(RelationalOperator.EQUAL, CARD, "card_number")));
-        List<CreditCardDAO> withCard = ds.search(CreditCardDAO.NVC_CREDIT_CARD_DAO, null,
+        List<CreditCardInfo> withCard = ds.search(CreditCardInfo.NVC_CREDIT_CARD_INFO, null,
                 new QueryMatch<>(RelationalOperator.NOT_EQUAL, null, "card_number"));
         assertFalse(withCard.isEmpty(), "IS NOT NULL still allowed");
     }
@@ -251,7 +251,7 @@ public class H2PFieldCryptoTest {
             assertThrows(AccessSecurityException.class, incomplete::newConnection);
             assertThrows(AccessSecurityException.class, () -> incomplete.insert(card(CARD)));
             assertThrows(AccessSecurityException.class, () -> incomplete.insert(p), "a plain entity is refused too");
-            assertThrows(AccessSecurityException.class, () -> incomplete.search(CreditCardDAO.NVC_CREDIT_CARD_DAO, null));
+            assertThrows(AccessSecurityException.class, () -> incomplete.search(CreditCardInfo.NVC_CREDIT_CARD_INFO, null));
         }
         assertTrue(ds.isEncryptionActive());
     }
@@ -259,7 +259,7 @@ public class H2PFieldCryptoTest {
     @Test
     public void clearTextRow_readableInActiveStore_deleteRemovesKeys() throws Exception {
         String owner = login(ds);
-        CreditCardDAO c = ds.insert(card(CARD));
+        CreditCardInfo c = ds.insert(card(CARD));
         // a row written by a non-encrypting store: UTF-8 clear text in the bytea column
         try (Connection con = ds.newConnection();
              PreparedStatement ps = con.prepareStatement("UPDATE \"credit_card_dao\" SET \"card_number\" = ? WHERE \"guid\" = ?")) {
@@ -275,9 +275,9 @@ public class H2PFieldCryptoTest {
         assertTrue(ds.delete(c, false));
         assertEquals(0, CryptoTestSupport.countKeyRows(ds, c.getGUID()));
 
-        CreditCardDAO c2 = ds.insert(card(CARD));
+        CreditCardInfo c2 = ds.insert(card(CARD));
         assertEquals(1, CryptoTestSupport.countKeyRows(ds, c2.getGUID()));
-        assertTrue(ds.delete(CreditCardDAO.NVC_CREDIT_CARD_DAO, new QueryMatch<>(RelationalOperator.EQUAL, c2.getGUID(), "guid")));
+        assertTrue(ds.delete(CreditCardInfo.NVC_CREDIT_CARD_INFO, new QueryMatch<>(RelationalOperator.EQUAL, c2.getGUID(), "guid")));
         assertEquals(0, CryptoTestSupport.countKeyRows(ds, c2.getGUID()));
     }
 
@@ -314,11 +314,11 @@ public class H2PFieldCryptoTest {
     @Test
     public void dumpCarriesBytesBesideEntity_restoreReadableUnderSameMasterKey() throws Exception {
         String owner = login(ds);
-        CreditCardDAO c = ds.insert(card(CARD));
+        CreditCardInfo c = ds.insert(card(CARD));
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         // a dump moves every row: refused for a logged-in subject, it runs in the system context only
-        assertThrows(AccessSecurityException.class, () -> ds.dump(new ByteArrayOutputStream(), false, CreditCardDAO.NVC_CREDIT_CARD_DAO));
-        TestSecurityController.system(() -> ds.dump(bos, false, CreditCardDAO.NVC_CREDIT_CARD_DAO, EncapsulatedKey.NVCE_ENCAPSULATED_KEY));
+        assertThrows(AccessSecurityException.class, () -> ds.dump(new ByteArrayOutputStream(), false, CreditCardInfo.NVC_CREDIT_CARD_INFO));
+        TestSecurityController.system(() -> ds.dump(bos, false, CreditCardInfo.NVC_CREDIT_CARD_INFO, EncapsulatedKey.NVCE_ENCAPSULATED_KEY));
         String dump = bos.toString(StandardCharsets.UTF_8);
         assertFalse(dump.contains(CARD), "dump carries the record bytes, never the plaintext");
         // the EncapsulatedKey entities legitimately carry alg=A256GCM as a field; the |-joined canonical
