@@ -9,7 +9,7 @@ import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
 import org.zoxweb.shared.data.FileInfo;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.util.DynamicEnumMap;
 import org.zoxweb.shared.util.NVEntity;
@@ -56,8 +56,8 @@ public class H2PDumpRestoreTest {
         return prefix + "_" + Math.abs(UUID.randomUUID().hashCode());
     }
 
-    private static PropertyDAO newPropertyDAO(String name, int val) {
-        PropertyDAO ret = new PropertyDAO();
+    private static PropertyImpl newPropertyDAO(String name, int val) {
+        PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription("desc of " + name);
         ret.getProperties()
@@ -81,17 +81,17 @@ public class H2PDumpRestoreTest {
                 source.insert(newPropertyDAO("per-type-" + i, i));
             }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            long written = source.dump(PropertyDAO.NVC_PROPERTY_DAO, bos);
+            long written = source.dump(PropertyImpl.NVC_PROPERTY_IMPL, bos);
             assertEquals(10, written);
 
             // A per-type dump is a header-less JSONL stream — restore accepts it as-is.
             NVGenericMap stats = target.restore(new ByteArrayInputStream(bos.toByteArray()), RestoreMode.MERGE);
             assertEquals(Long.valueOf(10), stats.getValue("entities"));
 
-            List<PropertyDAO> restored = target.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+            List<PropertyImpl> restored = target.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
             assertEquals(10, restored.size());
-            for (PropertyDAO r : restored) {
-                PropertyDAO orig = (PropertyDAO) source.searchByID(PropertyDAO.class.getName(), r.getGUID()).get(0);
+            for (PropertyImpl r : restored) {
+                PropertyImpl orig = (PropertyImpl) source.searchByID(PropertyImpl.class.getName(), r.getGUID()).get(0);
                 assertSameJSON(orig, r);
             }
         } finally {
@@ -107,12 +107,12 @@ public class H2PDumpRestoreTest {
             for (int i = 0; i < 3; i++) {
                 source.insert(newPropertyDAO("array-" + i, i));
             }
-            String json = source.dumpToJSON(PropertyDAO.NVC_PROPERTY_DAO);
+            String json = source.dumpToJSON(PropertyImpl.NVC_PROPERTY_IMPL);
             List<NVEntity> parsed = GSONUtil.fromJSONArray(json, null);
             assertEquals(3, parsed.size());
             for (NVEntity nve : parsed) {
-                assertTrue(nve instanceof PropertyDAO, "class_type must reconstruct the concrete type");
-                assertFalse(source.searchByID(PropertyDAO.class.getName(), nve.getGUID()).isEmpty());
+                assertTrue(nve instanceof PropertyImpl, "class_type must reconstruct the concrete type");
+                assertFalse(source.searchByID(PropertyImpl.class.getName(), nve.getGUID()).isEmpty());
             }
         } finally {
             source.close();
@@ -163,7 +163,7 @@ public class H2PDumpRestoreTest {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             NVGenericMap dumpStats = source.dump(bos);
             NVGenericMap typeCounts = dumpStats.getNV("types");
-            assertEquals(Long.valueOf(5), typeCounts.getValue(PropertyDAO.NVC_PROPERTY_DAO.getName()));
+            assertEquals(Long.valueOf(5), typeCounts.getValue(PropertyImpl.NVC_PROPERTY_IMPL.getName()));
             assertEquals(Long.valueOf(2), typeCounts.getValue(CyclicDAO.NVC_CYCLIC_DAO.getName()));
             assertEquals(Long.valueOf(1), dumpStats.getValue("dem"));
             assertEquals(Long.valueOf(1), dumpStats.getValue("sequences"));
@@ -173,13 +173,13 @@ public class H2PDumpRestoreTest {
 
             NVGenericMap restoreStats = target.restore(
                     new ByteArrayInputStream(bos.toByteArray()), RestoreMode.WIPE_AND_LOAD);
-            // 5 PropertyDAO + 1 Range + 2 CyclicDAO + 1 FileInfo + 2 EncapsulatedKey (the owner's subject key and the file's key)
+            // 5 PropertyImpl + 1 Range + 2 CyclicDAO + 1 FileInfo + 2 EncapsulatedKey (the owner's subject key and the file's key)
             assertEquals(Long.valueOf(11), restoreStats.getValue("entities"));
 
             // Entities: JSON-identical to the source's stored form.
-            for (PropertyDAO r : target.<PropertyDAO>userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null)) {
+            for (PropertyImpl r : target.<PropertyImpl>userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null)) {
                 assertSameJSON(
-                        (NVEntity) source.searchByID(PropertyDAO.class.getName(), r.getGUID()).get(0), r);
+                        (NVEntity) source.searchByID(PropertyImpl.class.getName(), r.getGUID()).get(0), r);
             }
             CyclicDAO parentRead = (CyclicDAO) target.searchByID(CyclicDAO.class.getName(), parent.getGUID()).get(0);
             assertNotNull(parentRead.getPeer(), "entity reference must survive the round trip");
@@ -287,7 +287,7 @@ public class H2PDumpRestoreTest {
                 capped.insert(newPropertyDAO("clamp-" + i, i));
             }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            long written = capped.dump(PropertyDAO.NVC_PROPERTY_DAO, bos);
+            long written = capped.dump(PropertyImpl.NVC_PROPERTY_IMPL, bos);
             assertEquals(10, written,
                     "the dump must write every stored entity regardless of MAX_SELECT_RESULTS");
         } finally {
@@ -305,18 +305,18 @@ public class H2PDumpRestoreTest {
             source.dump(bos);
             byte[] dump = bos.toByteArray();
 
-            PropertyDAO extra = newPropertyDAO("pre-existing", 99);
+            PropertyImpl extra = newPropertyDAO("pre-existing", 99);
             target.insert(extra);
 
             target.restore(new ByteArrayInputStream(dump), RestoreMode.MERGE);
-            assertEquals(2, target.countMatch(PropertyDAO.NVC_PROPERTY_DAO),
+            assertEquals(2, target.countMatch(PropertyImpl.NVC_PROPERTY_IMPL),
                     "MERGE must keep the pre-existing row");
-            assertFalse(target.searchByID(PropertyDAO.class.getName(), extra.getGUID()).isEmpty());
+            assertFalse(target.searchByID(PropertyImpl.class.getName(), extra.getGUID()).isEmpty());
 
             target.restore(new ByteArrayInputStream(dump), RestoreMode.WIPE_AND_LOAD);
-            assertEquals(1, target.countMatch(PropertyDAO.NVC_PROPERTY_DAO),
+            assertEquals(1, target.countMatch(PropertyImpl.NVC_PROPERTY_IMPL),
                     "WIPE_AND_LOAD must clear rows not present in the dump");
-            assertTrue(target.searchByID(PropertyDAO.class.getName(), extra.getGUID()).isEmpty());
+            assertTrue(target.searchByID(PropertyImpl.class.getName(), extra.getGUID()).isEmpty());
         } finally {
             source.close();
             target.close();
@@ -343,8 +343,8 @@ public class H2PDumpRestoreTest {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             NVGenericMap stats = second.dump(bos);
             NVGenericMap typeCounts = stats.getNV("types");
-            assertEquals(Long.valueOf(1), typeCounts.getValue(PropertyDAO.NVC_PROPERTY_DAO.getName()),
-                    "cold-start dump must discover property_dao via the catalog");
+            assertEquals(Long.valueOf(1), typeCounts.getValue(PropertyImpl.NVC_PROPERTY_IMPL.getName()),
+                    "cold-start dump must discover property_impl via the catalog");
             assertEquals(Long.valueOf(1), typeCounts.getValue(Range.NVC_RANGE.getName()),
                     "cold-start dump must discover range via the catalog");
         } finally {
@@ -414,7 +414,7 @@ public class H2PDumpRestoreTest {
             ByteArrayOutputStream second = new ByteArrayOutputStream();
             target.readFile(fid, 2, second, true);
             assertArrayEquals(v2, second.toByteArray());
-            assertEquals(1, target.countMatch(PropertyDAO.NVC_PROPERTY_DAO));
+            assertEquals(1, target.countMatch(PropertyImpl.NVC_PROPERTY_IMPL));
         } finally {
             source.close();
             target.close();

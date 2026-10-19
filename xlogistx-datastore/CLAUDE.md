@@ -103,7 +103,7 @@ An audit of all NVEntity classes and NVBase types in `org.zoxweb.shared.util` an
 
 **Generic containers:** NVGenericMap, NVGenericMapList
 
-**All 48 DAO classes** (UserInfoDAO, AddressDAO, PropertyDAO, CreditCardDAO, Range, etc.) work through the generic NVConfigEntity reflection mechanism — no per-DAO handling needed.
+**All 48 DAO classes** (UserInfoDAO, AddressDAO, PropertyImpl, CreditCardDAO, Range, etc.) work through the generic NVConfigEntity reflection mechanism — no per-DAO handling needed.
 
 #### Test coverage added
 
@@ -111,7 +111,7 @@ Three new test methods in `XlogistxMongoDataStoreTest.java`:
 
 | Test | What it covers |
 |---|---|
-| `testNVGenericMapList()` | NVGenericMapList insert + read-back round-trip inside PropertyDAO's NVGenericMap properties |
+| `testNVGenericMapList()` | NVGenericMapList insert + read-back round-trip inside PropertyImpl's NVGenericMap properties |
 | `testNVGenericMapListUpdate()` | NVGenericMapList mutation followed by `update()`, verifying the patch path |
 | `testNVGenericMapDiverseTypes()` | NVGenericMap with mixed types: String, Int, Long, Double, Float, nested NVGenericMap, NVGenericMapList, NVStringList — full round-trip |
 
@@ -148,7 +148,7 @@ Implications:
 
 ### Reserved-ID UUID storage invariant (2026-07-02)
 
-Invariant: **every `ReservedID` field and every `isTypeReferenceID` attribute is persisted in Mongo as a native UUID and surfaced on the java side as its `IDGs.UUIDV7` string encoding.** Audit found this was not implemented — zoxweb-core's `ReferenceIDDAO` NVConfigs (`NVC_SUBJECT_GUID`, `NVC_GUID`) are NOT flagged `isRefID`, so `subject_guid`/`broker_guid` were silently stored as raw Strings, and truly-flagged ref-ID fields were written under `"_" + name` but read from `name` (data loss on read).
+Invariant: **every `ReservedID` field and every `isTypeReferenceID` attribute is persisted in Mongo as a native UUID and surfaced on the java side as its `IDGs.UUIDV7` string encoding.** Audit found this was not implemented — zoxweb-core's `ReferenceIDImpl` NVConfigs (`NVC_SUBJECT_GUID`, `NVC_GUID`) are NOT flagged `isRefID`, so `subject_guid`/`broker_guid` were silently stored as raw Strings, and truly-flagged ref-ID fields were written under `"_" + name` but read from `name` (data loss on read).
 
 | # | Category | Location | Fix applied |
 |---|---|---|---|

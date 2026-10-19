@@ -13,7 +13,7 @@ import org.zoxweb.shared.crypto.EncapsulatedKey;
 import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.data.CreditCardInfo;
 import org.zoxweb.shared.data.DetailedCreditCardInfo;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.data.SecureDocument;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.filters.FilterType;
@@ -85,7 +85,7 @@ public class H2PFieldCryptoTest {
     private static CreditCardInfo cardById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<CreditCardInfo>byId(store, CreditCardInfo.NVC_CREDIT_CARD_INFO, guid); }
     private static DetailedCreditCardInfo detailedById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<DetailedCreditCardInfo>byId(store, DetailedCreditCardInfo.NVC_DETAILED_CREDIT_CARD_INFO, guid); }
     private static SecureDocument docById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<SecureDocument>byId(store, SecureDocument.NVC_SECURE_DOCUMENT, guid); }
-    private static PropertyDAO propById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<PropertyDAO>byId(store, PropertyDAO.NVC_PROPERTY_DAO, guid); }
+    private static PropertyImpl propById(H2PDataStore store, String guid) { return H2PFieldCryptoTest.<PropertyImpl>byId(store, PropertyImpl.NVC_PROPERTY_IMPL, guid); }
 
     /** The stored bytes of the card_number column. */
     private static byte[] rawCard(H2PDataStore store, String guid) throws Exception {
@@ -244,7 +244,7 @@ public class H2PFieldCryptoTest {
     @Test
     public void incompleteConfiguration_databaseRefused() {
         TestSecurityController.currentSubject = CryptoTestSupport.newSubjectGUID();
-        PropertyDAO p = new PropertyDAO();
+        PropertyImpl p = new PropertyImpl();
         p.setName("plain");
         for (boolean[] flags : new boolean[][]{{true, false}, {false, true}, {false, false}}) {
             H2PDataStore incomplete = CryptoTestSupport.newStore("h2p_field_crypto_incomplete_" + flags[0] + "_" + flags[1], flags[0], flags[1]);
@@ -285,14 +285,14 @@ public class H2PFieldCryptoTest {
     public void schemalessPair_encryptMask_inProperties() throws Exception {
         login(ds);
         String secret = "s3cr3t-value-12345678";
-        PropertyDAO p = new PropertyDAO();
+        PropertyImpl p = new PropertyImpl();
         p.setName("with-secret");
         p.getProperties().build(new NVPair("api_secret", secret, FilterType.ENCRYPT_MASK));
         p.getProperties().build(new NVPair("plain", "visible"));
         p = ds.insert(p);
         assertEquals(secret, p.getProperties().getValue("api_secret"), "caller's object untouched");
 
-        Object raw = CryptoTestSupport.rawColumn(ds, PropertyDAO.NVC_PROPERTY_DAO.getName(), "properties", p.getGUID());
+        Object raw = CryptoTestSupport.rawColumn(ds, PropertyImpl.NVC_PROPERTY_IMPL.getName(), "properties", p.getGUID());
         String json = raw instanceof org.postgresql.util.PGobject ? ((org.postgresql.util.PGobject) raw).getValue() : raw.toString();
         assertFalse(json.contains("s3cr3t"), json);
         assertFalse(json.contains("A256GCM"), "no canonical text anywhere: " + json);
@@ -303,12 +303,12 @@ public class H2PFieldCryptoTest {
         EncryptedData record = CipherCodecs.EDDecoder.decode(SharedBase64.decode(Base64Type.URL, carrier));
         assertEquals("****5678", record.getMask());
 
-        PropertyDAO back = propById(ds, p.getGUID());
+        PropertyImpl back = propById(ds, p.getGUID());
         assertEquals(secret, back.getProperties().getValue("api_secret"));
         assertEquals("visible", back.getProperties().getValue("plain"));
 
         TestSecurityController.currentSubject = CryptoTestSupport.newSubjectWithKey(ds);
-        assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty(), "no read permission: no row, so no pair either");
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty(), "no read permission: no row, so no pair either");
     }
 
     @Test

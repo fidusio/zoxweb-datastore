@@ -643,7 +643,7 @@ record authoritative, chunked (256 KiB) authenticated streaming, ciphertext cach
 are the subject's credentials under the subject's chain.
 **Decided 2026-09-03 (page section 6 = spec for the zoxweb-core session):** inline values =
 `EncryptedData` JSON record, AES-256-GCM, HKDF-SHA256, no old-format reader (K10), no
-`PropertyDAO` base; `EncapsulatedKey` contains (not extends) an `EncryptedData`, own GUID, unique
+`PropertyImpl` base; `EncapsulatedKey` contains (not extends) an `EncryptedData`, own GUID, unique
 (reference_guid, subject_guid), reference fields authenticated. File content = **AES Crypt v2
 containers via core `AESCrypt`** (one key per file = entity key bytes as password; fresh IVs per
 version inside the container; interoperable with aescrypt.com tools); new value class
@@ -671,17 +671,17 @@ uses the raw entity key. Third republish (1788507639-964b): `DoNotExpose` enforc
 deferred — `GSONUtil` stays untouched; serialization vs HTTP response path vs datastore read layer
 to be decided after the record types exist (note for this repo: the H2P read layer is a candidate).
 Fourth republish (1788508849-b165): core work-list items 1–4 **done** — `EncryptedData` is the
-GCM JSON record but **stays a `PropertyDAO`** (reversal: entity fields are simply not part of the
+GCM JSON record but **stays a `PropertyImpl`** (reversal: entity fields are simply not part of the
 record/AAD; canonical JSON via new `CryptoJSON`; colon parser deleted); `EncapsulatedKey` is on
-`PropertyDAO` directly with the wrapped record in a **`wrapped_key` text column** (never a child
+`PropertyImpl` directly with the wrapped record in a **`wrapped_key` text column** (never a child
 table) and `toBindingData()` (GUID, subject GUID, reference GUID/type, lock type) as extra AAD;
-`EncryptedContentRef` exists (also a `PropertyDAO`); `CryptoUtil` has GCM `encryptData`/
+`EncryptedContentRef` exists (also a `PropertyImpl`); `CryptoUtil` has GCM `encryptData`/
 `decryptEncryptedData`, public `hkdfSHA256`, `createEncryptedKey`/`wrapKey`/`unwrapKey`/
 `rekeyEncryptedKey`, MIN_KEY_BYTES 32; `KeyMakerProvider` sets binding fields before wrapping and
 unwraps via `CryptoUtil.unwrapKey` (GUID/lock-type stamping still pending step 6). Core working
 tree: 10 modified + 5 new files, uncommitted; jar still 2026-09-03. Implications for this repo when
 the datastore side starts: `wrapped_key` and the flagged scalar columns are plain text/JSON columns
-for H2P; `EncryptedContentRef` being a `PropertyDAO` means it can be either a JSON column on
+for H2P; `EncryptedContentRef` being a `PropertyImpl` means it can be either a JSON column on
 `sys_file_version` (K11 spirit) or a referenced row — decide with the H2P hooks. Fifth republish (1788510604-c6a6): **record format is not JSON** — the user rejected a JSON
 helper in the core session; `CryptoJSON` was removed. `EncryptedData`, the wrapped record inside
 `EncapsulatedKey`, and `EncryptedContentRef` are fixed-order `|`-joined strings (binary base64url,
@@ -1552,7 +1552,7 @@ vault password given by the user: `ShiroDSDomainSecurityManagerDBTest` 77/77 on 
 `SubjectSwapSignUpDBTest` 2/2 on testdb (on h2mem it stops at its own precondition, the database
 is not bootstrapped — an in-memory database never is). Rows checked on testdb after the run with
 `.claude/test-runner/rowcheck` (`RowCheck`, read-only JDBC through the vault): 0 orphan map rows,
-0 maps pointing at a deleted `property_dao`, 0 grants with a missing subject; the 72 inlined shares
+0 maps pointing at a deleted `property_impl`, 0 grants with a missing subject; the 72 inlined shares
 present were left by the older `share_*` tests, which do not clean up (a pre-existing habit, not
 touched). Nothing committed.
 

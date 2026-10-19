@@ -4,7 +4,7 @@ package data;
 import org.zoxweb.server.ds.derby.DerbyDBMeta;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.util.MetaUtil;
-import org.zoxweb.shared.data.SetNameDescriptionDAO;
+import org.zoxweb.shared.data.SetNameDescriptionImpl;
 import org.zoxweb.shared.util.*;
 
 import javax.crypto.SecretKey;
@@ -39,7 +39,7 @@ public class DSConst {
 
     @SuppressWarnings("serial")
     public static class AllTypes
-            extends SetNameDescriptionDAO {
+            extends SetNameDescriptionImpl {
         public enum Param
                 implements GetNVConfig {
 
@@ -86,7 +86,7 @@ public class DSConst {
                 SUS.extractNVConfigs(Param.values()),
                 null,
                 false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL
         );
 
         public AllTypes() {
@@ -216,7 +216,7 @@ public class DSConst {
 
     @SuppressWarnings("serial")
     public static class ComplexTypes
-            extends SetNameDescriptionDAO {
+            extends SetNameDescriptionImpl {
         public enum Param
                 implements GetNVConfig {
 
@@ -260,7 +260,7 @@ public class DSConst {
                 SUS.extractNVConfigs(Param.values()),
                 null,
                 false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL
         );
 
         public ComplexTypes() {

@@ -14,7 +14,7 @@ import org.zoxweb.datastore.test.DSConst;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.HTTPAuthorization;
@@ -126,10 +126,10 @@ public class XlogistxMongoDataStoreTest {
         System.out.println("insert " + cdst.rc);
 
         cdst.rc.reset().start();
-        List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = mongoDataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all " + all.size() + " " + cdst.rc);
-        for (PropertyDAO pd : all) {
+        for (PropertyImpl pd : all) {
             System.out.println(pd);
         }
     }
@@ -137,13 +137,13 @@ public class XlogistxMongoDataStoreTest {
     @Test
     public void testGetALLNVGenericMap() {
         cdst.rc.reset().start();
-        List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = mongoDataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all once " + all.size() + " " + cdst.rc);
         cdst.rc.reset().start();
-        PropertyDAO result;
-        for (PropertyDAO pd : all) {
-            result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result;
+        for (PropertyImpl pd : all) {
+            result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assert pd.getReferenceID().equals(result.getReferenceID());
         }
 
@@ -151,8 +151,8 @@ public class XlogistxMongoDataStoreTest {
         System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
-    public static PropertyDAO createPropertyDAO(String name, String description, int val) {
-        PropertyDAO ret = new PropertyDAO();
+    public static PropertyImpl createPropertyDAO(String name, String description, int val) {
+        PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription(description);
         ret.getProperties()
@@ -185,7 +185,7 @@ public class XlogistxMongoDataStoreTest {
 
     @Test
     public void testNVGenericMapList() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("nvgml_test");
         pd.setDescription("NVGenericMapList round-trip test");
 
@@ -208,7 +208,7 @@ public class XlogistxMongoDataStoreTest {
         mongoDataStore.insert(pd);
         System.out.println("Inserted NVGenericMapList test: " + pd.getReferenceID());
 
-        PropertyDAO result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getReferenceID()).get(0);
+        PropertyImpl result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getReferenceID()).get(0);
 
         NVGenericMapList resultList = result.getProperties().getNV("map_list");
         assert resultList != null : "NVGenericMapList should not be null";
@@ -225,7 +225,7 @@ public class XlogistxMongoDataStoreTest {
 
     @Test
     public void testNVGenericMapListUpdate() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("nvgml_update_test");
         pd.setDescription("NVGenericMapList update test");
 
@@ -248,7 +248,7 @@ public class XlogistxMongoDataStoreTest {
         mongoDataStore.update(pd);
 
         // Read back and verify
-        PropertyDAO result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getReferenceID()).get(0);
+        PropertyImpl result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getReferenceID()).get(0);
         NVGenericMapList resultList = result.getProperties().getNV("map_list");
         assert resultList != null : "NVGenericMapList should not be null after update";
         assert resultList.getValue().size() == 2 : "Expected 2 maps after update, got " + resultList.getValue().size();
@@ -260,7 +260,7 @@ public class XlogistxMongoDataStoreTest {
 
     @Test
     public void testNVGenericMapDiverseTypes() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("diverse_types_test");
         pd.setDescription("NVGenericMap diverse type round-trip");
 
@@ -290,7 +290,7 @@ public class XlogistxMongoDataStoreTest {
 
         mongoDataStore.insert(pd);
 
-        PropertyDAO result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getReferenceID()).get(0);
+        PropertyImpl result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getReferenceID()).get(0);
         NVGenericMap props = result.getProperties();
 
         // Verify primitives
@@ -337,7 +337,7 @@ public class XlogistxMongoDataStoreTest {
 
     @Test
     public void deleteTest() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("diverse_types_test");
         pd.setDescription("NVGenericMap diverse type round-trip");
 
@@ -367,7 +367,7 @@ public class XlogistxMongoDataStoreTest {
 
         mongoDataStore.insert(pd);
 
-        PropertyDAO result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         System.out.println("To be deleted " + result.getGUID());
 
         mongoDataStore.delete(result, false);
@@ -378,7 +378,7 @@ public class XlogistxMongoDataStoreTest {
     }
 
     /**
-     * Ensures the PropertyDAO collection + indexes + nv_config_entities registry exist BEFORE a
+     * Ensures the PropertyImpl collection + indexes + nv_config_entities registry exist BEFORE a
      * transaction opens — in-transaction DDL is illegal, so the first-ever insert of a type must
      * happen outside the txn. Safe to call repeatedly (idempotent after the first time).
      */
@@ -390,15 +390,15 @@ public class XlogistxMongoDataStoreTest {
     public void testTransactionCommit() {
         prewarmPropertyDAO();
 
-        PropertyDAO a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
-        PropertyDAO b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
 
         mongoDataStore.beginTransaction();
         try {
             mongoDataStore.insert(a);
             mongoDataStore.insert(b);
             // Read-your-own-writes: uncommitted rows are visible within the same session/transaction.
-            assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+            assertFalse(mongoDataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                     "insert should be visible inside the transaction");
             mongoDataStore.endTransaction(); // commit
         } catch (RuntimeException e) {
@@ -407,9 +407,9 @@ public class XlogistxMongoDataStoreTest {
         }
 
         // After commit both rows are persisted and visible outside the transaction.
-        assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+        assertFalse(mongoDataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                 "a should persist after commit");
-        assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+        assertFalse(mongoDataStore.searchByID(PropertyImpl.class.getName(), b.getGUID()).isEmpty(),
                 "b should persist after commit");
         System.out.println("tx commit OK: " + a.getGUID() + ", " + b.getGUID());
     }
@@ -418,24 +418,24 @@ public class XlogistxMongoDataStoreTest {
     public void testTransactionRollback() {
         prewarmPropertyDAO();
 
-        PropertyDAO a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
-        PropertyDAO b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
 
         mongoDataStore.beginTransaction();
         try {
             mongoDataStore.insert(a);
             mongoDataStore.insert(b);
             // Visible inside the transaction before the rollback.
-            assertFalse(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+            assertFalse(mongoDataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                     "insert should be visible inside the transaction");
         } finally {
             mongoDataStore.abortTransaction(); // rollback
         }
 
         // After rollback neither row is persisted (fresh reads, no active session).
-        assertTrue(mongoDataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+        assertTrue(mongoDataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                 "a must not persist after rollback");
-        assertTrue(mongoDataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+        assertTrue(mongoDataStore.searchByID(PropertyImpl.class.getName(), b.getGUID()).isEmpty(),
                 "b must not persist after rollback");
         System.out.println("tx rollback OK: neither " + a.getGUID() + " nor " + b.getGUID() + " persisted");
     }
@@ -448,7 +448,7 @@ public class XlogistxMongoDataStoreTest {
     @Test
     public void testReservedIDUUIDInvariant() {
         String subjectGUID = IDGs.UUIDV7.genID();
-        PropertyDAO pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
+        PropertyImpl pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
         pd.setSubjectGUID(subjectGUID);
         mongoDataStore.insert(pd);
 
@@ -464,12 +464,12 @@ public class XlogistxMongoDataStoreTest {
         assertEquals(subjectGUID, IDGs.UUIDV7.encode((UUID) rawSubjectGUID));
 
         // Entity round-trip: the java side must carry the UUIDV7 string encoding.
-        PropertyDAO read = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl read = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(pd.getGUID(), read.getGUID());
         assertEquals(subjectGUID, read.getSubjectGUID());
 
         // Query round-trip: a string subject_guid criterion must decode to UUID and match.
-        List<PropertyDAO> found = mongoDataStore.search(PropertyDAO.class.getName(), null,
+        List<PropertyImpl> found = mongoDataStore.search(PropertyImpl.class.getName(), null,
                 new QueryMatchString(MetaToken.SUBJECT_GUID, subjectGUID, RelationalOperator.EQUAL));
         assertFalse(found.isEmpty(), "query by subject_guid must match the UUID-stored field");
         assertEquals(pd.getGUID(), found.get(0).getGUID());
@@ -494,12 +494,12 @@ public class XlogistxMongoDataStoreTest {
         ds.setAPIConfigInfo(configInfo);
 
         try {
-            PropertyDAO pd = createPropertyDAO("tx-first-use-" + UUID.randomUUID(), "fresh-db first-use in txn", 1);
+            PropertyImpl pd = createPropertyDAO("tx-first-use-" + UUID.randomUUID(), "fresh-db first-use in txn", 1);
 
             ds.beginTransaction();
             try {
                 // Pin the snapshot with a read BEFORE any collection exists (mirrors createSubjectID).
-                assertTrue(ds.searchByID(PropertyDAO.class.getName(), IDGs.UUIDV7.genID()).isEmpty());
+                assertTrue(ds.searchByID(PropertyImpl.class.getName(), IDGs.UUIDV7.genID()).isEmpty());
                 ds.insert(pd);
                 ds.endTransaction(); // used to throw WriteConflict 112 here
             } catch (RuntimeException e) {
@@ -508,11 +508,11 @@ public class XlogistxMongoDataStoreTest {
             }
 
             // Committed and readable.
-            assertFalse(ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).isEmpty(),
+            assertFalse(ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).isEmpty(),
                     "first-use insert must survive the commit");
             // The deferred DDL ran post-commit: collection is registered/indexed.
             assertTrue(ds.getMetaManager().isIndexed(
-                            ds.connect().getCollection(PropertyDAO.NVC_PROPERTY_DAO.toCanonicalID())),
+                            ds.connect().getCollection(PropertyImpl.NVC_PROPERTY_IMPL.toCanonicalID())),
                     "deferred first-use DDL must run after commit");
             System.out.println("fresh-db first-use txn OK: " + freshDB + " / " + pd.getGUID());
         } finally {

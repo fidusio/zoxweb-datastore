@@ -15,7 +15,7 @@ import org.zoxweb.datastore.test.DSConst;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APIConfigInfo;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.db.QueryMatchString;
 import org.zoxweb.shared.http.HTTPAuthorization;
@@ -76,9 +76,9 @@ public class H2PDataStoreTest {
         ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
-            PropertyDAO pd = createPropertyDAO("url-cfg-" + UUID.randomUUID(), "url config", 5);
+            PropertyImpl pd = createPropertyDAO("url-cfg-" + UUID.randomUUID(), "url config", 5);
             ds.insert(pd);
-            PropertyDAO read = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+            PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assertEquals(pd.getGUID(), read.getGUID());
             System.out.println("URL-config store OK: " + H2PDSCreator.H2PParam.dataStoreURI(cfg));
         } finally {
@@ -99,10 +99,10 @@ public class H2PDataStoreTest {
         ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
-            PropertyDAO pd = createPropertyDAO("pg-mode-" + UUID.randomUUID(), "pg mode", 3);
+            PropertyImpl pd = createPropertyDAO("pg-mode-" + UUID.randomUUID(), "pg mode", 3);
             pd.getProperties().build(new NVLong("big", 9_000_000_000L));
             ds.insert(pd);
-            PropertyDAO read = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+            PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assertEquals(pd.getGUID(), read.getGUID());
             assertEquals(Long.valueOf(9_000_000_000L), read.getProperties().getValue("big"));
             System.out.println("PostgreSQL-mode store OK: " + uri);
@@ -208,10 +208,10 @@ public class H2PDataStoreTest {
         System.out.println("insert " + cdst.rc);
 
         cdst.rc.reset().start();
-        List<PropertyDAO> all = h2DataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = h2DataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all " + all.size() + " " + cdst.rc);
-        for (PropertyDAO pd : all) {
+        for (PropertyImpl pd : all) {
             System.out.println(pd);
         }
     }
@@ -219,21 +219,21 @@ public class H2PDataStoreTest {
     @Test
     public void testGetALLNVGenericMap() {
         cdst.rc.reset().start();
-        List<PropertyDAO> all = h2DataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = h2DataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all once " + all.size() + " " + cdst.rc);
         cdst.rc.reset().start();
-        PropertyDAO result;
-        for (PropertyDAO pd : all) {
-            result = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result;
+        for (PropertyImpl pd : all) {
+            result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assert pd.getGUID().equals(result.getGUID());
         }
         cdst.rc.stop(all.size());
         System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
-    public static PropertyDAO createPropertyDAO(String name, String description, int val) {
-        PropertyDAO ret = new PropertyDAO();
+    public static PropertyImpl createPropertyDAO(String name, String description, int val) {
+        PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription(description);
         ret.getProperties()
@@ -265,7 +265,7 @@ public class H2PDataStoreTest {
 
     @Test
     public void testNVGenericMapList() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("nvgml_test");
         pd.setDescription("NVGenericMapList round-trip test");
 
@@ -288,7 +288,7 @@ public class H2PDataStoreTest {
         h2DataStore.insert(pd);
         System.out.println("Inserted NVGenericMapList test: " + pd.getGUID());
 
-        PropertyDAO result = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
 
         NVGenericMapList resultList = result.getProperties().getNV("map_list");
         assert resultList != null : "NVGenericMapList should not be null";
@@ -301,7 +301,7 @@ public class H2PDataStoreTest {
 
     @Test
     public void testNVGenericMapListUpdate() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("nvgml_update_test");
         pd.setDescription("NVGenericMapList update test");
 
@@ -325,7 +325,7 @@ public class H2PDataStoreTest {
 
         // Read back and verify. Schemaless data is stored as JSON, so fidelity is asserted at the
         // JSON level (re-serializing the read-back value yields the same JSON as the original).
-        PropertyDAO result = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(GSONUtil.toJSONDefault(pd.getProperties()), GSONUtil.toJSONDefault(result.getProperties()),
                 "NVGenericMapList update must round-trip (JSON-stable)");
         System.out.println("NVGenericMapList update OK: " + GSONUtil.toJSONDefault(result.getProperties(), true));
@@ -333,7 +333,7 @@ public class H2PDataStoreTest {
 
     @Test
     public void testNVGenericMapDiverseTypes() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("diverse_types_test");
         pd.setDescription("NVGenericMap diverse type round-trip");
 
@@ -360,7 +360,7 @@ public class H2PDataStoreTest {
 
         h2DataStore.insert(pd);
 
-        PropertyDAO result = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         // Schemaless NVGenericMap is stored as JSON; assert a JSON-stable round-trip across every
         // diverse type (string, int, long, double, float, nested map, map-list, string-list).
         assertEquals(GSONUtil.toJSONDefault(pd.getProperties()), GSONUtil.toJSONDefault(result.getProperties()),
@@ -370,14 +370,14 @@ public class H2PDataStoreTest {
 
     @Test
     public void deleteTest() {
-        PropertyDAO pd = createPropertyDAO("delete-me-" + UUID.randomUUID(), "to be deleted", 9);
+        PropertyImpl pd = createPropertyDAO("delete-me-" + UUID.randomUUID(), "to be deleted", 9);
         h2DataStore.insert(pd);
 
-        PropertyDAO result = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         System.out.println("To be deleted " + result.getGUID());
 
         h2DataStore.delete(result, false);
-        PropertyDAO gone = h2DataStore.lookupByReferenceID(result.getNVConfig().getName(), pd.getGUID());
+        PropertyImpl gone = h2DataStore.lookupByReferenceID(result.getNVConfig().getName(), pd.getGUID());
         assertNull(gone, "row must be gone after delete");
     }
 
@@ -390,17 +390,17 @@ public class H2PDataStoreTest {
     @Test
     public void testReservedIDUUIDInvariant() {
         String subjectGUID = IDGs.UUIDV7.genID();
-        PropertyDAO pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
+        PropertyImpl pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
         pd.setSubjectGUID(subjectGUID);
         h2DataStore.insert(pd);
 
         // Entity round-trip: the java side must carry the UUIDV7 string encoding.
-        PropertyDAO read = (PropertyDAO) h2DataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl read = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(pd.getGUID(), read.getGUID());
         assertEquals(subjectGUID, read.getSubjectGUID());
 
         // Query round-trip: a string subject_guid criterion must decode to UUID and match.
-        List<PropertyDAO> found = h2DataStore.search(PropertyDAO.class.getName(), null,
+        List<PropertyImpl> found = h2DataStore.search(PropertyImpl.class.getName(), null,
                 new QueryMatchString(MetaToken.SUBJECT_GUID, subjectGUID, RelationalOperator.EQUAL));
         assertFalse(found.isEmpty(), "query by subject_guid must match the UUID-stored field");
         assertEquals(pd.getGUID(), found.get(0).getGUID());
@@ -442,15 +442,15 @@ public class H2PDataStoreTest {
 
     @Test
     public void testTransactionCommit() {
-        PropertyDAO a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
-        PropertyDAO b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
 
         h2DataStore.beginTransaction();
         try {
             h2DataStore.insert(a);
             h2DataStore.insert(b);
             // Read-your-own-writes: uncommitted rows are visible on the same (ambient) connection.
-            assertFalse(h2DataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+            assertFalse(h2DataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                     "insert should be visible inside the transaction");
             h2DataStore.endTransaction(); // commit
         } catch (RuntimeException e) {
@@ -458,32 +458,32 @@ public class H2PDataStoreTest {
             throw e;
         }
 
-        assertFalse(h2DataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+        assertFalse(h2DataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                 "a should persist after commit");
-        assertFalse(h2DataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+        assertFalse(h2DataStore.searchByID(PropertyImpl.class.getName(), b.getGUID()).isEmpty(),
                 "b should persist after commit");
         System.out.println("tx commit OK: " + a.getGUID() + ", " + b.getGUID());
     }
 
     @Test
     public void testTransactionRollback() {
-        PropertyDAO a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
-        PropertyDAO b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
 
         h2DataStore.beginTransaction();
         try {
             h2DataStore.insert(a);
             h2DataStore.insert(b);
-            assertFalse(h2DataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+            assertFalse(h2DataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                     "insert should be visible inside the transaction");
         } finally {
             h2DataStore.abortTransaction(); // rollback
         }
 
         // After rollback neither row persists (fresh reads, no active transaction).
-        assertTrue(h2DataStore.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(),
+        assertTrue(h2DataStore.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(),
                 "a must not persist after rollback");
-        assertTrue(h2DataStore.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(),
+        assertTrue(h2DataStore.searchByID(PropertyImpl.class.getName(), b.getGUID()).isEmpty(),
                 "b must not persist after rollback");
         System.out.println("tx rollback OK: neither " + a.getGUID() + " nor " + b.getGUID() + " persisted");
     }
@@ -571,11 +571,11 @@ public class H2PDataStoreTest {
             String guid;
             H2PDataStore ds1 = newStore(cfg);
             try {
-                PropertyDAO pd = createPropertyDAO("enc-" + UUID.randomUUID(), "encrypted file db", 11);
+                PropertyImpl pd = createPropertyDAO("enc-" + UUID.randomUUID(), "encrypted file db", 11);
                 pd.getProperties().build("secret", "classified");
                 ds1.insert(pd);
                 guid = pd.getGUID();
-                PropertyDAO read = (PropertyDAO) ds1.searchByID(PropertyDAO.class.getName(), guid).get(0);
+                PropertyImpl read = (PropertyImpl) ds1.searchByID(PropertyImpl.class.getName(), guid).get(0);
                 assertEquals(guid, read.getGUID());
                 assertEquals("classified", read.getProperties().getValue("secret"));
             } finally {
@@ -585,7 +585,7 @@ public class H2PDataStoreTest {
             // Phase 2: reopen with the same credentials -> the persisted, encrypted row re-decrypts.
             H2PDataStore ds2 = newStore(creator.toAPIConfigInfo(url, user, pwd, filePwd));
             try {
-                PropertyDAO read = (PropertyDAO) ds2.searchByID(PropertyDAO.class.getName(), guid).get(0);
+                PropertyImpl read = (PropertyImpl) ds2.searchByID(PropertyImpl.class.getName(), guid).get(0);
                 assertEquals(guid, read.getGUID(), "encrypted file DB must persist across reopen");
                 assertEquals("classified", read.getProperties().getValue("secret"));
             } finally {

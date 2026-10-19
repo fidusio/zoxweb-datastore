@@ -32,7 +32,7 @@ import org.zoxweb.shared.app.AppIDDefault;
 import org.zoxweb.shared.crypto.CIPassword;
 import org.zoxweb.shared.crypto.CredentialHasher;
 import org.zoxweb.shared.crypto.CryptoConst;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.security.*;
 import org.zoxweb.shared.security.model.SecurityModel;
@@ -1506,7 +1506,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
                 "even unenforced, a role is grantable in its own app only");
 
         // a share follows the data: granted on the resource, it applies in every login scope
-        PropertyDAO file = newResource(admin);
+        PropertyImpl file = newResource(admin);
         dsm.addPermissionGrant(user, mapOf(file), "resource:read");
         String token = SecurityModel.toResourceToken(file.getGUID(), user.getGUID(), "read");
         assertTrue(dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameA).isPermitted(token));
@@ -1524,9 +1524,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
     // instance grants and sharing (design page section 12, item 23)
     // ------------------------------------------------------------------
 
-    /** A "file": any persisted entity with a subject_guid owner; PropertyDAO is the lightest. */
-    private static PropertyDAO newResource(SubjectIdentifier owner) {
-        PropertyDAO p = new PropertyDAO();
+    /** A "file": any persisted entity with a subject_guid owner; PropertyImpl is the lightest. */
+    private static PropertyImpl newResource(SubjectIdentifier owner) {
+        PropertyImpl p = new PropertyImpl();
         p.setName("file-" + UUID.randomUUID());
         p.setSubjectGUID(owner.getGUID());
         return sys.insert(p);
@@ -1554,7 +1554,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_inlinedGrant_permitsGranteeOnThatResourceOnly() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         assertEquals(a.getGUID(), x.getSubjectGUID(), "resource must carry its owner");
 
         Subject shiroB = login(pb);
@@ -1566,7 +1566,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(b.getGUID(), grant.getSubjectGUID());
         assertNotNull(grant.getResourceMap().getGUID(), "map row gets its own GUID");
         assertEquals(x.getGUID(), grant.getResourceMap().getResourceGUID());
-        assertEquals(PropertyDAO.class.getName(), grant.getResourceMap().getResourceType());
+        assertEquals(PropertyImpl.class.getName(), grant.getResourceMap().getResourceType());
         assertTrue(mapRowExists(grant.getResourceMap().getGUID()));
 
         assertTrue(shiroB.isPermitted(nve(shiroB, "read", x.getGUID())), "read on X granted");
@@ -1588,7 +1588,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_tokenNormalized() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
 
         PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), " Resource:Read , Share ");
         assertEquals("resource:read,share", grant.getPermissionToken());
@@ -1607,7 +1607,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_invalidTokensRejected() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
 
         String[] bad = {"resource:create", "resource:*", "resource:read:" + x.getGUID(), "doc:read", "resource:",
                 "resource:read,,share", "resource:read,bogus", "resource", "", null};
@@ -1623,10 +1623,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_missingResourceRejected() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
 
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(UUID.randomUUID().toString(), PropertyDAO.class.getName()), "resource:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(UUID.randomUUID().toString(), PropertyImpl.class.getName()), "resource:read"),
                 "unknown GUID");
         assertThrows(IllegalArgumentException.class,
                 () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), "com.example.NoSuchClass"), "resource:read"),
@@ -1635,7 +1635,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
                 () -> dsm.addPermissionGrant(b, new ResourceMap(x.getGUID(), null), "resource:read"),
                 "blank type");
         assertThrows(IllegalArgumentException.class,
-                () -> dsm.addPermissionGrant(b, new ResourceMap(null, PropertyDAO.class.getName()), "resource:read"),
+                () -> dsm.addPermissionGrant(b, new ResourceMap(null, PropertyImpl.class.getName()), "resource:read"),
                 "blank guid");
         assertEquals(0, dsm.getPermissionGrants(b.getGUID()).length);
     }
@@ -1644,7 +1644,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_catalogScopedGrant_flattensWithGuid() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
 
         PermissionGrant grant = dsm.addPermissionGrant(b, update, mapOf(x));
@@ -1694,7 +1694,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_revoke_evictsAndDeletesMapRow() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         String mapGUID = grant.getResourceMap().getGUID();
 
@@ -1719,7 +1719,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_enforcement_nonOwnerCannotInlineShare() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
 
         dsm.setEnforcePermissions(true);
         try {
@@ -1744,7 +1744,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_enforcement_shareHolderCanGrant_inlineAndCatalog() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         // A shares X with B including the share verb (enforcement off: nobody needs to be bound)
         dsm.addPermissionGrant(b, mapOf(x), "resource:read,share");
@@ -1778,7 +1778,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_enforcement_grantorOrOwnerCanRevoke() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), padmin = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), admin = newSubject(padmin);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         PermissionInfo canRemove = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), SecurityModel.PERM_REMOVE_PERMISSION));
         dsm.addPermissionGrant(admin, canRemove);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
@@ -1832,7 +1832,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void resource_checkResourcePermission_ownerGranteeStranger() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         dsm.addPermissionGrant(b, mapOf(x), "resource:read,share");
         io.xlogistx.shiro.mgt.ShiroSecurityController controller = new io.xlogistx.shiro.mgt.ShiroSecurityController();
 
@@ -1869,7 +1869,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertThrows(AccessSecurityException.class, () -> ShiroUtil.checkResourcePermission(x, "read"));
         assertFalse(controller.isResourceAccessible(x.getGUID(), x.getSubjectGUID(), org.zoxweb.shared.util.CRUD.READ));
         // but its own resource is fine
-        PropertyDAO own = newResource(c);
+        PropertyImpl own = newResource(c);
         assertEquals(c.getGUID(), controller.resourceAccessor(own, org.zoxweb.shared.util.CRUD.UPDATE));
     }
 
@@ -1889,7 +1889,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             // nobody logged in: the store gives nothing and takes nothing ...
             dsm.logout();
             assertTrue(ds.searchByID(SubjectIdentifier.class.getName(), a.getGUID()).isEmpty());
-            PropertyDAO anonymous = new PropertyDAO();
+            PropertyImpl anonymous = new PropertyImpl();
             anonymous.setName("acl-anonymous-" + UUID.randomUUID());
             assertThrows(AccessSecurityException.class, () -> ds.insert(anonymous));
             // ... yet the manager works with nobody logged in: lookups, a new subject, a login
@@ -1899,24 +1899,24 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
             // a logged-in subject: its own rows, its own subject record, nobody else's
             login(pa);
-            PropertyDAO x = new PropertyDAO();
+            PropertyImpl x = new PropertyImpl();
             x.setName("acl-file-" + UUID.randomUUID());
             x = ds.insert(x);
-            final PropertyDAO stored = x;
+            final PropertyImpl stored = x;
             final String xGUID = x.getGUID();
             assertEquals(a.getGUID(), x.getSubjectGUID(), "a new row belongs to the bound subject");
-            assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).size());
+            assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID).size());
             assertEquals(1, ds.searchByID(SubjectIdentifier.class.getName(), a.getGUID()).size(), "a subject owns its own record");
             assertTrue(ds.searchByID(SubjectIdentifier.class.getName(), b.getGUID()).isEmpty(), "and reads no other subject's");
-            PropertyDAO planted = new PropertyDAO();
+            PropertyImpl planted = new PropertyImpl();
             planted.setName("acl-planted-" + UUID.randomUUID());
             planted.setSubjectGUID(b.getGUID());
             assertThrows(AccessSecurityException.class, () -> ds.insert(planted), "no rows in somebody else's name");
 
             // a stranger: the plaintext row is not there, and a forged owner does not open it
             login(pb);
-            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
-            PropertyDAO forged = new PropertyDAO();
+            assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID).isEmpty());
+            PropertyImpl forged = new PropertyImpl();
             forged.setGUID(xGUID);
             forged.setName("hacked");
             forged.setSubjectGUID(b.getGUID());
@@ -1927,7 +1927,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             login(pa);
             PermissionGrant share = dsm.addPermissionGrant(b, mapOf(stored), "resource:read");
             login(pb);
-            List<PropertyDAO> shared = ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID);
+            List<PropertyImpl> shared = ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID);
             assertEquals(1, shared.size(), "a read share returns the row");
             assertEquals(a.getGUID(), shared.get(0).getSubjectGUID());
             shared.get(0).setName("renamed by a reader");
@@ -1938,13 +1938,13 @@ public class ShiroDSDomainSecurityManagerDBTest {
             login(pa);
             assertTrue(dsm.deletePermissionGrant(share));
             login(pb);
-            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
+            assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID).isEmpty());
 
             // the system context reads it with nobody logged in, and ends with the call
             dsm.logout();
-            assertEquals(1, ShiroUtil.runAsSystem(() -> ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID)).size());
+            assertEquals(1, ShiroUtil.runAsSystem(() -> ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID)).size());
             assertFalse(ShiroUtil.isSystemContext());
-            assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, xGUID).isEmpty());
+            assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, xGUID).isEmpty());
 
             // the owner deletes its row; the manager deletes a subject with its rows
             login(pa);
@@ -2022,7 +2022,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
             SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
             newSubject(pc);
-            PropertyDAO x = newResource(a);
+            PropertyImpl x = newResource(a);
             km.createNVEntityKey(sys, x, km.getKey(sys, null, a.getGUID()));
             dsm.addPermissionGrant(b, mapOf(x), "resource:read");
             io.xlogistx.shiro.mgt.ShiroSecurityController controller = new io.xlogistx.shiro.mgt.ShiroSecurityController();
@@ -2051,7 +2051,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_deleteSubjectID_cleansGranteeMapRows() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         PermissionGrant grant = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         String mapGUID = grant.getResourceMap().getGUID();
         assertEquals(1, dsm.getPermissionGrantsByResource(x.getGUID()).length);
@@ -2066,7 +2066,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_getAndDeletePermissionGrantsByResource() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         PermissionGrant gb = dsm.addPermissionGrant(b, mapOf(x), "resource:read");
         PermissionGrant gc = dsm.addPermissionGrant(c, mapOf(x), "resource:read,update");
         PermissionGrant gd = dsm.addPermissionGrant(d, mapOf(y), "resource:read");
@@ -2111,10 +2111,10 @@ public class ShiroDSDomainSecurityManagerDBTest {
     }
 
     /** Enforcement off, nobody bound: removes what a share-rule test created on the shared database. */
-    private static void cleanupShareTest(PropertyDAO[] resources, SubjectIdentifier... subjects) {
+    private static void cleanupShareTest(PropertyImpl[] resources, SubjectIdentifier... subjects) {
         dsm.setEnforcePermissions(false);
         dsm.logout();
-        for (PropertyDAO r : resources) {
+        for (PropertyImpl r : resources) {
             dsm.deletePermissionGrantsByResource(r.getGUID());
             sys.delete(r, false);
         }
@@ -2127,7 +2127,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shareRules_oneSharePerGranteePerResource() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         long keys = keyRowCount();
         try {
@@ -2148,7 +2148,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertEquals(2, dsm.getPermissionGrantsByResource(x.getGUID()).length, "one share + one catalog-scoped grant");
             assertEquals(keys, keyRowCount(), "no key row touched");
         } finally {
-            cleanupShareTest(new PropertyDAO[]{x, y}, a, b);
+            cleanupShareTest(new PropertyImpl[]{x, y}, a, b);
             dsm.deletePermission(update);
         }
     }
@@ -2163,7 +2163,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shareRules_ownerChangesShareInPlace_ownerOnly() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         long keys = keyRowCount();
         try {
@@ -2211,7 +2211,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertThrows(IllegalArgumentException.class, () -> dsm.updatePermissionGrant(unknown, "resource:read"));
             assertEquals(keys, keyRowCount(), "no key row touched");
         } finally {
-            cleanupShareTest(new PropertyDAO[]{x}, a, b, c);
+            cleanupShareTest(new PropertyImpl[]{x}, a, b, c);
             dsm.deletePermission(update);
         }
     }
@@ -2220,7 +2220,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shareRules_nonOwnerSharerGivesReadOrReadShareOnly_andNeverChangesAnExistingShare() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal(), pe = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd), e = newSubject(pe);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         long keys = keyRowCount();
         try {
             dsm.setEnforcePermissions(true);
@@ -2255,7 +2255,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertThrows(IllegalArgumentException.class, () -> dsm.addPermissionGrant(b, mapOf(x), "resource:read"));
             assertEquals(keys, keyRowCount(), "no key row touched");
         } finally {
-            cleanupShareTest(new PropertyDAO[]{x}, a, b, c, d, e);
+            cleanupShareTest(new PropertyImpl[]{x}, a, b, c, d, e);
         }
     }
 
@@ -2263,7 +2263,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shareRules_revokeCascadesToWhatTheGranteeIssued() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd);
-        PropertyDAO x = newResource(a), y = newResource(a);
+        PropertyImpl x = newResource(a), y = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         long keys = keyRowCount();
         try {
@@ -2313,7 +2313,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertTrue(permitted(pb, "read", y));
             assertEquals(keys, keyRowCount(), "no key row touched");
         } finally {
-            cleanupShareTest(new PropertyDAO[]{x, y}, a, b, c, d);
+            cleanupShareTest(new PropertyImpl[]{x, y}, a, b, c, d);
             dsm.deletePermission(update);
         }
     }
@@ -2322,7 +2322,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shareRules_takingShareAwayCascades_granteeKeepsReducedShare() {
         String pa = uniquePrincipal(), pb = uniquePrincipal(), pc = uniquePrincipal(), pd = uniquePrincipal(), pe = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb), c = newSubject(pc), d = newSubject(pd), e = newSubject(pe);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         long keys = keyRowCount();
         try {
             dsm.setEnforcePermissions(true);
@@ -2364,7 +2364,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertTrue(permitted(pe, "read", x));
             assertEquals(keys, keyRowCount(), "no key row touched");
         } finally {
-            cleanupShareTest(new PropertyDAO[]{x}, a, b, c, d, e);
+            cleanupShareTest(new PropertyImpl[]{x}, a, b, c, d, e);
         }
     }
 
@@ -2372,7 +2372,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void share_flattenerSkipsGrantWithMissingCatalogRow() {
         String pa = uniquePrincipal(), pb = uniquePrincipal();
         SubjectIdentifier a = newSubject(pa), b = newSubject(pb);
-        PropertyDAO x = newResource(a);
+        PropertyImpl x = newResource(a);
         PermissionInfo update = dsm.createPermission(new PermissionInfo("perm." + UUID.randomUUID(), "resource:update"));
         dsm.addPermissionGrant(b, update, mapOf(x));
 

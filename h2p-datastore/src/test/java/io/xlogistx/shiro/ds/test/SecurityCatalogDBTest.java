@@ -353,29 +353,29 @@ public class SecurityCatalogDBTest {
         bootstrap();
         String principal = uniquePrincipal();
         SubjectIdentifier owner = newSubject(principal);
-        org.zoxweb.shared.data.PropertyDAO owned = new org.zoxweb.shared.data.PropertyDAO();
+        org.zoxweb.shared.data.PropertyImpl owned = new org.zoxweb.shared.data.PropertyImpl();
         owned.setName("acl-owned-" + UUID.randomUUID());
         owned.setSubjectGUID(owner.getGUID());
         owned = sys.insert(owned);
-        org.zoxweb.shared.data.PropertyDAO ownerless = new org.zoxweb.shared.data.PropertyDAO();
+        org.zoxweb.shared.data.PropertyImpl ownerless = new org.zoxweb.shared.data.PropertyImpl();
         ownerless.setName("acl-ownerless-" + UUID.randomUUID());
         ownerless = sys.insert(ownerless);
-        final org.zoxweb.shared.data.PropertyDAO ownerlessRow = ownerless;
+        final org.zoxweb.shared.data.PropertyImpl ownerlessRow = ownerless;
         final String ownedGUID = owned.getGUID(), ownerlessGUID = ownerless.getGUID();
 
         try {
             login(principal, PASSWORD);
-            assertEquals(1, ds.searchByID(org.zoxweb.shared.data.PropertyDAO.NVC_PROPERTY_DAO, ownedGUID).size());
-            assertTrue(ds.searchByID(org.zoxweb.shared.data.PropertyDAO.NVC_PROPERTY_DAO, ownerlessGUID).isEmpty(), "no owner, no grant: not visible");
+            assertEquals(1, ds.searchByID(org.zoxweb.shared.data.PropertyImpl.NVC_PROPERTY_IMPL, ownedGUID).size());
+            assertTrue(ds.searchByID(org.zoxweb.shared.data.PropertyImpl.NVC_PROPERTY_IMPL, ownerlessGUID).isEmpty(), "no owner, no grant: not visible");
 
             login(superAdmin, PASSWORD);
-            java.util.List<org.zoxweb.shared.data.PropertyDAO> seen = ds.searchByID(org.zoxweb.shared.data.PropertyDAO.NVC_PROPERTY_DAO, ownedGUID);
+            java.util.List<org.zoxweb.shared.data.PropertyImpl> seen = ds.searchByID(org.zoxweb.shared.data.PropertyImpl.NVC_PROPERTY_IMPL, ownedGUID);
             assertEquals(1, seen.size(), "* reads another subject's row");
             seen.get(0).setName("renamed by the super-admin");
             ds.update(seen.get(0));
-            assertEquals(owner.getGUID(), ((org.zoxweb.shared.data.PropertyDAO) ds.searchByID(
-                    org.zoxweb.shared.data.PropertyDAO.NVC_PROPERTY_DAO, ownedGUID).get(0)).getSubjectGUID(), "the owner stays the owner");
-            assertEquals(1, ds.searchByID(org.zoxweb.shared.data.PropertyDAO.NVC_PROPERTY_DAO, ownerlessGUID).size(), "* reads a row without owner");
+            assertEquals(owner.getGUID(), ((org.zoxweb.shared.data.PropertyImpl) ds.searchByID(
+                    org.zoxweb.shared.data.PropertyImpl.NVC_PROPERTY_IMPL, ownedGUID).get(0)).getSubjectGUID(), "the owner stays the owner");
+            assertEquals(1, ds.searchByID(org.zoxweb.shared.data.PropertyImpl.NVC_PROPERTY_IMPL, ownerlessGUID).size(), "* reads a row without owner");
             assertTrue(ds.delete(ownerlessRow, false));
             assertTrue(ds.delete(seen.get(0), false));
         } finally {
@@ -461,7 +461,7 @@ public class SecurityCatalogDBTest {
         SubjectIdentifier b = newSubject(pb);
         PermissionInfo all = reservedPermission();
         RoleInfo superRole = reservedRole();
-        org.zoxweb.shared.data.PropertyDAO x = new org.zoxweb.shared.data.PropertyDAO();
+        org.zoxweb.shared.data.PropertyImpl x = new org.zoxweb.shared.data.PropertyImpl();
         x.setName("res-" + UUID.randomUUID());
         x.setSubjectGUID(b.getGUID());
         x = sys.insert(x);

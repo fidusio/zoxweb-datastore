@@ -7,8 +7,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.server.util.IDGs;
 import org.zoxweb.shared.api.APISearchResult;
-import org.zoxweb.shared.data.PropertyDAO;
-import org.zoxweb.shared.data.SetNameDescriptionDAO;
+import org.zoxweb.shared.data.PropertyImpl;
+import org.zoxweb.shared.data.SetNameDescriptionImpl;
 import org.zoxweb.shared.db.QueryMatch;
 import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.util.ArrayValues;
@@ -39,14 +39,14 @@ public class H2PAccessControlTest {
     private static H2PDataStore ds;
 
     /** A folder: a name and a list of documents ({@link CyclicDAO} rows), for the collection checks. */
-    public static class AclFolder extends SetNameDescriptionDAO {
+    public static class AclFolder extends SetNameDescriptionImpl {
         public static final NVConfig NVC_ITEMS = NVConfigManager.createNVConfigEntity(
                 "items", "Items", "Items", false, true, CyclicDAO.NVC_CYCLIC_DAO, NVConfigEntity.ArrayType.LIST);
 
         public static final NVConfigEntity NVC_ACL_FOLDER = new NVConfigEntityPortable(
                 "acl_folder", null, "AclFolder", true, false, false, false, AclFolder.class,
                 SUS.toNVConfigList(NVC_ITEMS), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public AclFolder() {
             super(NVC_ACL_FOLDER);
@@ -81,8 +81,8 @@ public class H2PAccessControlTest {
         TestSecurityController.currentSubject = subject;
     }
 
-    private static PropertyDAO prop(String name) {
-        PropertyDAO p = new PropertyDAO();
+    private static PropertyImpl prop(String name) {
+        PropertyImpl p = new PropertyImpl();
         p.setName(name);
         return p;
     }
@@ -112,61 +112,61 @@ public class H2PAccessControlTest {
     public void read_ownerSees_strangerSeesNothing_grantOpens_everyReadPath() {
         String name = tag("acl-read");
         String owner = login();
-        PropertyDAO p = ds.insert(prop(name));
+        PropertyImpl p = ds.insert(prop(name));
         assertEquals(owner, p.getSubjectGUID(), "a new row belongs to the bound subject");
 
-        assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).size());
-        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).size());
-        assertEquals(1, ds.userSearch(owner, PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).size());
-        assertEquals(1, ds.countMatch(PropertyDAO.NVC_PROPERTY_DAO, named(name)));
-        APISearchResult<Object> report = ds.batchSearch(PropertyDAO.NVC_PROPERTY_DAO, named(name));
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).size());
+        assertEquals(1, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).size());
+        assertEquals(1, ds.userSearch(owner, PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).size());
+        assertEquals(1, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)));
+        APISearchResult<Object> report = ds.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL, named(name));
         assertEquals(1, report.size());
         assertEquals(1, ds.nextBatch(report, 0, 10).getBatch().size());
-        assertNotNull(ds.lookupByReferenceID(PropertyDAO.NVC_PROPERTY_DAO.getName(), p.getGUID()));
+        assertNotNull(ds.lookupByReferenceID(PropertyImpl.NVC_PROPERTY_IMPL.getName(), p.getGUID()));
 
         String stranger = login();
-        assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty(), "plaintext row, no read: absent");
-        assertTrue(ds.search(PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).isEmpty());
-        assertTrue(ds.search(PropertyDAO.NVC_PROPERTY_DAO, List.of("name"), named(name)).isEmpty(), "a projection is checked too");
-        assertTrue(ds.userSearch(owner, PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).isEmpty(), "naming the owner is not a permission");
-        assertEquals(0, ds.countMatch(PropertyDAO.NVC_PROPERTY_DAO, named(name)), "not counted");
-        assertEquals(0, ds.batchSearch(PropertyDAO.NVC_PROPERTY_DAO, named(name)).size(), "not in the report");
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty(), "plaintext row, no read: absent");
+        assertTrue(ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).isEmpty());
+        assertTrue(ds.search(PropertyImpl.NVC_PROPERTY_IMPL, List.of("name"), named(name)).isEmpty(), "a projection is checked too");
+        assertTrue(ds.userSearch(owner, PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).isEmpty(), "naming the owner is not a permission");
+        assertEquals(0, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)), "not counted");
+        assertEquals(0, ds.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)).size(), "not in the report");
         assertTrue(ds.nextBatch(report, 0, 10).getBatch().isEmpty(), "a report made by the owner does not open the rows for someone else");
-        assertNull(ds.lookupByReferenceID(PropertyDAO.NVC_PROPERTY_DAO.getName(), p.getGUID()));
+        assertNull(ds.lookupByReferenceID(PropertyImpl.NVC_PROPERTY_IMPL.getName(), p.getGUID()));
 
         // a share: resource:<guid>:<stranger>:read
         TestSecurityController.grant(p.getGUID(), stranger, "read");
-        assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).size());
-        List<PropertyDAO> projected = ds.search(PropertyDAO.NVC_PROPERTY_DAO, List.of("name"), named(name));
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).size());
+        List<PropertyImpl> projected = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, List.of("name"), named(name));
         assertEquals(1, projected.size());
         assertEquals(name, projected.get(0).getName());
-        assertEquals(1, ds.countMatch(PropertyDAO.NVC_PROPERTY_DAO, named(name)));
-        assertEquals(1, ds.batchSearch(PropertyDAO.NVC_PROPERTY_DAO, named(name)).size());
+        assertEquals(1, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)));
+        assertEquals(1, ds.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)).size());
 
         // nobody logged in: nothing, never an exception
         as(null);
-        assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty());
-        assertTrue(ds.search(PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).isEmpty());
-        assertEquals(0, ds.countMatch(PropertyDAO.NVC_PROPERTY_DAO, named(name)));
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty());
+        assertTrue(ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).isEmpty());
+        assertEquals(0, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(name)));
 
         // the system context reads everything, with nobody bound
-        assertNotNull(H2PAccessControlTest.<PropertyDAO>systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()));
+        assertNotNull(H2PAccessControlTest.<PropertyImpl>systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()));
     }
 
     @Test
     public void read_ownerlessRow_reachedByGrantOrWildcardOnly() {
         String name = tag("acl-ownerless");
-        PropertyDAO p = TestSecurityController.system(() -> ds.insert(prop(name))); // nobody bound: no owner
+        PropertyImpl p = TestSecurityController.system(() -> ds.insert(prop(name))); // nobody bound: no owner
         assertNull(p.getSubjectGUID());
 
         String anyone = login();
-        assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty(), "no owner token to pass");
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty(), "no owner token to pass");
         TestSecurityController.grant(p.getGUID(), anyone, "read");
-        assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).size(), "a grant on the row");
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).size(), "a grant on the row");
 
         TestSecurityController.revokeAll();
         TestSecurityController.grant("*", "*", "read");
-        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null, named(name)).size(), "resource:*:*:read");
+        assertEquals(1, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)).size(), "resource:*:*:read");
     }
 
     @Test
@@ -217,17 +217,17 @@ public class H2PAccessControlTest {
         String a = login();
         String b = login();
 
-        PropertyDAO preset = prop(tag("acl-preset"));
+        PropertyImpl preset = prop(tag("acl-preset"));
         preset.setGUID(IDGs.UUIDV7.genID());
         assertEquals(b, ds.insert(preset).getSubjectGUID(), "a preset GUID does not leave the row without owner");
 
-        PropertyDAO planted = prop(tag("acl-planted"));
+        PropertyImpl planted = prop(tag("acl-planted"));
         planted.setSubjectGUID(a);
         assertThrows(AccessSecurityException.class, () -> ds.insert(planted), "no rows in somebody else's name");
-        assertNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, String.valueOf(planted.getGUID())));
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, String.valueOf(planted.getGUID())));
 
         TestSecurityController.grant("*", "*", "create"); // an admin: resource:*:*:create
-        PropertyDAO onBehalf = prop(tag("acl-on-behalf"));
+        PropertyImpl onBehalf = prop(tag("acl-on-behalf"));
         onBehalf.setSubjectGUID(a);
         assertEquals(a, ds.insert(onBehalf).getSubjectGUID());
         TestSecurityController.revokeAll();
@@ -243,46 +243,46 @@ public class H2PAccessControlTest {
     public void update_judgedAgainstTheStoredOwner_neverTheCallersObject() {
         String name = tag("acl-update");
         String a = login();
-        PropertyDAO p = ds.insert(prop(name));
+        PropertyImpl p = ds.insert(prop(name));
 
         String b = login();
-        PropertyDAO forged = prop("hacked");
+        PropertyImpl forged = prop("hacked");
         forged.setGUID(p.getGUID());
         forged.setSubjectGUID(b); // claims the row
         assertThrows(AccessSecurityException.class, () -> ds.update(forged));
         assertThrows(AccessSecurityException.class, () -> ds.insert(forged), "insert of an existing GUID is an update");
         assertThrows(AccessSecurityException.class, () -> ds.patch(forged, true, false, false, true, "name"));
-        assertEquals(name, H2PAccessControlTest.<PropertyDAO>systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).getName());
+        assertEquals(name, H2PAccessControlTest.<PropertyImpl>systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).getName());
 
         // an update grant lets b write, never take the row over
         TestSecurityController.grant(p.getGUID(), b, "update");
         assertThrows(AccessSecurityException.class, () -> ds.update(forged), "the owner is not changed by an update");
-        PropertyDAO shell = prop("renamed by a grantee");
+        PropertyImpl shell = prop("renamed by a grantee");
         shell.setGUID(p.getGUID());
         ds.update(shell);
-        PropertyDAO stored = systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID());
+        PropertyImpl stored = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID());
         assertEquals("renamed by a grantee", stored.getName());
         assertEquals(a, stored.getSubjectGUID(), "the stored owner is kept");
 
         shell.setName("patched by a grantee");
         shell.setSubjectGUID(null);
         ds.patch(shell, true, false, false, true, "name");
-        stored = systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID());
+        stored = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID());
         assertEquals("patched by a grantee", stored.getName());
         assertEquals(a, stored.getSubjectGUID());
 
         // the owner itself
         as(a);
-        PropertyDAO mine = (PropertyDAO) ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).get(0);
+        PropertyImpl mine = (PropertyImpl) ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).get(0);
         mine.setName(name);
         ds.update(mine);
-        assertEquals(name, ((PropertyDAO) ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).get(0)).getName());
+        assertEquals(name, ((PropertyImpl) ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).get(0)).getName());
 
         // only the system context moves a row to another owner
         mine.setSubjectGUID(b);
         assertThrows(AccessSecurityException.class, () -> ds.update(mine));
         TestSecurityController.system(() -> ds.update(mine));
-        assertEquals(b, H2PAccessControlTest.<PropertyDAO>systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).getSubjectGUID());
+        assertEquals(b, H2PAccessControlTest.<PropertyImpl>systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).getSubjectGUID());
     }
 
     // ------------------------------------------------------------------ delete
@@ -290,18 +290,18 @@ public class H2PAccessControlTest {
     @Test
     public void delete_needsThePermission_cascadeKeepsWhatTheCallerMayNotDelete() {
         String a = login();
-        PropertyDAO p = ds.insert(prop(tag("acl-delete")));
+        PropertyImpl p = ds.insert(prop(tag("acl-delete")));
         CyclicDAO foreignChild = ds.insert(doc(tag("acl-foreign-child")));
 
         String b = login();
-        PropertyDAO shell = new PropertyDAO();
+        PropertyImpl shell = new PropertyImpl();
         shell.setGUID(p.getGUID());
         assertThrows(AccessSecurityException.class, () -> ds.delete(shell, false));
         TestSecurityController.grant(p.getGUID(), b, "read");
         assertThrows(AccessSecurityException.class, () -> ds.delete(shell, false), "read is not delete");
         TestSecurityController.grant(p.getGUID(), b, "delete");
         assertTrue(ds.delete(shell, false));
-        assertNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()));
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()));
 
         // b's parent references a's row: deleting the parent with references keeps a's row
         TestSecurityController.grant(foreignChild.getGUID(), b, "read");
@@ -324,24 +324,24 @@ public class H2PAccessControlTest {
     public void deleteByCriteria_skipsWhatTheCallerCannotSee_abortsOnWhatItMayNotDelete() {
         String name = tag("acl-criteria");
         String a = login();
-        PropertyDAO ofA = ds.insert(prop(name));
+        PropertyImpl ofA = ds.insert(prop(name));
         String b = login();
-        PropertyDAO ofB = ds.insert(prop(name));
-        PropertyDAO ofB2 = ds.insert(prop(name));
+        PropertyImpl ofB = ds.insert(prop(name));
+        PropertyImpl ofB2 = ds.insert(prop(name));
 
         // a's row is invisible to b: skipped, b's two rows go
-        assertTrue(ds.delete(PropertyDAO.NVC_PROPERTY_DAO, named(name)));
-        assertNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, ofB.getGUID()));
-        assertNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, ofB2.getGUID()));
-        assertNotNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, ofA.getGUID()), "not b's to see, not b's to delete");
-        assertFalse(ds.delete(PropertyDAO.NVC_PROPERTY_DAO, named(name)), "nothing left that b may see");
+        assertTrue(ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(name)));
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, ofB.getGUID()));
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, ofB2.getGUID()));
+        assertNotNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, ofA.getGUID()), "not b's to see, not b's to delete");
+        assertFalse(ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(name)), "nothing left that b may see");
 
         // a row b may read but not delete aborts the call before anything is deleted
-        PropertyDAO again = ds.insert(prop(name));
+        PropertyImpl again = ds.insert(prop(name));
         TestSecurityController.grant(ofA.getGUID(), b, "read");
-        assertThrows(AccessSecurityException.class, () -> ds.delete(PropertyDAO.NVC_PROPERTY_DAO, named(name)));
-        assertNotNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, again.getGUID()), "nothing was deleted");
-        assertNotNull(systemRead(PropertyDAO.NVC_PROPERTY_DAO, ofA.getGUID()));
+        assertThrows(AccessSecurityException.class, () -> ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(name)));
+        assertNotNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, again.getGUID()), "nothing was deleted");
+        assertNotNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, ofA.getGUID()));
     }
 
     // ------------------------------------------------------------------ system context / no controller
@@ -349,17 +349,17 @@ public class H2PAccessControlTest {
     @Test
     public void systemContext_isPerThread_reentrant_andEndsOnFailure() throws Exception {
         String a = login();
-        PropertyDAO p = ds.insert(prop(tag("acl-system")));
+        PropertyImpl p = ds.insert(prop(tag("acl-system")));
         login(); // a stranger from here on
 
         assertFalse(TestSecurityController.inSystem());
         TestSecurityController.systemRun(() -> {
             assertTrue(ds.getAPIConfigInfo().getSecurityController().isSystemContext());
-            TestSecurityController.systemRun(() -> assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).size()));
-            assertEquals(1, ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).size(), "still inside after the nested call");
+            TestSecurityController.systemRun(() -> assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).size()));
+            assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).size(), "still inside after the nested call");
         });
         assertFalse(TestSecurityController.inSystem());
-        assertTrue(ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty());
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty());
 
         assertThrows(IllegalStateException.class, () -> TestSecurityController.system(() -> {
             throw new IllegalStateException("boom");
@@ -369,7 +369,7 @@ public class H2PAccessControlTest {
         // another thread is not in the system context of this one
         boolean[] seen = new boolean[1];
         TestSecurityController.systemRun(() -> {
-            Thread t = new Thread(() -> seen[0] = !ds.searchByID(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).isEmpty());
+            Thread t = new Thread(() -> seen[0] = !ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).isEmpty());
             t.start();
             try {
                 t.join();
@@ -378,7 +378,7 @@ public class H2PAccessControlTest {
             }
         });
         assertFalse(seen[0]);
-        assertEquals(a, H2PAccessControlTest.<PropertyDAO>systemRead(PropertyDAO.NVC_PROPERTY_DAO, p.getGUID()).getSubjectGUID());
+        assertEquals(a, H2PAccessControlTest.<PropertyImpl>systemRead(PropertyImpl.NVC_PROPERTY_IMPL, p.getGUID()).getSubjectGUID());
     }
 
     /** There is no unchecked store any more: without controller and master key the database is refused. */
@@ -389,7 +389,7 @@ public class H2PAccessControlTest {
         String name = tag("acl-open");
         login();
         assertThrows(AccessSecurityException.class, () -> open.insert(prop(name)));
-        assertThrows(AccessSecurityException.class, () -> open.search(PropertyDAO.NVC_PROPERTY_DAO, null, named(name)));
-        assertThrows(AccessSecurityException.class, () -> TestSecurityController.system(() -> open.dumpToJSON(PropertyDAO.NVC_PROPERTY_DAO)));
+        assertThrows(AccessSecurityException.class, () -> open.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(name)));
+        assertThrows(AccessSecurityException.class, () -> TestSecurityController.system(() -> open.dumpToJSON(PropertyImpl.NVC_PROPERTY_IMPL)));
     }
 }

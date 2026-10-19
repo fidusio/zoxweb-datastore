@@ -10,7 +10,7 @@ import org.zoxweb.server.ds.mongo.sync.SyncMongoDS;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIDataStore;
 import org.zoxweb.shared.api.APIRegistrar;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.data.Range;
 import org.zoxweb.shared.util.NVFloat;
 import org.zoxweb.shared.util.NVGenericMap;
@@ -109,10 +109,10 @@ public class MongoSyncTest {
         System.out.println("insert " + cdst.rc);
 
         cdst.rc.reset().start();
-        List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = mongoDataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all " + all.size() + " " + cdst.rc);
-        for (PropertyDAO pd : all) {
+        for (PropertyImpl pd : all) {
             System.out.println(pd);
         }
     }
@@ -120,13 +120,13 @@ public class MongoSyncTest {
     @Test
     public void testGetALLNVGenericMap() {
         cdst.rc.reset().start();
-        List<PropertyDAO> all = mongoDataStore.userSearch(null, PropertyDAO.NVC_PROPERTY_DAO, null);
+        List<PropertyImpl> all = mongoDataStore.userSearch(null, PropertyImpl.NVC_PROPERTY_IMPL, null);
         cdst.rc.stop();
         System.out.println("read all once " + all.size() + " " + cdst.rc);
         cdst.rc.reset().start();
-        PropertyDAO result;
-        for (PropertyDAO pd : all) {
-            result = (PropertyDAO) mongoDataStore.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl result;
+        for (PropertyImpl pd : all) {
+            result = (PropertyImpl) mongoDataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assert pd.getReferenceID().equals(result.getReferenceID());
         }
 
@@ -134,8 +134,8 @@ public class MongoSyncTest {
         System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
-    public static PropertyDAO createPropertyDAO(String name, String description, int val) {
-        PropertyDAO ret = new PropertyDAO();
+    public static PropertyImpl createPropertyDAO(String name, String description, int val) {
+        PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription(description);
         ret.getProperties()

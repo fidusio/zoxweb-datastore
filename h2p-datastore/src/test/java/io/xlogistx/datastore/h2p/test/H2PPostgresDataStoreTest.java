@@ -14,7 +14,7 @@ import org.zoxweb.datastore.test.DSConst;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIDataStore.DSType;
-import org.zoxweb.shared.data.PropertyDAO;
+import org.zoxweb.shared.data.PropertyImpl;
 import org.zoxweb.shared.http.HTTPAuthorization;
 import org.zoxweb.shared.util.NVEntity;
 import org.zoxweb.shared.util.NVEntityReferenceList;
@@ -148,7 +148,7 @@ public class H2PPostgresDataStoreTest {
     @Test
     @Order(2)
     public void nvGenericMapJsonbRoundTrip() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("pg-nvgm-" + UUID.randomUUID());
         pd.setDescription("live pg jsonb");
         pd.getProperties()
@@ -157,7 +157,7 @@ public class H2PPostgresDataStoreTest {
                 .build(new NVLong("big", 9_000_000_000L));
         ds.insert(pd);
 
-        PropertyDAO read = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(pd.getGUID(), read.getGUID());
         // jsonb normalizes ordering/whitespace -> assert semantic content, not raw JSON string.
         assertEquals("hello", read.getProperties().getValue("str"));
@@ -205,7 +205,7 @@ public class H2PPostgresDataStoreTest {
     @Test
     @Order(5)
     public void transactionCommitThenRollback() {
-        PropertyDAO a = new PropertyDAO();
+        PropertyImpl a = new PropertyImpl();
         a.setName("pg-tx-commit-" + UUID.randomUUID());
         ds.beginTransaction();
         try {
@@ -215,9 +215,9 @@ public class H2PPostgresDataStoreTest {
             ds.abortTransaction();
             throw e;
         }
-        assertFalse(ds.searchByID(PropertyDAO.class.getName(), a.getGUID()).isEmpty(), "commit must persist");
+        assertFalse(ds.searchByID(PropertyImpl.class.getName(), a.getGUID()).isEmpty(), "commit must persist");
 
-        PropertyDAO b = new PropertyDAO();
+        PropertyImpl b = new PropertyImpl();
         b.setName("pg-tx-rollback-" + UUID.randomUUID());
         ds.beginTransaction();
         try {
@@ -225,7 +225,7 @@ public class H2PPostgresDataStoreTest {
         } finally {
             ds.abortTransaction();
         }
-        assertTrue(ds.searchByID(PropertyDAO.class.getName(), b.getGUID()).isEmpty(), "rollback must discard");
+        assertTrue(ds.searchByID(PropertyImpl.class.getName(), b.getGUID()).isEmpty(), "rollback must discard");
         System.out.println("PG transactions OK");
     }
 
@@ -289,7 +289,7 @@ public class H2PPostgresDataStoreTest {
                         + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL")));
         try {
             String tag = UUID.randomUUID().toString();
-            PropertyDAO pd = new PropertyDAO();
+            PropertyImpl pd = new PropertyImpl();
             pd.setName("mig-pd-" + tag);
             pd.setDescription("h2 to pg migration");
             pd.getProperties().build("str", "hello").build(new NVInt("n", 7));
@@ -335,7 +335,7 @@ public class H2PPostgresDataStoreTest {
             System.out.println("PG restore stats: " + GSONUtil.toJSONDefault(restoreStats));
 
             // Entities on native PG, schemaless now living in jsonb — assert semantic content.
-            PropertyDAO pdRead = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+            PropertyImpl pdRead = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assertEquals(pd.getName(), pdRead.getName());
             assertEquals("hello", pdRead.getProperties().getValue("str"));
             H2PRegressionTest.CyclicDAO parentRead = (H2PRegressionTest.CyclicDAO) ds

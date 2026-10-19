@@ -39,7 +39,7 @@ Two points settled by Claude, to be vetoed if wrong:
 
 ### 3.1 The permission (the binding)
 
-- Token: `SecurityModel.toSecTok(<nvce name>, CREATE)` → e.g. `property_dao:create`,
+- Token: `SecurityModel.toSecTok(<nvce name>, CREATE)` → e.g. `property_impl:create`,
   `device_session:create`. Row name `<nvce name>_create` (the `subject_create` / `subject:create`
   convention of the built-in catalog). `<nvce name>` = `nve.getNVConfig().getName()`, the
   datastore's type identity (its table name).
@@ -93,11 +93,11 @@ call is the first version).
 
 One new test, modelled on `registrar_signUpThroughTheSubjectSwap_createsOrJoins_andNothingElse`
 (helpers `asRegistrar`, `loginApp`, `newSubject`, `appRole`, `uniquePrincipal`,
-`currentSubjectGUID`), stand-in type `PropertyDAO` (already imported) for `DeviceSession`:
+`currentSubjectGUID`), stand-in type `PropertyImpl` (already imported) for `DeviceSession`:
 
 `appResource_createdThroughTheRegistrarSwap_ownedByTheRegistrar_creatorHoldsCreateOnly`
-- `createApp(DOMAIN, name)`; `bindAppResourceType(app, NVC_PROPERTY_DAO)` twice → same row, token
-  `property_dao:create`, `app_id` = app; a second app `name + "b"` without the binding.
+- `createApp(DOMAIN, name)`; `bindAppResourceType(app, NVC_PROPERTY_IMPL)` twice → same row, token
+  `property_impl:create`, `app_id` = app; a second app `name + "b"` without the binding.
 - Subject S: `addPermissionGrant(S, row, app)`. Enforcement on. `loginApp(S, name)`.
 - `createAppResource(p)`: returned row `subject_guid` = registrar GUID; the bound subject is S
   again; `ds.searchByID` as S → nothing; `ds.update` / `ds.delete` as S → `AccessSecurityException`;

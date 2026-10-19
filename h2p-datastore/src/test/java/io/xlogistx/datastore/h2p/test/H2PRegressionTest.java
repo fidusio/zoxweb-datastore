@@ -5,8 +5,8 @@ import io.xlogistx.datastore.h2p.H2PDataStore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.zoxweb.server.util.IDGs;
-import org.zoxweb.shared.data.PropertyDAO;
-import org.zoxweb.shared.data.SetNameDescriptionDAO;
+import org.zoxweb.shared.data.PropertyImpl;
+import org.zoxweb.shared.data.SetNameDescriptionImpl;
 import org.zoxweb.shared.db.QueryGroup;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.db.QueryMatchIn;
@@ -55,7 +55,7 @@ public class H2PRegressionTest {
     }
 
     /** Self-referencing entity type: {@code peer} is a single reference to another CyclicDAO. */
-    public static class CyclicDAO extends SetNameDescriptionDAO {
+    public static class CyclicDAO extends SetNameDescriptionImpl {
         public static final NVConfig NVC_PEER = NVConfigManager.createNVConfigEntity(
                 "peer", "Peer reference", "Peer", false, true, CyclicDAO.class,
                 NVConfigEntity.ArrayType.NOT_ARRAY);
@@ -63,7 +63,7 @@ public class H2PRegressionTest {
         public static final NVConfigEntity NVC_CYCLIC_DAO = new NVConfigEntityPortable(
                 "cyclic_dao", null, "CyclicDAO", true, false, false, false, CyclicDAO.class,
                 SUS.toNVConfigList(NVC_PEER), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public CyclicDAO() {
             super(NVC_CYCLIC_DAO);
@@ -171,32 +171,32 @@ public class H2PRegressionTest {
         String owner = IDGs.UUIDV7.genID();
         String stranger = IDGs.UUIDV7.genID();
 
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("scoped-" + UUID.randomUUID());
         pd.setSubjectGUID(owner);
         ds.insert(pd);
 
-        List<PropertyDAO> mine = ds.userSearchByID(owner, PropertyDAO.NVC_PROPERTY_DAO, pd.getGUID());
+        List<PropertyImpl> mine = ds.userSearchByID(owner, PropertyImpl.NVC_PROPERTY_IMPL, pd.getGUID());
         assertEquals(1, mine.size(), "owner must see the entity");
         assertEquals(pd.getGUID(), mine.get(0).getGUID());
 
-        List<PropertyDAO> theirs = ds.userSearchByID(stranger, PropertyDAO.NVC_PROPERTY_DAO, pd.getGUID());
+        List<PropertyImpl> theirs = ds.userSearchByID(stranger, PropertyImpl.NVC_PROPERTY_IMPL, pd.getGUID());
         assertTrue(theirs.isEmpty(), "another subject must not see the entity by id");
     }
 
     @Test
     public void testNullCriteriaRendersIsNull() {
-        PropertyDAO noDesc = new PropertyDAO();
+        PropertyImpl noDesc = new PropertyImpl();
         noDesc.setName("nulldesc-" + UUID.randomUUID());
         ds.insert(noDesc);
 
-        PropertyDAO withDesc = new PropertyDAO();
+        PropertyImpl withDesc = new PropertyImpl();
         withDesc.setName("withdesc-" + UUID.randomUUID());
         withDesc.setDescription("present");
         ds.insert(withDesc);
 
         // description = null  ->  "description" IS NULL (a bound null parameter can never match)
-        List<PropertyDAO> nullMatches = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        List<PropertyImpl> nullMatches = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                 new QueryMatchString(RelationalOperator.EQUAL, null, MetaToken.DESCRIPTION));
         assertTrue(nullMatches.stream().anyMatch(p -> noDesc.getGUID().equals(p.getGUID())),
                 "IS NULL must match the row with no description");
@@ -204,7 +204,7 @@ public class H2PRegressionTest {
                 "IS NULL must not match a row with a description");
 
         // description != null  ->  "description" IS NOT NULL
-        List<PropertyDAO> notNullMatches = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        List<PropertyImpl> notNullMatches = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                 new QueryMatchString(RelationalOperator.NOT_EQUAL, null, MetaToken.DESCRIPTION));
         assertTrue(notNullMatches.stream().anyMatch(p -> withDesc.getGUID().equals(p.getGUID())),
                 "IS NOT NULL must match the row with a description");
@@ -212,8 +212,8 @@ public class H2PRegressionTest {
                 "IS NOT NULL must not match the row without a description");
     }
 
-    private static PropertyDAO namedProp(String name, String description) {
-        PropertyDAO pd = new PropertyDAO();
+    private static PropertyImpl namedProp(String name, String description) {
+        PropertyImpl pd = new PropertyImpl();
         pd.setName(name);
         pd.setDescription(description);
         ds.insert(pd);
@@ -234,7 +234,7 @@ public class H2PRegressionTest {
         namedProp(nB, act);
         namedProp(nB, inact); // same name as B, but inactive
 
-        List<PropertyDAO> grouped = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        List<PropertyImpl> grouped = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                 new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
                 QueryGroup.OPEN,
                 new QueryMatchString(RelationalOperator.EQUAL, nA, "name"), LogicalOperator.OR,
@@ -242,7 +242,7 @@ public class H2PRegressionTest {
                 QueryGroup.CLOSE);
         assertEquals(2, grouped.size(), "grouping must exclude the inactive row named B");
 
-        List<PropertyDAO> ungrouped = ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        List<PropertyImpl> ungrouped = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                 new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
                 new QueryMatchString(RelationalOperator.EQUAL, nA, "name"), LogicalOperator.OR,
                 new QueryMatchString(RelationalOperator.EQUAL, nB, "name"));
@@ -260,16 +260,16 @@ public class H2PRegressionTest {
         namedProp(nB, act);
         namedProp(nC, "inact-" + tag);
 
-        assertEquals(2, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        assertEquals(2, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                         new QueryMatchIn<>("name", nA, nB)).size(),
                 "IN must match exactly the named set");
 
-        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        assertEquals(1, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                         new QueryMatchString(RelationalOperator.EQUAL, act, "description"), LogicalOperator.AND,
                         new QueryMatchIn<>(true, "name", nA, nC)).size(),
                 "desc = act AND name NOT IN (A, C) must leave only the active B row");
 
-        assertEquals(0, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        assertEquals(0, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                         new QueryMatchIn<String>("name")).size(),
                 "IN over an empty set matches nothing");
     }
@@ -282,11 +282,11 @@ public class H2PRegressionTest {
         namedProp("lk2-" + tag, "like");
         namedProp("oth-" + tag, "like");
 
-        assertEquals(2, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        assertEquals(2, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                         new QueryMatchString(RelationalOperator.LIKE, "lk%" + tag, "name")).size(),
                 "LIKE prefix pattern must match the two lk rows");
 
-        assertEquals(1, ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        assertEquals(1, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                         new QueryMatchString(RelationalOperator.LIKE, "%" + tag, "name"), LogicalOperator.AND,
                         new QueryMatchString(RelationalOperator.NOT_LIKE, "lk%", "name")).size(),
                 "NOT_LIKE must exclude the lk rows within the tag scope");
@@ -311,13 +311,13 @@ public class H2PRegressionTest {
     // ---- Schema evolution fixtures: three meta generations of the SAME entity/table name ----
 
     /** Generation 1: base attributes + a String field {@code keep_me}. */
-    public static class EvolvedV1 extends SetNameDescriptionDAO {
+    public static class EvolvedV1 extends SetNameDescriptionImpl {
         public static final NVConfig NVC_KEEP =
                 NVConfigManager.createNVConfig("keep_me", "v1 field", "KeepMe", false, true, String.class);
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedV1", true, false, false, false, EvolvedV1.class,
                 SUS.toNVConfigList(NVC_KEEP), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public EvolvedV1() {
             super(NVC_E);
@@ -325,7 +325,7 @@ public class H2PRegressionTest {
     }
 
     /** Generation 2: same table, {@code keep_me} unchanged, Long field {@code added_later} ADDED. */
-    public static class EvolvedV2 extends SetNameDescriptionDAO {
+    public static class EvolvedV2 extends SetNameDescriptionImpl {
         public static final NVConfig NVC_KEEP =
                 NVConfigManager.createNVConfig("keep_me", "v1 field", "KeepMe", false, true, String.class);
         public static final NVConfig NVC_ADDED =
@@ -333,7 +333,7 @@ public class H2PRegressionTest {
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedV2", true, false, false, false, EvolvedV2.class,
                 SUS.toNVConfigList(NVC_KEEP, NVC_ADDED), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public EvolvedV2() {
             super(NVC_E);
@@ -341,13 +341,13 @@ public class H2PRegressionTest {
     }
 
     /** Bad generation: same table, {@code keep_me} type CHANGED String -> Long (must be rejected). */
-    public static class EvolvedBadType extends SetNameDescriptionDAO {
+    public static class EvolvedBadType extends SetNameDescriptionImpl {
         public static final NVConfig NVC_KEEP =
                 NVConfigManager.createNVConfig("keep_me", "now a long", "KeepMe", false, true, Long.class);
         public static final NVConfigEntity NVC_E = new NVConfigEntityPortable(
                 "regression_evolved_dao", null, "EvolvedBadType", true, false, false, false, EvolvedBadType.class,
                 SUS.toNVConfigList(NVC_KEEP), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public EvolvedBadType() {
             super(NVC_E);
@@ -419,12 +419,12 @@ public class H2PRegressionTest {
     }
 
     /** Entity type whose name exceeds PostgreSQL's 63-byte identifier limit (must be REJECTED). */
-    public static class LongNameDAO extends SetNameDescriptionDAO {
+    public static class LongNameDAO extends SetNameDescriptionImpl {
         public static final NVConfigEntity NVC_LONG_NAME_DAO = new NVConfigEntityPortable(
                 "regression_very_long_entity_type_name_that_exceeds_the_postgresql_identifier_limit",
                 null, "LongNameDAO", true, false, false, false, LongNameDAO.class,
                 SUS.toNVConfigList(), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public LongNameDAO() {
             super(NVC_LONG_NAME_DAO);
@@ -432,12 +432,12 @@ public class H2PRegressionTest {
     }
 
     /** Entity type whose name contains non-ASCII characters (must be REJECTED). */
-    public static class NonAsciiNameDAO extends SetNameDescriptionDAO {
+    public static class NonAsciiNameDAO extends SetNameDescriptionImpl {
         public static final NVConfigEntity NVC_NON_ASCII_NAME_DAO = new NVConfigEntityPortable(
                 "propriété_dao",
                 null, "NonAsciiNameDAO", true, false, false, false, NonAsciiNameDAO.class,
                 SUS.toNVConfigList(), null, false,
-                SetNameDescriptionDAO.NVC_NAME_DESCRIPTION_DAO);
+                SetNameDescriptionImpl.NVC_NAME_DESCRIPTION_IMPL);
 
         public NonAsciiNameDAO() {
             super(NVC_NON_ASCII_NAME_DAO);
@@ -498,22 +498,22 @@ public class H2PRegressionTest {
         try {
             String[] guids = new String[5];
             for (int i = 0; i < 5; i++) {
-                PropertyDAO pd = new PropertyDAO();
+                PropertyImpl pd = new PropertyImpl();
                 pd.setName("valve-" + i);
                 capped.insert(pd);
                 guids[i] = pd.getGUID();
             }
-            List<PropertyDAO> found = capped.search(PropertyDAO.NVC_PROPERTY_DAO, null);
+            List<PropertyImpl> found = capped.search(PropertyImpl.NVC_PROPERTY_IMPL, null);
             assertEquals(2, found.size(), "MAX_SELECT_RESULTS must cap the search SELECT");
 
             // searchByID is a guid-list lookup — never capped.
-            assertEquals(5, capped.searchByID(PropertyDAO.NVC_PROPERTY_DAO, guids).size(),
+            assertEquals(5, capped.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, guids).size(),
                     "searchByID must return every requested id despite the valve");
 
             // batchSearch/nextBatch IS the pagination mechanism — the guid report must be complete
             // and the id-list page fetches are never capped (the dump relies on both).
             org.zoxweb.shared.api.APISearchResult<Object> report =
-                    capped.batchSearch(PropertyDAO.NVC_PROPERTY_DAO);
+                    capped.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL);
             assertEquals(5, report.size(),
                     "the batchSearch guid report must list every match despite the valve");
             org.zoxweb.shared.api.APIBatchResult<org.zoxweb.shared.util.NVEntity> page =
@@ -550,7 +550,7 @@ public class H2PRegressionTest {
 
     @Test
     public void testPatchIncludeMode() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("patch-inc-" + UUID.randomUUID());
         pd.setDescription("original");
         ds.insert(pd);
@@ -560,14 +560,14 @@ public class H2PRegressionTest {
         pd.setDescription("should-not-be-written");
         ds.patch(pd, false, false, false, true, "name"); // include mode: only "name" is written
 
-        PropertyDAO read = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(newName, read.getName(), "included field must be updated");
         assertEquals("original", read.getDescription(), "non-included field must keep its stored value");
     }
 
     @Test
     public void testPatchExcludeMode() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("patch-exc-" + UUID.randomUUID());
         pd.setDescription("original");
         ds.insert(pd);
@@ -577,14 +577,14 @@ public class H2PRegressionTest {
         pd.setDescription("should-not-be-written");
         ds.patch(pd, false, false, false, false, "description"); // exclude mode: everything but "description"
 
-        PropertyDAO read = (PropertyDAO) ds.searchByID(PropertyDAO.class.getName(), pd.getGUID()).get(0);
+        PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
         assertEquals(newName, read.getName(), "non-excluded field must be updated");
         assertEquals("original", read.getDescription(), "excluded field must keep its stored value");
     }
 
     @Test
     public void testPatchMissingObjectFails() {
-        PropertyDAO ghost = new PropertyDAO();
+        PropertyImpl ghost = new PropertyImpl();
         ghost.setName("ghost-" + UUID.randomUUID());
         ghost.setGUID(IDGs.UUIDV7.genID()); // never inserted
         try {
@@ -597,24 +597,24 @@ public class H2PRegressionTest {
 
     @Test
     public void testSearchProjection() {
-        PropertyDAO pd = new PropertyDAO();
+        PropertyImpl pd = new PropertyImpl();
         pd.setName("proj-" + UUID.randomUUID());
         pd.setDescription("full description");
         pd.getProperties().build(new NVPair("k", "v"));
         ds.insert(pd);
 
-        List<PropertyDAO> found = ds.search(PropertyDAO.NVC_PROPERTY_DAO,
+        List<PropertyImpl> found = ds.search(PropertyImpl.NVC_PROPERTY_IMPL,
                 java.util.Arrays.asList("name"),
                 new QueryMatchString(MetaToken.GUID, pd.getGUID(), RelationalOperator.EQUAL));
         assertEquals(1, found.size());
-        PropertyDAO slim = found.get(0);
+        PropertyImpl slim = found.get(0);
         assertEquals(pd.getGUID(), slim.getGUID(), "guid is always selected");
         assertEquals(pd.getName(), slim.getName(), "projected field must be populated");
         assertNull(slim.getDescription(), "non-projected field must stay unset");
         assertEquals(0, slim.getProperties().size(), "non-projected schemaless field must stay empty");
 
         // Null/empty fieldNames -> all fields (contract).
-        PropertyDAO full = (PropertyDAO) ds.search(PropertyDAO.NVC_PROPERTY_DAO, null,
+        PropertyImpl full = (PropertyImpl) ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
                 new QueryMatchString(MetaToken.GUID, pd.getGUID(), RelationalOperator.EQUAL)).get(0);
         assertEquals("full description", full.getDescription());
         assertEquals("v", full.getProperties().getValue("k"));
@@ -668,7 +668,7 @@ public class H2PRegressionTest {
 
         // Round trip through the store: written as uuid, searchable by its String form, decoded on read.
         String target = IDGs.UUIDV7.genID();
-        org.zoxweb.shared.security.ResourceMap rm = new org.zoxweb.shared.security.ResourceMap(target, PropertyDAO.class.getName());
+        org.zoxweb.shared.security.ResourceMap rm = new org.zoxweb.shared.security.ResourceMap(target, PropertyImpl.class.getName());
         rm = ds.insert(rm);
         assertTrue(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(resourceGuid, target) instanceof UUID);
         List<org.zoxweb.shared.security.ResourceMap> found = ds.search(org.zoxweb.shared.security.ResourceMap.NVC_RESOURCE_MAP, null,
@@ -678,7 +678,7 @@ public class H2PRegressionTest {
         assertEquals(target, found.get(0).getResourceGUID(), "read back as the canonical String form");
 
         // A non-UUID value cannot be stored in a guid-suffixed attribute.
-        org.zoxweb.shared.security.ResourceMap bad = new org.zoxweb.shared.security.ResourceMap("not-a-uuid", PropertyDAO.class.getName());
+        org.zoxweb.shared.security.ResourceMap bad = new org.zoxweb.shared.security.ResourceMap("not-a-uuid", PropertyImpl.class.getName());
         assertThrows(RuntimeException.class, () -> ds.insert(bad));
     }
 

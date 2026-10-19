@@ -353,7 +353,7 @@ searches are full scans today — this also completes the query-pushdown win fro
   additions were never committed), `H2PQueryFormatter` won't compile. When committing, land the
   zoxweb-core additions before (or with) the h2p changes.
 - zoxweb-core also aliases `get/setReferenceID` → `get/setGUID` (default methods on `ReferenceID`)
-  and dropped `NVC_REFERENCE_ID` from `ReferenceIDDAO`'s meta; a validating `NVConfigPortable.setName`
+  and dropped `NVC_REFERENCE_ID` from `ReferenceIDImpl`'s meta; a validating `NVConfigPortable.setName`
   was tried and REVERTED (broke existing name usages) — the h2p identifier gate is the sole
   name enforcement, do not remove it.
 - **Scope rule (user decision): Derby (`zoxweb-jdbc`) is being retired and the Mongo stores are on
@@ -817,7 +817,7 @@ keeps lax-2 `testdb` free of test data (2026-10-02). Nothing committed.
 4. Referenced entities are separate rows with FKs; never re-introduce inline/binary embedding.
 5. `guid` (UUID v7) is the single row identity. `referenceID` no longer exists as an attribute:
    zoxweb-core's `ReferenceID` interface aliases `get/setReferenceID` to `get/setGUID` (default
-   methods) and `NVC_REFERENCE_ID` is gone from `ReferenceIDDAO`'s meta — so `lookupByReferenceID`/
+   methods) and `NVC_REFERENCE_ID` is gone from `ReferenceIDImpl`'s meta — so `lookupByReferenceID`/
    `isValidReferenceID` operate on GUIDs, and no exclusion set is needed (`AttrKind.EXCLUDED`
    remains only as the defensive classification for a null NVConfig).
 
