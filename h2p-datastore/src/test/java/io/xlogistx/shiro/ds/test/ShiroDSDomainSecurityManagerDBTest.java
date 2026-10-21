@@ -658,6 +658,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     @Test
     public void jwtLogin_signatureScopeExpiryStatusAndFreshness() {
         SubjectIdentifier subject = newSubject(uniquePrincipal());
+        dsm.addRoleGrant(subject, appRole(app("shirods"), SecurityModel.Role.APP_USER), app("shirods")); // the key is scoped to the app: its login needs app:login there (2026-10-20)
         SubjectAPIKey sak = newSigningKey(subject, "xlogistx.io", "shirods");
         assertEquals(sak.getGUID(), dsm.lookupSubjectAPIKeyByID(sak.getSubjectID()).getGUID(), "key ID must be searchable");
 
@@ -777,6 +778,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
     public void shiroUtil_loginEntryPoints_workAgainstThisManager() throws Exception {
         String principal = uniquePrincipal();
         SubjectIdentifier subject = newSubject(principal);
+        dsm.addRoleGrant(subject, appRole(app("shirods"), SecurityModel.Role.APP_USER), app("shirods")); // the scoped login below needs app:login in shirods (2026-10-20)
         String rawKey = "key-" + UUID.randomUUID();
         newAPIKey(subject, rawKey);
         SubjectAPIKey signing = newSigningKey(subject, null, null);
@@ -1117,8 +1119,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
     /** The app record, created with its starter catalog and registrar when the test store does not have it yet. */
     private static AppIDDefault appRecord(String domainID, String appID) {
-        AppIDDefault stored = dsm.lookupApp(domainID, appID);
-        return stored != null ? stored : dsm.createApp(domainID, appID);
+        return dsm.createApp(domainID, appID); // idempotent: an existing app (persisted store) is returned with its starter catalog brought to the model
     }
 
     /** A role of the app's own catalog (every app has its own copy of the starter roles). */
@@ -1160,8 +1161,14 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertFalse(global.hasRole("app_admin"), "the app grant needs an app login");
         assertFalse(global.isPermitted("subject:create"));
         dsm.logout();
+        // the app login gate (user rule 2026-10-20): an explicit login into the common app is a login into an app, and the
+        // user role carries no app:login; the common app's app_user does
+        assertThrows(AccessSecurityException.class, () -> dsm.loginSubject(principal, PASSWORD, ShiroDSDomainSecurityManager.COMMON_DOMAIN_ID, ShiroDSDomainSecurityManager.COMMON_APP_ID),
+                "no app:login in the common app");
+        dsm.addRoleGrant(subject, dsm.lookupRole(null, SecurityModel.Role.APP_USER.getName()));
         Subject inCommon = dsm.loginSubject(principal, PASSWORD, ShiroDSDomainSecurityManager.COMMON_DOMAIN_ID, ShiroDSDomainSecurityManager.COMMON_APP_ID);
         assertTrue(inCommon.hasRole("user"), "an explicit login into the common app sees the same grants");
+        assertTrue(inCommon.hasRole("app_user"));
         assertFalse(inCommon.hasRole("app_admin"));
 
         // app login: that app's grants only, as plain tokens
@@ -1170,11 +1177,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertTrue(inA.isPermitted("subject:create"));
         assertFalse(inA.hasRole("user"), "the common grants stay out of an app login");
 
-        // another app: nothing
-        Subject inOther = loginApp(principal, "other");
-        assertFalse(inOther.hasRole("app_admin"));
-        assertFalse(inOther.isPermitted("subject:create"));
-        assertFalse(inOther.hasRole("user"));
+        // another app: no grant there, no login (the app login gate)
+        assertThrows(AccessSecurityException.class, () -> loginApp(principal, "other"), "no app:login in that app");
 
         Subject again = loginApp(principal, "appa");
         assertTrue(again.isPermitted("subject:create"));
@@ -1208,7 +1212,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
         dsm.logout();
         assertTrue(dsm.deleteRoleGroupGrant(g));
         assertFalse(dsm.deleteRoleGroupGrant(g), "already gone");
-        assertFalse(loginApp(principal, "appb").hasRole("app_user"));
+        assertThrows(AccessSecurityException.class, () -> loginApp(principal, "appb"), "the group gone, the login with it (app login gate)");
         dsm.logout();
     }
 
@@ -1222,8 +1226,9 @@ public class ShiroDSDomainSecurityManagerDBTest {
         String bystanderPrincipal = uniquePrincipal();
         SubjectIdentifier admin = newSubject(adminPrincipal);
         SubjectIdentifier user = newSubject(uniquePrincipal());
-        newSubject(bystanderPrincipal);
+        SubjectIdentifier bystander = newSubject(bystanderPrincipal);
         dsm.addRoleGrant(admin, appAdmin, a); // app admin of a: permission:assign:role / :remove:role inside a
+        dsm.addRoleGrant(bystander, appUser, a); // may log into a (app_user carries app:login), holds no grant right
 
         dsm.setEnforcePermissions(true);
         try {
@@ -1320,12 +1325,34 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertEquals(app, created.registrarKey.getAppID());
         assertNull(dsm.ensureRegistrar(app).registrarKey, "created once: no secret the second time");
         assertEquals(created.registrar.getGUID(), dsm.ensureRegistrar(app).registrar.getGUID());
+
+        // the merge (user, 2026-10-20): the registrar is the app's owner subject; createApp is idempotent; lookup by canonical id
+        assertTrue(created.created);
+        assertEquals(created.registrar.getGUID(), dsm.lookupApp(DOMAIN, name).getSubjectGUID(), "the registrar owns the app record");
+        assertEquals(created.registrar.getGUID(), created.app.getSubjectGUID());
+        assertEquals(app.getGUID(), dsm.lookupApp(label).getGUID(), "lookup by <domain>-<app>");
+        assertThrows(IllegalArgumentException.class, () -> dsm.lookupApp("nodash"));
+        assertEquals(app.getGUID(), dsm.createApp(DOMAIN, name).getGUID(), "an existing app is returned, not refused");
+        ShiroDSDomainSecurityManager.AppCreation again = dsm.createApp(DOMAIN, name, null);
+        assertFalse(again.created);
+        assertNull(again.registrarKey, "no second secret");
+        assertEquals(created.registrar.getGUID(), again.registrar.getGUID());
+
         Subject reg = dsm.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(created.registrarKey, null, 60_000), null);
         assertTrue(reg.hasRole(SecurityModel.Role.APP_REGISTRAR.getName()));
+        assertTrue(reg.hasRole(SecurityModel.Role.APP_ADMIN.getName()), "the registrar is the app's admin too (merged, 2026-10-20)");
         assertTrue(reg.isPermitted(SecurityModel.PERM_ADD_SUBJECT));
-        assertFalse(reg.isPermitted(SecurityModel.PERM_ASSIGN_ROLE));
-        assertFalse(reg.isPermitted(SecurityModel.PERM_UPDATE_SUBJECT));
+        assertTrue(reg.isPermitted(SecurityModel.PERM_ASSIGN_ROLE));
+        assertTrue(reg.isPermitted(SecurityModel.PERM_UPDATE_SUBJECT));
         assertFalse(reg.isPermitted(SecurityModel.PERM_CREATE_APP_ID));
+        dsm.logout();
+
+        // the second login: a password a holder of subject:update adds later; the same subject, the same grants
+        dsm.createCredential(created.registrar, HashUtil.toBCryptPassword(PASSWORD));
+        Subject byPassword = dsm.loginSubject(ShiroDSDomainSecurityManager.registrarPrincipal(app), PASSWORD, DOMAIN, name);
+        assertEquals(created.registrar.getGUID(), currentSubjectGUID());
+        assertTrue(byPassword.hasRole(SecurityModel.Role.APP_ADMIN.getName()));
+        assertTrue(byPassword.hasRole(SecurityModel.Role.APP_REGISTRAR.getName()));
         dsm.logout();
 
         // the first manager holds the app's app_admin, which manages the app's catalog
@@ -1401,11 +1428,13 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertTrue(loginApp(existingPrincipal, name).hasRole(SecurityModel.Role.APP_USER.getName()));
             dsm.logout();
 
-            // the registrar may do nothing else
+            // the registrar is the app's admin too (merged, 2026-10-20): it manages the app's grants, but creates no app and deletes no subject
             assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.createApp(DOMAIN, name + "x")));
-            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.addRoleGrant(made, appRole(app, SecurityModel.Role.APP_ADMIN), app)));
             assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.deleteSubjectID(made)));
-            assertThrows(AccessSecurityException.class, () -> asRegistrar(key, () -> dsm.rotateRegistrarKey(app)));
+            RoleGrant promoted = asRegistrar(key, () -> dsm.addRoleGrant(made, appRole(app, SecurityModel.Role.APP_ADMIN), app));
+            assertNotNull(promoted);
+            assertEquals(created.registrar.getGUID(), promoted.getBrokerGUID());
+            assertTrue(asRegistrar(key, () -> dsm.deleteRoleGrant(promoted)));
 
             // a failure inside the swap restores the thread as well
             dsm.loginSubject(existingPrincipal, PASSWORD, null, null);
@@ -1488,6 +1517,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             // A's role is grantable in A, and only there
             RoleGrant grant = dsm.addRoleGrant(user, ownRole, a);
             assertEquals(a.getGUID(), grant.getAppID().getGUID());
+            dsm.addRoleGrant(user, appRole(a, SecurityModel.Role.APP_USER), a); // the reporter role carries no app:login; app_user opens the login into A
             RoleInfo finalRole = ownRole;
             assertThrows(AccessSecurityException.class, () -> dsm.addRoleGrant(user, finalRole, b), "A's manager may not grant in B");
             dsm.logout();
@@ -1495,9 +1525,7 @@ public class ShiroDSDomainSecurityManagerDBTest {
             assertTrue(SecurityUtils.getSubject().isPermitted("report:read"));
             assertTrue(SecurityUtils.getSubject().hasRole(ownRole.getName()));
             dsm.logout();
-            dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameB);
-            assertFalse(SecurityUtils.getSubject().isPermitted("report:read"));
-            dsm.logout();
+            assertThrows(AccessSecurityException.class, () -> dsm.loginSubject(userPrincipal, PASSWORD, DOMAIN, nameB), "no grant in B: no login into B (app login gate)");
         } finally {
             dsm.setEnforcePermissions(false);
             dsm.logout();
@@ -1505,7 +1533,8 @@ public class ShiroDSDomainSecurityManagerDBTest {
         assertThrows(IllegalArgumentException.class, () -> dsm.addRoleGrant(user, dsm.lookupRole(labelA, SecurityModel.Role.APP_USER.getName()), b),
                 "even unenforced, a role is grantable in its own app only");
 
-        // a share follows the data: granted on the resource, it applies in every login scope
+        // a share follows the data: granted on the resource, it applies in every login scope (the user joins B as app_user to log into it)
+        dsm.addRoleGrant(user, appRole(b, SecurityModel.Role.APP_USER), b);
         PropertyImpl file = newResource(admin);
         dsm.addPermissionGrant(user, mapOf(file), "resource:read");
         String token = SecurityModel.toResourceToken(file.getGUID(), user.getGUID(), "read");
@@ -1518,6 +1547,310 @@ public class ShiroDSDomainSecurityManagerDBTest {
 
         assertTrue(dsm.deleteApp(a));
         assertTrue(dsm.deleteApp(b));
+    }
+
+    // ------------------------------------------------------------------
+    // registered classes (user, 2026-10-20): the app's own list behind DomainSecurityManager.addFQCNToApp /
+    // removeFQCNFromApp — and the app login gate (user rule 2026-10-20): app:login opens an app login
+    // ------------------------------------------------------------------
+
+    @Test
+    public void appResourceTypes_addRemove_idempotent_validated_enforced() throws Exception {
+        String name = "fqcn" + Long.toHexString(System.nanoTime());
+        String adminPrincipal = uniquePrincipal(), outsiderPrincipal = uniquePrincipal();
+        SubjectIdentifier admin = newSubject(adminPrincipal);
+        newSubject(outsiderPrincipal);
+        ShiroDSDomainSecurityManager.AppCreation created = dsm.createApp(DOMAIN, name, admin);
+        AppIDDefault app = created.app;
+        String label = ShiroUtil.appScope(app);
+        assertEquals(0, dsm.lookupApp(label).getResourceTypes().length, "nothing registered at creation");
+
+        dsm.addFQCNToApp(label, PropertyImpl.class.getName(), "com.acme.Order");
+        AppIDDefault stored = dsm.lookupApp(label);
+        assertArrayEquals(new String[]{PropertyImpl.class.getName(), "com.acme.Order"}, stored.getResourceTypes(), "on the record, in order, through the store");
+        assertTrue(stored.isResourceTypeRegistered(PropertyImpl.class));
+        assertTrue(stored.isResourceTypeRegistered(" com.acme.Order "), "trimmed");
+        assertFalse(stored.isResourceTypeRegistered(ResourceMap.class));
+        assertEquals(app.getGUID(), stored.getGUID(), "the same record");
+        assertEquals(created.registrar.getGUID(), stored.getSubjectGUID(), "still owned by the registrar");
+
+        // idempotent: a name already present is no error and no duplicate
+        dsm.addFQCNToApp(label, PropertyImpl.class.getName());
+        assertEquals(2, dsm.lookupApp(label).getResourceTypes().length);
+        // one bad name fails the whole call: nothing is written
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(label, "com.acme.Good", "not a class name"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(label, "com..acme.Twice"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(label, "com.acme.1Digit"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(label, ""));
+        assertThrows(NullPointerException.class, () -> dsm.addFQCNToApp(label, (String) null));
+        assertEquals(2, dsm.lookupApp(label).getResourceTypes().length, "the good name of a failed call is not registered");
+        // unknown app, malformed id
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(DOMAIN + "-nosuch" + name, "com.acme.Order"));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp("nodash", "com.acme.Order"));
+        assertThrows(NullPointerException.class, () -> dsm.addFQCNToApp(null, "com.acme.Order"));
+
+        // remove: an absent name is no error; a bad name removes nothing
+        dsm.removeFQCNFromApp(label, "com.acme.Order", "com.acme.Never");
+        assertArrayEquals(new String[]{PropertyImpl.class.getName()}, dsm.lookupApp(label).getResourceTypes());
+        assertThrows(IllegalArgumentException.class, () -> dsm.removeFQCNFromApp(label, PropertyImpl.class.getName(), "bad name"));
+        assertEquals(1, dsm.lookupApp(label).getResourceTypes().length, "a failed remove removes nothing");
+        dsm.removeFQCNFromApp(label, "com.acme.Never");
+        assertEquals(1, dsm.lookupApp(label).getResourceTypes().length);
+
+        // enforcement: app:update in a login that may act on the app
+        AppIDDefault other = dsm.createApp(DOMAIN, name + "b", null).app;
+        String otherLabel = ShiroUtil.appScope(other);
+        dsm.setEnforcePermissions(true);
+        try {
+            assertThrows(AccessSecurityException.class, () -> dsm.addFQCNToApp(label, "com.acme.Nobody"), "nobody bound");
+            dsm.loginSubject(outsiderPrincipal, PASSWORD, null, null);
+            assertThrows(AccessSecurityException.class, () -> dsm.addFQCNToApp(label, "com.acme.Outsider"), "no app:update");
+            assertThrows(AccessSecurityException.class, () -> dsm.removeFQCNFromApp(label, PropertyImpl.class.getName()));
+            dsm.logout();
+            loginApp(adminPrincipal, name);
+            dsm.addFQCNToApp(label, "com.acme.ByAdmin");
+            assertTrue(dsm.lookupApp(label).isResourceTypeRegistered("com.acme.ByAdmin"), "the app's app_admin registers");
+            assertThrows(AccessSecurityException.class, () -> dsm.addFQCNToApp(otherLabel, "com.acme.Elsewhere"), "not in another app");
+            dsm.removeFQCNFromApp(label, "com.acme.ByAdmin");
+            assertFalse(dsm.lookupApp(label).isResourceTypeRegistered("com.acme.ByAdmin"));
+            dsm.logout();
+            // the registrar is the app's admin too (merged, 2026-10-20)
+            assertTrue(asRegistrar(created.registrarKey, () -> {
+                dsm.addFQCNToApp(label, "com.acme.ByRegistrar");
+                return dsm.lookupApp(label).isResourceTypeRegistered("com.acme.ByRegistrar");
+            }));
+            assertEquals(0, dsm.lookupApp(otherLabel).getResourceTypes().length, "nothing leaked into the other app");
+        } finally {
+            dsm.setEnforcePermissions(false);
+            dsm.logout();
+        }
+        assertArrayEquals(new String[]{PropertyImpl.class.getName(), "com.acme.ByRegistrar"}, dsm.lookupApp(label).getResourceTypes(), "PropertyImpl survived the refused calls, the registrar's name stayed");
+
+        // the list dies with the record
+        assertTrue(dsm.deleteApp(app));
+        assertNull(dsm.lookupApp(label));
+        assertThrows(IllegalArgumentException.class, () -> dsm.addFQCNToApp(label, "com.acme.Order"), "gone");
+        assertTrue(dsm.deleteApp(other));
+    }
+
+    /**
+     * Dual ownership end to end (user decisions 2026-10-19/20, built 2026-10-20 night): a login into
+     * an app carries the app record's GUID; a row of a class registered on the app is stamped with it
+     * and owned by the app; its creator holds nothing by {@code subject_guid}; roles of the app carry
+     * per-class verbs as catalog rows {@code app_resource:<fqcn>:<verbs>}; the app admin is the owner
+     * for the owner-only sharing rules; a sealed field hangs off the registrar's key and dies with the app.
+     */
+    @Test
+    public void appOwnership_endToEnd_stampingAppRightsShareRulesKeyChain() throws Exception {
+        String name = "own" + Long.toHexString(System.nanoTime());
+        String adminP = uniquePrincipal(), creatorP = uniquePrincipal(), readerP = uniquePrincipal(), editorP = uniquePrincipal(), thirdP = uniquePrincipal();
+        SubjectIdentifier admin = newSubject(adminP), creator = newSubject(creatorP), reader = newSubject(readerP), editor = newSubject(editorP), third = newSubject(thirdP);
+        ShiroDSDomainSecurityManager.AppCreation created = dsm.createApp(DOMAIN, name, admin);
+        AppIDDefault app = created.app;
+        String label = ShiroUtil.appScope(app);
+        String fqcn = PropertyImpl.class.getName();
+        RoleInfo appUser = appRole(app, SecurityModel.Role.APP_USER);
+        dsm.addRoleGrant(creator, appUser, app);
+        dsm.addRoleGrant(reader, appUser, app);
+        dsm.addRoleGrant(editor, appUser, app);
+
+        // per-class verbs: catalog rows app_resource:<fqcn>:<verbs> of the app, carried by roles of the app
+        PermissionInfo readShare = new PermissionInfo("prop.viewer." + name, SecurityModel.toAppResourceCatalogToken(fqcn, "read", "share"));
+        readShare.setAppID(app);
+        readShare = dsm.createPermission(readShare);
+        PermissionInfo readUpdate = new PermissionInfo("prop.editor." + name, "App_Resource:" + fqcn + ":Update,READ,update");
+        readUpdate.setAppID(app);
+        readUpdate = dsm.createPermission(readUpdate);
+        assertEquals(SecurityModel.toAppResourceCatalogToken(fqcn, "update", "read"), readUpdate.getPermissionToken(), "stored normalized");
+        PermissionInfo bad = new PermissionInfo("prop.bad." + name, "app_resource:" + fqcn + ":create");
+        bad.setAppID(app);
+        assertThrows(IllegalArgumentException.class, () -> dsm.createPermission(bad), "create is judged on the owner");
+        PermissionInfo bad2 = new PermissionInfo("prop.bad2." + name, "app_resource:not a class:read");
+        bad2.setAppID(app);
+        assertThrows(IllegalArgumentException.class, () -> dsm.createPermission(bad2));
+        RoleInfo viewer = SecurityModel.Role.toRole("viewer." + name, "reads and shares the app's properties");
+        viewer.setAppID(app);
+        viewer.addPermission(readShare);
+        viewer = dsm.createRole(viewer);
+        RoleInfo editorRole = SecurityModel.Role.toRole("editor." + name, "edits the app's properties");
+        editorRole.setAppID(app);
+        editorRole.addPermission(readUpdate);
+        editorRole = dsm.createRole(editorRole);
+        dsm.addRoleGrant(reader, viewer, app);
+        dsm.addRoleGrant(editor, editorRole, app);
+
+        // the login carries the app record's GUID; nothing is stamped before the class is registered
+        Subject in = loginApp(creatorP, name);
+        assertEquals(app.getGUID(), ShiroUtil.subjectAppGUID());
+        assertEquals(app.getGUID(), ((io.xlogistx.shiro.DomainPrincipalCollection) in.getPrincipals()).getAppGUID());
+        PropertyImpl plain = new PropertyImpl();
+        plain.setName("own-plain-" + UUID.randomUUID());
+        plain = ds.insert(plain);
+        assertNull(plain.getAppGUID(), "class not registered: the creator's row");
+        assertEquals(creator.getGUID(), plain.getSubjectGUID());
+        // registration takes effect without a new login: the app owns the next row, the creator is recorded and holds nothing
+        dsm.addFQCNToApp(label, fqcn);
+        PropertyImpl owned = new PropertyImpl();
+        owned.setName("own-app-" + UUID.randomUUID());
+        owned = ds.insert(owned);
+        final PropertyImpl ownedRow = owned;
+        assertEquals(app.getGUID(), owned.getAppGUID(), "stamped with the login's app");
+        assertEquals(creator.getGUID(), owned.getSubjectGUID(), "the creator is recorded");
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).isEmpty(), "the creator holds nothing by subject_guid");
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, plain.getGUID()).size(), "its own row is still its own");
+        assertThrows(AccessSecurityException.class, () -> ds.update(ownedRow));
+        // a login without app: no stamp, and no app right either
+        login(creatorP);
+        PropertyImpl global = new PropertyImpl();
+        global.setName("own-global-" + UUID.randomUUID());
+        global = ds.insert(global);
+        assertNull(global.getAppGUID(), "no app in the login");
+        assertNull(ShiroUtil.subjectAppGUID());
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).isEmpty());
+
+        // the reader: read through the app token, no update; the editor: update, no delete
+        Subject r = loginApp(readerP, name);
+        assertTrue(r.isPermitted(SecurityModel.toAppResourceToken(app.getGUID(), fqcn, reader.getGUID(), "read")), "flattened for the login into the app");
+        assertFalse(r.isPermitted(SecurityModel.toAppResourceToken(app.getGUID(), fqcn, reader.getGUID(), "update")));
+        List<PropertyImpl> seen = ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        assertEquals(1, seen.size(), "read through the app right");
+        seen.get(0).setName("renamed-" + UUID.randomUUID());
+        assertThrows(AccessSecurityException.class, () -> ds.update(seen.get(0)), "read is not update");
+        login(readerP);
+        assertFalse(SecurityUtils.getSubject().isPermitted(SecurityModel.toAppResourceToken(app.getGUID(), fqcn, reader.getGUID(), "read")), "no app right outside the app");
+        loginApp(editorP, name);
+        PropertyImpl edit = ds.<PropertyImpl>searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).get(0);
+        edit.setName("edited-" + UUID.randomUUID());
+        ds.update(edit);
+        assertThrows(AccessSecurityException.class, () -> ds.delete(edit, false), "update is not delete");
+
+        // sharing rules on an app-owned row (user decisions 2026-10-06 and 2026-10-20): the creator cannot share, a
+        // sharer with read,share gives read / read,share only, the app admin is the owner
+        PermissionGrant share;
+        dsm.setEnforcePermissions(true);
+        try {
+            loginApp(creatorP, name);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(third, mapOf(ownedRow), "resource:read"), "the creator holds no share");
+            loginApp(readerP, name);
+            assertThrows(AccessSecurityException.class, () -> dsm.addPermissionGrant(third, mapOf(ownedRow), "resource:read,update"), "not the owner: read / read,share only");
+            share = dsm.addPermissionGrant(third, mapOf(ownedRow), "resource:read");
+            final PermissionGrant theShare = share;
+            assertThrows(AccessSecurityException.class, () -> dsm.updatePermissionGrant(theShare, "resource:read,share"), "changing a share is the owner's");
+            Subject a = loginApp(adminP, name);
+            assertTrue(a.isPermitted(SecurityModel.toAppResourceToken(app.getGUID(), fqcn, admin.getGUID(), "*")), "app_admin holds every verb on every class: the owner");
+            dsm.updatePermissionGrant(share, "resource:read,share");
+            dsm.updatePermissionGrant(share, "resource:read,update"); // update comes from the owner alone (one share per grantee per resource)
+        } finally {
+            dsm.setEnforcePermissions(false);
+            dsm.logout();
+        }
+        login(thirdP);
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).size(), "a share follows the data: read in a global login");
+        assertTrue(dsm.deletePermissionGrant(share));
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).isEmpty());
+
+        // the app admin reads the app's rows and the app record (its own app); so does the registrar, an app_admin too
+        loginApp(adminP, name);
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).size());
+        assertEquals(1, ds.searchByID(AppIDDefault.NVC_APP_ID_DEFAULT, app.getGUID()).size(), "the app record is open to its admin");
+        loginApp(creatorP, name);
+        assertTrue(ds.searchByID(AppIDDefault.NVC_APP_ID_DEFAULT, app.getGUID()).isEmpty(), "not to an app_user");
+        dsm.logout();
+        assertEquals(1, (int) asRegistrar(created.registrarKey, () -> ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, ownedRow.getGUID()).size()));
+
+        // a sealed field on an app-owned row: the entity key is wrapped under the registrar's key, read by whoever holds read on the class
+        dsm.addFQCNToApp(label, org.zoxweb.shared.data.CreditCardInfo.class.getName());
+        loginApp(creatorP, name);
+        org.zoxweb.shared.data.CreditCardInfo cc = new org.zoxweb.shared.data.CreditCardInfo();
+        cc.setCardNumber("4111111111111111");
+        cc.setCardHolderName("App Owned");
+        cc = ds.insert(cc);
+        final String ccGUID = cc.getGUID();
+        assertEquals(app.getGUID(), cc.getAppGUID());
+        org.zoxweb.shared.db.QueryMatchString byRef = new org.zoxweb.shared.db.QueryMatchString(org.zoxweb.shared.util.MetaToken.REFERENCE_GUID, ccGUID, Const.RelationalOperator.EQUAL);
+        List<org.zoxweb.shared.crypto.EncapsulatedKey> keys = sys.search(org.zoxweb.shared.crypto.EncapsulatedKey.NVCE_ENCAPSULATED_KEY, null, byRef);
+        assertEquals(1, keys.size(), "one entity key row");
+        assertEquals(created.registrar.getGUID(), keys.get(0).getSubjectGUID(), "wrapped under the app owner's (registrar's) key");
+        assertTrue(ds.searchByID(org.zoxweb.shared.data.CreditCardInfo.NVC_CREDIT_CARD_INFO, ccGUID).isEmpty(), "the creator holds no right on the class");
+        loginApp(adminP, name);
+        List<org.zoxweb.shared.data.CreditCardInfo> cards = ds.searchByID(org.zoxweb.shared.data.CreditCardInfo.NVC_CREDIT_CARD_INFO, ccGUID);
+        assertEquals(1, cards.size());
+        assertEquals("4111111111111111", cards.get(0).getCardNumber(), "opened through the registrar's chain by a non-creator");
+        dsm.logout();
+
+        // unregistering stops the stamp; deleting the app deletes the registrar and with it the app's entity keys
+        dsm.removeFQCNFromApp(label, fqcn);
+        loginApp(creatorP, name);
+        PropertyImpl afterRemove = new PropertyImpl();
+        afterRemove.setName("own-after-" + UUID.randomUUID());
+        afterRemove = ds.insert(afterRemove);
+        assertNull(afterRemove.getAppGUID(), "the registration is gone: the creator's row again");
+        dsm.logout();
+        assertTrue(dsm.deleteApp(app));
+        assertTrue(sys.search(org.zoxweb.shared.crypto.EncapsulatedKey.NVCE_ENCAPSULATED_KEY, null, byRef).isEmpty(), "the app's keys die with its registrar");
+        for (NVEntity orphan : new NVEntity[]{owned, cc, plain, global, afterRemove}) {
+            sys.delete(orphan, false);
+        }
+    }
+
+    @Test
+    public void appLogin_needsAppLoginPermission_directOrViaRole_globalLoginExempt() {
+        String name = "gate" + Long.toHexString(System.nanoTime());
+        AppIDDefault app = dsm.createApp(DOMAIN, name, null).app;
+        String label = ShiroUtil.appScope(app);
+        String principal = uniquePrincipal();
+        SubjectIdentifier subject = newSubject(principal);
+
+        // a valid credential and no grant in the app: refused, and indistinguishable from a bad password
+        AccessSecurityException refused = assertThrows(AccessSecurityException.class, () -> loginApp(principal, name));
+        AccessSecurityException badPassword = assertThrows(AccessSecurityException.class, () -> dsm.loginSubject(principal, "wrong-" + PASSWORD, DOMAIN, name));
+        assertEquals(badPassword.getMessage(), refused.getMessage(), "generic failure: the app is not enumerated");
+        assertNull(ThreadContext.getSubject(), "nothing bound after a refused login");
+
+        // the global login is exempt
+        assertTrue(dsm.loginSubject(principal, PASSWORD, null, null).isAuthenticated());
+        assertFalse(SecurityUtils.getSubject().isPermitted(SecurityModel.PERM_APP_LOGIN));
+        dsm.logout();
+
+        // the starter catalog carries app:login; a direct grant of it admits, its revocation refuses again
+        PermissionInfo login = dsm.lookupPermission(label, SecurityModel.Permission.APP_LOGIN.getName());
+        assertNotNull(login, "app:login in the app's catalog");
+        assertEquals(SecurityModel.PERM_APP_LOGIN, login.getPermissionToken());
+        assertEquals("app:login", SecurityModel.PERM_APP_LOGIN);
+        PermissionGrant direct = dsm.addPermissionGrant(subject, login, app);
+        Subject in = loginApp(principal, name);
+        assertTrue(in.isPermitted(SecurityModel.PERM_APP_LOGIN));
+        assertFalse(in.hasRole(SecurityModel.Role.APP_USER.getName()));
+        dsm.logout();
+        assertTrue(dsm.deletePermissionGrant(direct));
+        assertThrows(AccessSecurityException.class, () -> loginApp(principal, name), "revoked: refused again, the cached grants are gone");
+
+        // through a role: app_user, then app_service_provider; the plain user role of the app does not open it
+        RoleGrant viaUser = dsm.addRoleGrant(subject, appRole(app, SecurityModel.Role.USER), app);
+        assertThrows(AccessSecurityException.class, () -> loginApp(principal, name), "user marks membership, it opens no app");
+        assertTrue(dsm.deleteRoleGrant(viaUser));
+        RoleGrant viaRole = dsm.addRoleGrant(subject, appRole(app, SecurityModel.Role.APP_USER), app);
+        assertTrue(loginApp(principal, name).hasRole(SecurityModel.Role.APP_USER.getName()));
+        dsm.logout();
+        assertTrue(dsm.deleteRoleGrant(viaRole));
+        dsm.addRoleGrant(subject, appRole(app, SecurityModel.Role.APP_SERVICE_PROVIDER), app);
+        assertTrue(loginApp(principal, name).isPermitted(SecurityModel.PERM_APP_LOGIN));
+        dsm.logout();
+        assertEquals(1, dsm.revokeAppGrants(subject.getGUID(), app));
+
+        // a JWT login with a key scoped to the app is a login into the app: gated the same way
+        SubjectAPIKey scoped = newSigningKey(subject, DOMAIN, name);
+        assertThrows(AccessSecurityException.class, () -> dsm.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(scoped, null, 30_000), null), "no grant in the app");
+        dsm.addRoleGrant(subject, appRole(app, SecurityModel.Role.APP_USER), app);
+        Subject viaJWT = dsm.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(scoped, null, 30_000), null);
+        assertTrue(viaJWT.hasRole(SecurityModel.Role.APP_USER.getName()));
+        dsm.logout();
+        // an unscoped key is a global login: exempt
+        SubjectAPIKey unscoped = newSigningKey(subject, null, null);
+        assertTrue(dsm.loginSubjectJWT(ShiroDSDomainSecurityManager.mintJWT(unscoped, null, 30_000), null).isAuthenticated());
+        dsm.logout();
+
+        assertTrue(dsm.deleteApp(app));
     }
 
     // ------------------------------------------------------------------

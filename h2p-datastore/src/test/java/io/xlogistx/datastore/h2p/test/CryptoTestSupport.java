@@ -173,7 +173,7 @@ final class CryptoTestSupport {
 
     static int countKeyRows(H2PDataStore ds, String referenceGUID) throws Exception {
         try (Connection con = ds.newConnection();
-             PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM \"encapsulated_key\" WHERE \"reference_guid\" = ?")) {
+             PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM \"" + EncapsulatedKey.NVCE_ENCAPSULATED_KEY.getName() + "\" WHERE \"reference_guid\" = ?")) {
             ps.setObject(1, IDGs.UUIDV7.decode(referenceGUID));
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();

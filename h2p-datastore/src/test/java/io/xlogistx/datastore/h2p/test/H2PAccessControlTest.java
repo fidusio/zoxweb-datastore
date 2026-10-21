@@ -68,7 +68,139 @@ public class H2PAccessControlTest {
     @AfterEach
     public void reset() {
         TestSecurityController.currentSubject = null;
+        TestSecurityController.currentApp = null;
         TestSecurityController.revokeAll();
+    }
+
+    /** An app record owned by {@code ownerSubject} (its registrar), a row of the store under test, inserted in the system context. */
+    private static org.zoxweb.shared.app.AppIDDefault newApp(String ownerSubject) {
+        org.zoxweb.shared.app.AppIDDefault app = new org.zoxweb.shared.app.AppIDDefault(
+                "acl" + Long.toHexString(System.nanoTime()) + ".com", "app");
+        app.setSubjectGUID(ownerSubject);
+        return TestSecurityController.system(() -> ds.insert(app));
+    }
+
+    // ------------------------------------------------------------------ app ownership (dual ownership, 2026-10-20)
+
+    @Test
+    public void appOwnership_registeredClassStamped_judgedOnTheAppToken_immutable_everyReadPath() {
+        String registrar = IDGs.UUIDV7.genID();
+        org.zoxweb.shared.app.AppIDDefault app = newApp(registrar);
+        String appGUID = app.getGUID();
+        assertEquals(appGUID, app.getAppGUID(), "the app record is its own app");
+        String fqcn = PropertyImpl.class.getName();
+        String creator = login();
+        TestSecurityController.currentApp = appGUID;
+        TestSecurityController.register(appGUID, PropertyImpl.class);
+
+        // a registered class created in a login into the app: the app owns it, the creator is recorded
+        PropertyImpl owned = ds.insert(prop(tag("app-owned")));
+        assertEquals(appGUID, owned.getAppGUID(), "stamped with the login's app");
+        assertEquals(creator, owned.getSubjectGUID(), "the creator is recorded");
+        PropertyImpl stored = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        assertEquals(appGUID, stored.getAppGUID(), "app_guid is in the row");
+        // an unregistered class in the same login stays the subject's
+        CyclicDAO mine = ds.insert(doc(tag("subject-owned")));
+        assertNull(mine.getAppGUID());
+        assertEquals(1, ds.searchByID(CyclicDAO.NVC_CYCLIC_DAO, mine.getGUID()).size(), "the owner reads its own row");
+
+        // the creator holds nothing by subject_guid: without an app right the row is not there for it
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).isEmpty(), "creator without app right sees nothing");
+        assertEquals(0, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(owned.getName())));
+        assertThrows(AccessSecurityException.class, () -> ds.update(owned));
+        assertThrows(AccessSecurityException.class, () -> ds.delete(owned, false));
+
+        // a reader with the app right on the class, in a login into the app: reads through every path, no update, no delete
+        String reader = login();
+        TestSecurityController.currentApp = appGUID;
+        TestSecurityController.grantApp(appGUID, fqcn, reader, "read");
+        List<PropertyImpl> seen = ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        assertEquals(1, seen.size(), "read through the app token");
+        assertEquals(appGUID, seen.get(0).getAppGUID());
+        assertEquals(1, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(owned.getName())));
+        assertEquals(1, ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null, named(owned.getName())).size());
+        APISearchResult<UUID> report = ds.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL, named(owned.getName()));
+        assertEquals(1, report.getMatchIDs().size(), "batch search reports it");
+        seen.get(0).setName(tag("renamed"));
+        assertThrows(AccessSecurityException.class, () -> ds.update(seen.get(0)), "read is not update");
+        assertThrows(AccessSecurityException.class, () -> ds.delete(seen.get(0), false), "read is not delete");
+        // a stranger in the app sees nothing; the reader in a login without app holds no app right either
+        login();
+        TestSecurityController.currentApp = appGUID;
+        assertTrue(ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).isEmpty());
+        assertEquals(0, ds.countMatch(PropertyImpl.NVC_PROPERTY_IMPL, named(owned.getName())));
+        assertTrue(ds.batchSearch(PropertyImpl.NVC_PROPERTY_IMPL, named(owned.getName())).getMatchIDs().isEmpty());
+        // a share of the row opens it like any row
+        String grantee = login();
+        TestSecurityController.grant(owned.getGUID(), grantee, "read");
+        assertEquals(1, ds.searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).size(), "a share reaches an app-owned row");
+
+        // an editor: update works, the owners are immutable
+        String editor = login();
+        TestSecurityController.currentApp = appGUID;
+        TestSecurityController.grantApp(appGUID, fqcn, editor, "read", "update");
+        PropertyImpl edit = ds.<PropertyImpl>searchByID(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()).get(0);
+        edit.setName(tag("edited"));
+        edit.setAppGUID(null);
+        ds.update(edit);
+        PropertyImpl after = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        assertEquals(appGUID, after.getAppGUID(), "an empty app_guid keeps the stored app");
+        assertEquals(creator, after.getSubjectGUID(), "and the stored creator");
+        PropertyImpl reown = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        reown.setAppGUID(IDGs.UUIDV7.genID());
+        assertThrows(AccessSecurityException.class, () -> ds.update(reown), "the owning app never changes");
+        PropertyImpl reclaim = systemRead(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID());
+        reclaim.setSubjectGUID(editor);
+        assertThrows(AccessSecurityException.class, () -> ds.update(reclaim), "the creator never changes");
+        assertThrows(AccessSecurityException.class, () -> ds.delete(edit, false), "update is not delete");
+        TestSecurityController.grantApp(appGUID, fqcn, editor, "delete");
+        assertTrue(ds.delete(edit, false), "delete through the app token");
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, owned.getGUID()));
+
+        // creation rules: a login without app stamps nothing; a foreign app_guid needs the create wildcard
+        as(creator);
+        TestSecurityController.currentApp = null;
+        PropertyImpl global = ds.insert(prop(tag("global")));
+        assertNull(global.getAppGUID(), "no app in the login: the subject's row");
+        PropertyImpl foreign = prop(tag("foreign"));
+        foreign.setAppGUID(appGUID);
+        assertThrows(AccessSecurityException.class, () -> ds.insert(foreign), "a row for an app the login is not in");
+        TestSecurityController.grant("*", "*", "create");
+        PropertyImpl onBehalf = ds.insert(foreign);
+        assertEquals(appGUID, onBehalf.getAppGUID(), "the create wildcard creates for the app");
+        assertEquals(creator, onBehalf.getSubjectGUID());
+        // an entity arriving with a GUID or an owner is not app-stamped, even in the app
+        TestSecurityController.currentApp = appGUID;
+        PropertyImpl preset = prop(tag("preset-guid"));
+        preset.setGUID(IDGs.UUIDV7.genID());
+        assertNull(ds.insert(preset).getAppGUID(), "client-supplied GUID: not stamped");
+        // a class no longer registered stops being stamped at once
+        TestSecurityController.unregister(appGUID, PropertyImpl.class);
+        assertNull(ds.insert(prop(tag("unregistered"))).getAppGUID());
+
+        // delete by criteria: rows the caller cannot see are skipped, a visible undeletable one aborts
+        TestSecurityController.register(appGUID, PropertyImpl.class);
+        String victimName = tag("criteria");
+        PropertyImpl victim = ds.insert(prop(victimName));
+        assertEquals(appGUID, victim.getAppGUID());
+        as(reader);
+        TestSecurityController.currentApp = appGUID;
+        assertThrows(AccessSecurityException.class, () -> ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(victimName)), "visible, not deletable");
+        login();
+        TestSecurityController.currentApp = appGUID;
+        ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(victimName)); // invisible: skipped
+        assertNotNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, victim.getGUID()), "still there");
+        as(editor);
+        ds.delete(PropertyImpl.NVC_PROPERTY_IMPL, named(victimName));
+        assertNull(systemRead(PropertyImpl.NVC_PROPERTY_IMPL, victim.getGUID()), "deleted through the app token");
+
+        // the app record: its own app, read by whoever holds the app right on its class (the app admin), not by a bystander
+        TestSecurityController.grantApp(appGUID, "*", editor, "*");
+        assertEquals(1, ds.searchByID(org.zoxweb.shared.app.AppIDDefault.NVC_APP_ID_DEFAULT, appGUID).size(), "app_resource:<app>:*:<S>:* opens every class");
+        login();
+        TestSecurityController.currentApp = appGUID;
+        assertTrue(ds.searchByID(org.zoxweb.shared.app.AppIDDefault.NVC_APP_ID_DEFAULT, appGUID).isEmpty());
+        TestSecurityController.systemRun(() -> ds.delete(app, false));
     }
 
     private static String login() {

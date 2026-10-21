@@ -10,7 +10,20 @@
 > session log — read it for anything about the Shiro manager, realm, admin tool or these tests),
 > `app-model.md`, `datastore-acl.md`, `no-sneak-plan.md`, `sharing-gaps-plan.md` (decided
 > 2026-10-06, built the same day) and `app-resources-plan.md` (app-owned resources through the
-> registrar swap, decided 2026-10-16, NOT built) beside this file. The classes under test
+> registrar swap, decided 2026-10-16, superseded 2026-10-19 by the dual-ownership design, Claude Docs
+> https://claude.ai/artifact/KZKeKvNh7mpj44oe8EJu4a, of which the first steps are built since 2026-10-20:
+> the five `DomainSecurityManager` app methods in `ShiroDSDomainSecurityManager` with the
+> **merged registrar** (user, 2026-10-20: the registrar `registrar.<domain>-<app>` IS the app's owner subject, holds
+> `app_admin`, logs in by JWT with its symmetric key or by a password set later; the common app gets its registrar
+> from the bootstrap again), the app's **registered class list** (`AppIDDefault.getResourceTypes()`,
+> `addFQCNToApp` / `removeFQCNFromApp`) and the **app login gate** (`app:login`, user rule 2026-10-20: a subject
+> logs into an app only with that permission, directly or through a role; checked by `DSAuthorizingRealm`,
+> a login without domain/app is exempt) — green on in-memory H2, `h2persist.store` and lax-2 testdb, real bootstrap rerun
+> done on both (it now repairs every app's starter catalog and registrar), and — since 2026-10-20 night — **dual
+> ownership end to end**: a row of a registered class created in a login into the app is stamped with the app record's
+> `app_guid` and owned by the app (access through `app_resource:<app>:<class>:<caller>:<verb>`, roles carry per-class
+> verbs as `app_resource:<fqcn>:<verbs>` catalog rows, `app_admin` holds `app_resource:*:*` and is the owner, the key chain
+> roots at the registrar — see "Dual ownership" under Access control; the per-class-verbs decisions confirmed by the user 2026-10-21); nothing committed; see `SHIRO-DS.md` 2026-10-20) beside this file. The classes under test
 > live in io-xlogistx (`shiro` and `opsec` modules). Older text that names
 > `xlogistx-shiro-ds/src/main/resources/test.store` means `h2p-datastore/src/test/resources/test.store`,
 > which no longer exists.
@@ -33,7 +46,7 @@ JDBC driver + URL.
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
 | `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
 | `H2PFieldCrypto.java` | **Encryption at rest** (package-private): ENCRYPT* field records via the `SecurityController`, AESCrypt VX file content, entity-key lifecycle on the `KeyMaker` chain, raw mode for dumps — see the dedicated section |
-| `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the default app id (`app.id`, `<domain>-<app>`, **mandatory since 2026-10-12**: it carries the deployment's only registrar), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app (`create-app`, registrar key printed once; since 2026-10-12 the bootstrap gives the common app **no registrar**, so this is the deployment's only one) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `command=create` (default when `command=` is absent) is the set-up; `command=print store= [store.password=]` opens an existing store and displays its parameters, only `super-admin-id=` and `db.url=` (2026-10-09 as `mode=read`, renamed 2026-10-12 on the user's word); a run **without any parameter prints the usage** on stdout and exits 1, nothing asked, nothing written (2026-10-12). First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
+| `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the default app id (`app.id`, `<domain>-<app>`, **mandatory since 2026-10-12**), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app (`create-app`, registrar key printed once; since 2026-10-20 the bootstrap gives the common app **its registrar as well**, key printed once by `bootstrap-super-admin` — the 2026-10-12 no-common-registrar rule is reversed, the registrar being the app's owner subject) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `command=create` (default when `command=` is absent) is the set-up; `command=print store= [store.password=]` opens an existing store and displays its parameters, only `super-admin-id=` and `db.url=` (2026-10-09 as `mode=read`, renamed 2026-10-12 on the user's word); a run **without any parameter prints the usage** on stdout and exits 1, nothing asked, nothing written (2026-10-12); `command=setup store= [store.password=] [app.id=]` (user dictation 2026-10-19) takes an **existing** secret store and runs the database step alone: mandatory entries checked, `app.id` = given (must equal the store's `app-id` when it has one) else the store's entry else asked, a missing `app-id` entry is added to the store (the only write to it), the H2 directory/file created when absent, `bootstrap-super-admin` (idempotent) then `create-app`, where an app that already exists is kept and reported (`create` still fails on it); no INI is written. The database step is the shared `setupDatabase(...)`. First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
 
 ## Storage model (fully normalized — no binary blobs)
 
@@ -486,7 +499,30 @@ owner always) · `requireSystemContext`.
   `loginSubjectJWT`, `ShiroUtil.login`); `dsm.login(...)` only verifies a credential, and
   `loginApiKey(...)` always refuses since 2026-10-03.
 
-Tests: `H2PAccessControlTest` (9, controller-only store, Shiro-free `TestSecurityController`),
+**Dual ownership — app-owned rows (built 2026-10-20 night, user decisions 2026-10-19/20).** Every entity carries
+`app_guid` beside `subject_guid`. The controller (`ShiroSecurityController.associateResourceToSubject`, or the test stub
+with `TestSecurityController.currentApp` + `register`) stamps it on a new row — no GUID, no owner, no app — whose class
+(`SecurityModel.resourceTypeOf`, the meta type's class name) is on the login app's registered list
+(`AppIDDefault.getResourceTypes()`); the store never stamps it. A row carrying `app_guid` is the **app's**: the owner
+half of every verdict is the caller's app-resource right for the row's type in that app,
+`app_resource:<app>:<type>:<caller>:<verb>` (the 5-arg `SecurityController.isResourceAccessible(guid, owner, appGUID,
+resourceType, crud)` through `permitted(nvce, …)` / `H2PFieldCrypto.accessAllowed`), never the subject in `subject_guid`,
+who only created it; a share of the row counts as for any row. `ReadCtx.mayRead(nvce, guid, owner, app)` asks one
+verdict per app-owned row (no owner memo for it); every access-checked SELECT also reads `app_guid`
+(`ownerColumns` / `ownersOf`, `StoredRow.app`). `checkCreate`: an `app_guid` that is not the login's app
+(`sc.currentAppGUID()`) needs a create grant or wildcard, like a row owned by someone else; `create` on the row itself is
+the creator's self permission inside its login into that app. `checkWrite`: `app_guid` is immutable like the owner.
+Key chain: `H2PFieldCrypto.keyOwnerOf(nve)` — the `subject_guid` of the app record named by `app_guid` (the app's
+registrar), read in the system context, else the row's own — roots `ensureEntityKey`
+(`KeyMaker.createNVEntityKey(ds, nve, owner, key)`, the key row's `subject_guid` = that owner) and `entityKey`; the
+Shiro controller's `keyOwnerOf(ds, nve)` is the same rule, so a grantee or the app admin decrypts through the registrar's
+chain and deleting the creator subject leaves the row readable; `deleteApp` (the manager) removes the registrar's keys and
+with them the app's entity keys. App records (`AppIDDefault`) are never stamped (their `app_guid` is their own `guid`)
+and are open to whoever holds `app_resource:<app>:*:<S>:*` — the app admin and the registrar. Files stay subject-only.
+Tests: `H2PAccessControlTest.appOwnership_…`, `H2PFieldCryptoTest.appOwnedRow_…`, shiro-ds
+`appOwnership_endToEnd_stampingAppRightsShareRulesKeyChain`.
+
+Tests: `H2PAccessControlTest` (10, controller-only store, Shiro-free `TestSecurityController`),
 `H2PFieldCryptoTest` / `H2PSecureFileTest` adapted, shiro-ds
 `datastoreAccessControl_endToEnd_withTheShiroController` and
 `datastoreAccessControl_superAdminReachesEveryRow_ordinarySubjectOnlyItsOwn`.
@@ -693,6 +729,9 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   in-memory URL, PostgreSQL URL without database, missing answer without a console) leave nothing
   behind, and the URL/path checks (`typeOf`, `h2FileDirectory`, `h2Path`, `generatePassword`).
   Also `givenURL_encPasswordImpliesCipher` (a given cipherless H2 URL with `db.enc-password=` gets `;CIPHER=AES`). 4/4 offline on 2026-10-09.
+  `setup_existingStore_databaseOnly` (2026-10-19): a store written by hand without `app-id`, `command=setup` refused without `app.id=`, then sets the
+  database up (H2 file created, super-admin and default app, `app-id` added to the store, no INI), a rerun is idempotent (account and app kept,
+  registrar key not printed again), a different `app.id` / the common app / wrong password / missing store refused. 5/5 offline on 2026-10-19.
 - `ShiroIniRealmMain` (`io.xlogistx.shiro.ds.test`, 2026-10-12, user dictation; a `main`, not a
   JUnit class) — builds a deployment's datastore and realm from its two files and **sets nothing
   up**: `store=<vault> [store.password=<pw> | console prompt] shiro.ini=<file or classpath:…>`.
@@ -713,6 +752,10 @@ xlogistx-core, sshd-common/core/scp/sftp 2.16.0 and bouncycastle bcprov/bcpkix/b
   Newly uuid-typed: `resource_guid` (`resource_map`), `reference_guid`/`key_guid`
   (`encapsulated_key`), `app_guid` (`subject_preference`). `permission_grant` + `resource_map` were
   dropped and recreated on lax-2 testdb (the only pre-rule varchar `*guid` column there).
+  Since zoxweb-core 2026-10-19 every entity carries `ReferenceIDImpl.NVC_APP_GUID` (`app_guid`, optional,
+  non-unique): same rule, `uuid` column + `idx_<table>_app_guid`, String in/out, added to existing tables by
+  the additive ALTER. Verified by `H2PRegressionTest.testAppGuidStoredAsUUIDReadAsString` (H2) and
+  `H2PPostgresDataStoreTest.appGuidIsUUIDColumn` (lax-2 testdb), 2026-10-19.
 - **Entity-reference criteria bind as uuid**: `H2PQueryFormatter.normalize` (now public) decodes a
   GUID String or the child `NVEntity` for `AttrKind.ENTITY_REF` columns — needed by shiro-ds's
   `permission_grant."resource_map" IN (…)` on PostgreSQL.

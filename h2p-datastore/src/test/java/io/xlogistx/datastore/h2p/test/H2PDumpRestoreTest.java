@@ -56,7 +56,7 @@ public class H2PDumpRestoreTest {
         return prefix + "_" + Math.abs(UUID.randomUUID().hashCode());
     }
 
-    private static PropertyImpl newPropertyDAO(String name, int val) {
+    private static PropertyImpl newPropertyImpl(String name, int val) {
         PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription("desc of " + name);
@@ -78,7 +78,7 @@ public class H2PDumpRestoreTest {
         H2PDataStore target = newStore(db("dump_dst"));
         try {
             for (int i = 0; i < 10; i++) {
-                source.insert(newPropertyDAO("per-type-" + i, i));
+                source.insert(newPropertyImpl("per-type-" + i, i));
             }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             long written = source.dump(PropertyImpl.NVC_PROPERTY_IMPL, bos);
@@ -105,7 +105,7 @@ public class H2PDumpRestoreTest {
         H2PDataStore source = newStore(db("dump_arr"));
         try {
             for (int i = 0; i < 3; i++) {
-                source.insert(newPropertyDAO("array-" + i, i));
+                source.insert(newPropertyImpl("array-" + i, i));
             }
             String json = source.dumpToJSON(PropertyImpl.NVC_PROPERTY_IMPL);
             List<NVEntity> parsed = GSONUtil.fromJSONArray(json, null);
@@ -126,7 +126,7 @@ public class H2PDumpRestoreTest {
         try {
             // Entities of several types, one with an entity reference.
             for (int i = 0; i < 5; i++) {
-                source.insert(newPropertyDAO("full-" + i, i));
+                source.insert(newPropertyImpl("full-" + i, i));
             }
             Range<Integer> range = new Range<>(1, 100);
             range.setName("full-range");
@@ -284,7 +284,7 @@ public class H2PDumpRestoreTest {
         H2PDataStore capped = new H2PDSCreator().createAPI(null, CryptoTestSupport.secure(cfg));
         try {
             for (int i = 0; i < 10; i++) {
-                capped.insert(newPropertyDAO("clamp-" + i, i));
+                capped.insert(newPropertyImpl("clamp-" + i, i));
             }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             long written = capped.dump(PropertyImpl.NVC_PROPERTY_IMPL, bos);
@@ -300,12 +300,12 @@ public class H2PDumpRestoreTest {
         H2PDataStore source = newStore(db("mode_src"));
         H2PDataStore target = newStore(db("mode_dst"));
         try {
-            source.insert(newPropertyDAO("dumped", 1));
+            source.insert(newPropertyImpl("dumped", 1));
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             source.dump(bos);
             byte[] dump = bos.toByteArray();
 
-            PropertyImpl extra = newPropertyDAO("pre-existing", 99);
+            PropertyImpl extra = newPropertyImpl("pre-existing", 99);
             target.insert(extra);
 
             target.restore(new ByteArrayInputStream(dump), RestoreMode.MERGE);
@@ -328,7 +328,7 @@ public class H2PDumpRestoreTest {
         String dbName = db("coldstart");
         H2PDataStore first = newStore(dbName);
         try {
-            first.insert(newPropertyDAO("cold-1", 1));
+            first.insert(newPropertyImpl("cold-1", 1));
             Range<Integer> range = new Range<>(5, 10);
             range.setName("cold-range");
             first.insert(range);
@@ -357,7 +357,7 @@ public class H2PDumpRestoreTest {
         H2PDataStore source = newStore(db("zip_src"));
         H2PDataStore target = newStore(db("zip_dst"));
         try {
-            source.insert(newPropertyDAO("zip-entity", 1));
+            source.insert(newPropertyImpl("zip-entity", 1));
             byte[] v1 = "zip file v1".getBytes(StandardCharsets.UTF_8);
             byte[] v2 = "zip file v2 - longer content".getBytes(StandardCharsets.UTF_8);
             FileInfo fid = new FileInfo();

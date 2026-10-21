@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -679,6 +680,63 @@ public class H2PRegressionTest {
 
         // A non-UUID value cannot be stored in a guid-suffixed attribute.
         org.zoxweb.shared.security.ResourceMap bad = new org.zoxweb.shared.security.ResourceMap("not-a-uuid", PropertyImpl.class.getName());
+        assertThrows(RuntimeException.class, () -> ds.insert(bad));
+    }
+
+    /**
+     * {@code app_guid} ({@code ReferenceIDImpl.NVC_APP_GUID}, zoxweb-core 2026-10-19) follows the
+     * *guid rule exactly like {@code guid} and {@code subject_guid}: a native uuid column, bound from
+     * its String form, searchable by it, read back as the canonical String, a non-UUID value refused.
+     */
+    @Test
+    public void testAppGuidStoredAsUUIDReadAsString() throws Exception {
+        NVConfig appGuid = org.zoxweb.shared.data.ReferenceIDImpl.NVC_APP_GUID;
+        assertEquals(MetaToken.APP_GUID.getName(), appGuid.getName());
+        assertTrue(io.xlogistx.datastore.h2p.H2PUtil.isUUIDField(appGuid), "app_guid is a uuid scalar");
+        assertEquals("uuid", io.xlogistx.datastore.h2p.H2PUtil.scalarColumnType(appGuid));
+        assertEquals(io.xlogistx.datastore.h2p.H2PUtil.AttrKind.SCALAR, io.xlogistx.datastore.h2p.H2PUtil.classify(appGuid));
+
+        String app = IDGs.UUIDV7.genID();
+        PropertyImpl p = namedProp("app-guid-" + UUID.randomUUID(), "owned by an app");
+        p.setAppGUID(app);
+        p = ds.insert(p);
+        assertEquals(app, p.getAppGUID(), "insert keeps the String form on the entity");
+        assertNotNull(p.getGUID());
+        assertNotEquals(p.getGUID(), p.getAppGUID(), "app_guid is a separate attribute from guid");
+
+        PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), p.getGUID()).get(0);
+        assertEquals(p.getGUID(), read.getGUID());
+        assertEquals(app, read.getAppGUID(), "read back as the canonical String form");
+
+        // The column really is a uuid in the database, like guid.
+        java.sql.Connection c = ds.connect();
+        try (java.sql.PreparedStatement ps = c.prepareStatement(
+                "SELECT LOWER(DATA_TYPE) FROM INFORMATION_SCHEMA.COLUMNS WHERE LOWER(TABLE_NAME) = ? AND LOWER(COLUMN_NAME) = ?")) {
+            ps.setString(1, PropertyImpl.NVC_PROPERTY_IMPL.getName().toLowerCase());
+            ps.setString(2, MetaToken.APP_GUID.getName());
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "app_guid column exists");
+                assertEquals("uuid", rs.getString(1), "app_guid column type");
+            }
+            ps.setString(2, MetaToken.GUID.getName());
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("uuid", rs.getString(1), "guid column type");
+            }
+        }
+
+        // Searchable by its String form: the formatter binds a UUID.
+        assertTrue(io.xlogistx.datastore.h2p.H2PQueryFormatter.normalize(appGuid, app) instanceof UUID);
+        List<PropertyImpl> found = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
+                new org.zoxweb.shared.db.QueryMatch<>(MetaToken.APP_GUID.getName(), app, RelationalOperator.EQUAL));
+        assertEquals(1, found.size());
+        assertEquals(p.getGUID(), found.get(0).getGUID());
+
+        // Absent app_guid reads back null, and a non-UUID value cannot be stored.
+        PropertyImpl none = ds.insert(namedProp("app-guid-none-" + UUID.randomUUID(), "no app"));
+        assertNull(((PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), none.getGUID()).get(0)).getAppGUID());
+        PropertyImpl bad = namedProp("app-guid-bad-" + UUID.randomUUID(), "bad app");
+        bad.setAppGUID("not-a-uuid");
         assertThrows(RuntimeException.class, () -> ds.insert(bad));
     }
 

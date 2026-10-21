@@ -38,8 +38,10 @@ import org.zoxweb.shared.data.FileInfo;
 import org.zoxweb.shared.data.LongSequence;
 import org.zoxweb.shared.db.QueryMarker;
 import org.zoxweb.shared.io.SharedIOUtil;
+import org.zoxweb.shared.app.AppIDDefault;
 import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.security.SecurityController;
+import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.util.*;
 import org.zoxweb.shared.util.ExceptionReason.Reason;
 
@@ -1133,6 +1135,13 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
 
     /** Column of the owner of a row, as {@link AttrInfo#lowerName} spells it. */
     private static final String OWNER_COLUMN = MetaToken.SUBJECT_GUID.getName().toLowerCase();
+    /**
+     * Column of the app owning a row (dual ownership, user decision 2026-10-20): the GUID of the app
+     * record whose registered class list holds the row's class, stamped by the controller on insert.
+     * A row carrying it is the app's: its owner rights are the caller's app-resource rights for the
+     * class in that app, never the subject in {@link #OWNER_COLUMN}.
+     */
+    private static final String APP_OWNER_COLUMN = MetaToken.APP_GUID.getName().toLowerCase();
 
     /**
      * True when the calling thread's operations are access-checked: a {@link SecurityController} is
@@ -1152,6 +1161,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return crypto.accessAllowed(guid, ownerGUID, crud);
     }
 
+    /**
+     * The controller's verdict on a row that may be owned by an app (dual ownership, 2026-10-20):
+     * with {@code appGUID} set the owner half is the caller's app-resource right for the row's type
+     * ({@link SecurityModel#resourceTypeOf(NVConfigEntity)}) in that app, else the subject owner's
+     * rights; a grant on the row itself counts for both.
+     */
+    private boolean permitted(NVConfigEntity nvce, String guid, String ownerGUID, String appGUID, CRUD crud) {
+        return crypto.accessAllowed(guid, ownerGUID, appGUID, SecurityModel.resourceTypeOf(nvce), crud);
+    }
+
+    private boolean permitted(NVConfigEntity nvce, String guid, StoredRow stored, CRUD crud) {
+        return permitted(nvce, guid, stored.owner, stored.app, crud);
+    }
+
     /** True when the type stores a {@code subject_guid} column (every type on the common base does). */
     private boolean hasOwnerColumn(NVConfigEntity nvce) {
         for (AttrInfo ai : attrInfos(nvce)) {
@@ -1160,36 +1183,71 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         return false;
     }
 
+    /** True when the type stores an {@code app_guid} column (every type on the common base does since 2026-10-19). */
+    private boolean hasAppColumn(NVConfigEntity nvce) {
+        for (AttrInfo ai : attrInfos(nvce)) {
+            if (ai.isColumn() && APP_OWNER_COLUMN.equals(ai.lowerName)) return true;
+        }
+        return false;
+    }
+
     private static String ownerOf(Object column) {
         return column instanceof UUID ? IDGs.UUIDV7.encode((UUID) column) : null;
     }
 
-    /** A stored row as the write path needs it: it exists, and who owns it ({@code owner} null = no owner). */
+    /**
+     * The owner columns an access-checked query selects after the GUID: {@code , subject_guid[, app_guid]}
+     * for the columns the type has; the row's owners are then read with {@link #ownersOf}.
+     */
+    private String ownerColumns(NVConfigEntity nvce, boolean owned, boolean appOwned) {
+        StringBuilder sb = new StringBuilder();
+        if (owned) sb.append(", ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName()));
+        if (appOwned) sb.append(", ").append(H2PUtil.q(MetaToken.APP_GUID.getName()));
+        return sb.toString();
+    }
+
+    /** The {@code [owner, app]} pair of a result row whose columns are {@code guid} then {@link #ownerColumns}. */
+    private static String[] ownersOf(ResultSet rs, boolean owned, boolean appOwned) throws SQLException {
+        int col = 2;
+        String owner = owned ? ownerOf(rs.getObject(col++)) : null;
+        String app = appOwned ? ownerOf(rs.getObject(col)) : null;
+        return new String[]{owner, app};
+    }
+
+    /**
+     * A stored row as the write path needs it: it exists, who owns it ({@code owner} null = no owner)
+     * and which app owns it ({@code app} null = no app).
+     */
     private static final class StoredRow {
         final String owner;
+        final String app;
 
-        StoredRow(String owner) {
+        StoredRow(String owner, String app) {
             this.owner = owner;
+            this.app = app;
         }
     }
 
     /**
      * The stored row with that GUID, or null when there is none. One round trip: it is the existence
-     * probe of the write path and also yields the <b>stored</b> owner — an update or a delete is
-     * judged against it, never against the {@code subject_guid} of the object the caller sent.
+     * probe of the write path and also yields the <b>stored</b> owners — an update or a delete is
+     * judged against them, never against the {@code subject_guid} / {@code app_guid} of the object
+     * the caller sent.
      */
     private StoredRow storedRow(Connection con, NVConfigEntity nvce, String guid) throws SQLException {
         boolean owned = hasOwnerColumn(nvce);
+        boolean appOwned = hasAppColumn(nvce);
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            ps = con.prepareStatement("SELECT " + (owned ? H2PUtil.q(MetaToken.SUBJECT_GUID.getName()) : "1")
+            ps = con.prepareStatement("SELECT 1" + ownerColumns(nvce, owned, appOwned)
                     + " FROM " + H2PUtil.q(tableName(nvce))
                     + " WHERE " + H2PUtil.q(MetaToken.GUID.getName()) + " = ?");
             ps.setObject(1, IDGs.UUIDV7.decode(guid));
             rs = ps.executeQuery();
             if (!rs.next()) return null;
-            return new StoredRow(owned ? ownerOf(rs.getObject(1)) : null);
+            String[] owners = ownersOf(rs, owned, appOwned);
+            return new StoredRow(owners[0], owners[1]);
         } finally {
             close(rs, ps);
         }
@@ -1198,7 +1256,11 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /**
      * A new row: without an owner it gets the bound subject, then the caller needs {@code create} on
      * that owner — its own rows through the self permission, somebody else's only with a grant such
-     * as {@code resource:*:*:create}. Nobody bound ⇒ refused.
+     * as {@code resource:*:*:create}. Nobody bound ⇒ refused. An {@code app_guid} the controller did
+     * not stamp for this login (dual ownership, 2026-10-20) — another app's, or any app in a login
+     * without app — is a row created on behalf of that app: it needs a create grant or wildcard
+     * ({@code resource:*:*:create}) like a row owned by someone else. No stamping here: the store
+     * cannot evaluate the app's class list.
      */
     private void checkCreate(NVConfigEntity nvce, NVEntity nve) {
         SecurityController sc = crypto.controller();
@@ -1212,16 +1274,21 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             throw new AccessSecurityException("Not permitted to create " + nvce.getName()
                     + (owner != null ? " owned by " + owner : ""), Reason.UNAUTHORIZED);
         }
+        String app = SUS.isEmpty(nve.getAppGUID()) ? null : nve.getAppGUID();
+        if (app != null && hasAppColumn(nvce) && !(nve instanceof AppIDDefault) && !app.equalsIgnoreCase(sc.currentAppGUID())
+                && !permitted(nvce, nve.getGUID(), null, null, CRUD.CREATE)) {
+            throw new AccessSecurityException("Not permitted to create " + nvce.getName() + " owned by app " + app, Reason.UNAUTHORIZED);
+        }
     }
 
     /**
-     * An existing row: the caller needs the verb on it, judged against the stored owner. An update
-     * never changes the owner: an object without one keeps the stored owner, a different one is
-     * refused.
+     * An existing row: the caller needs the verb on it, judged against the stored owners. An update
+     * never changes the owners: an object without {@code subject_guid} / {@code app_guid} keeps the
+     * stored values, a different one is refused.
      */
     private void checkWrite(NVConfigEntity nvce, NVEntity nve, StoredRow stored, CRUD crud) {
         if (!accessChecked()) return;
-        if (!permitted(nve.getGUID(), stored.owner, crud)) {
+        if (!permitted(nvce, nve.getGUID(), stored, crud)) {
             throw new AccessSecurityException("Not permitted to " + crud.name().toLowerCase() + " "
                     + nvce.getName() + " " + nve.getGUID(), Reason.UNAUTHORIZED);
         }
@@ -1230,6 +1297,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 if (stored.owner != null) nve.setSubjectGUID(stored.owner);
             } else if (!nve.getSubjectGUID().equalsIgnoreCase(stored.owner)) {
                 throw new AccessSecurityException("The owner of " + nvce.getName() + " " + nve.getGUID()
+                        + " can not be changed by an update", Reason.UNAUTHORIZED);
+            }
+        }
+        if (crud == CRUD.UPDATE && hasAppColumn(nvce) && !(nve instanceof AppIDDefault)) {
+            if (SUS.isEmpty(nve.getAppGUID())) {
+                if (stored.app != null) nve.setAppGUID(stored.app);
+            } else if (!nve.getAppGUID().equalsIgnoreCase(stored.app)) {
+                throw new AccessSecurityException("The app owning " + nvce.getName() + " " + nve.getGUID()
                         + " can not be changed by an update", Reason.UNAUTHORIZED);
             }
         }
@@ -1246,9 +1321,19 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         private final Map<String, Boolean> ownerRead = new HashMap<>();
         final boolean checked = accessChecked();
 
-        boolean mayRead(String guid, String ownerGUID) {
+        /**
+         * The read verdict on one row. A row no app owns: the owner token, remembered per owner, then
+         * a share of the row. A row an app owns ({@code appGUID} set): one verdict per row covering the
+         * app-resource token for the type and a share of the row — the creating subject in
+         * {@code subject_guid} has no owner token on it (dual ownership, 2026-10-20).
+         */
+        boolean mayRead(NVConfigEntity nvce, String guid, String ownerGUID, String appGUID) {
             if (!checked) return true;
             if (guid == null) return false;
+            if (appGUID != null) {
+                // app_resource:<app>:<type>:<caller>:read, or resource:<guid>:<caller>:read
+                return permitted(nvce, guid, null, appGUID, CRUD.READ);
+            }
             if (ownerGUID != null) {
                 Boolean owner = ownerRead.get(ownerGUID);
                 if (owner == null) {
@@ -1386,8 +1471,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         if (stored == null) {
             return insertRow(con, nve, nvce, ctx);
         }
-        if (reference && accessChecked() && !permitted(nve.getGUID(), stored.owner, CRUD.UPDATE)) {
-            if (!permitted(nve.getGUID(), stored.owner, CRUD.READ)) {
+        if (reference && accessChecked() && !permitted(nvce, nve.getGUID(), stored, CRUD.UPDATE)) {
+            if (!permitted(nvce, nve.getGUID(), stored, CRUD.READ)) {
                 throw new AccessSecurityException("Not permitted to reference " + nvce.getName() + " " + nve.getGUID(),
                         Reason.UNAUTHORIZED);
             }
@@ -1749,8 +1834,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         if (projection != null) {
             StringBuilder sb = new StringBuilder(H2PUtil.q(MetaToken.GUID.getName()));
             for (AttrInfo ai : attrInfos(nvce)) {
-                // the owner column is always read when access is checked: the verdict needs it
-                if (ai.isColumn() && (projection.contains(ai.lowerName) || (ctx.checked && OWNER_COLUMN.equals(ai.lowerName)))) {
+                // the owner columns are always read when access is checked: the verdict needs them
+                if (ai.isColumn() && (projection.contains(ai.lowerName)
+                        || (ctx.checked && (OWNER_COLUMN.equals(ai.lowerName) || APP_OWNER_COLUMN.equals(ai.lowerName))))) {
                     sb.append(", ").append(H2PUtil.q(ai.name));
                 }
             }
@@ -1812,7 +1898,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
         Object g = row.get(MetaToken.GUID.getName());
         if (g instanceof UUID) nve.setGUID(IDGs.UUIDV7.encode((UUID) g));
-        if (ctx.checked && !ctx.mayRead(nve.getGUID(), ownerOf(row.get(OWNER_COLUMN)))) {
+        if (ctx.checked && !ctx.mayRead(nvce, nve.getGUID(), ownerOf(row.get(OWNER_COLUMN)), ownerOf(row.get(APP_OWNER_COLUMN)))) {
             if (nve.getGUID() != null) ctx.cache.put(nve.getGUID(), null); // denied: remembered, not re-queried
             return null;
         }
@@ -2260,7 +2346,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             String id = IDGs.UUIDV7.encode(guid);
             StoredRow stored = storedRow(con, nvce, id);
             if (stored == null) return false;
-            if (!permitted(id, stored.owner, CRUD.DELETE)) {
+            if (!permitted(nvce, id, stored, CRUD.DELETE)) {
                 throw new AccessSecurityException("Not permitted to delete " + nvce.getName() + " " + id, Reason.UNAUTHORIZED);
             }
         }
@@ -2409,13 +2495,14 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     private boolean deleteCheckedByCriteria(Connection con, NVConfigEntity nvce, String where, QueryMarker... queryCriteria)
             throws SQLException {
         boolean owned = hasOwnerColumn(nvce);
+        boolean appOwned = hasAppColumn(nvce);
         ReadCtx ctx = new ReadCtx();
         List<UUID> guids = new ArrayList<>();
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
             ps = con.prepareStatement("SELECT " + H2PUtil.q(MetaToken.GUID.getName())
-                    + (owned ? ", " + H2PUtil.q(MetaToken.SUBJECT_GUID.getName()) : "")
+                    + ownerColumns(nvce, owned, appOwned)
                     + " FROM " + H2PUtil.q(tableName(nvce)) + " WHERE " + where);
             H2PQueryFormatter.bindWhere(ps, 1, nvce, crypto.active(), queryCriteria);
             rs = ps.executeQuery();
@@ -2423,9 +2510,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 Object g = rs.getObject(1);
                 if (!(g instanceof UUID)) continue;
                 String id = IDGs.UUIDV7.encode((UUID) g);
-                String owner = owned ? ownerOf(rs.getObject(2)) : null;
-                if (!ctx.mayRead(id, owner)) continue;
-                if (!permitted(id, owner, CRUD.DELETE)) {
+                String[] owners = ownersOf(rs, owned, appOwned);
+                if (!ctx.mayRead(nvce, id, owners[0], owners[1])) continue;
+                if (!permitted(nvce, id, owners[0], owners[1], CRUD.DELETE)) {
                     throw new AccessSecurityException("Not permitted to delete " + nvce.getName() + " " + id, Reason.UNAUTHORIZED);
                 }
                 guids.add((UUID) g);
@@ -2620,8 +2707,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             if (accessChecked()) {
                 // only the rows the caller may read are counted: one verdict per matching row
                 boolean owned = hasOwnerColumn(nvce);
+                boolean appOwned = hasAppColumn(nvce);
                 StringBuilder sql = new StringBuilder("SELECT ").append(H2PUtil.q(MetaToken.GUID.getName()));
-                if (owned) sql.append(", ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName()));
+                sql.append(ownerColumns(nvce, owned, appOwned));
                 sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)));
                 if (!where.isEmpty()) sql.append(" WHERE ").append(where);
                 ps = con.prepareStatement(sql.toString());
@@ -2631,8 +2719,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 long count = 0;
                 while (rs.next()) {
                     Object g = rs.getObject(1);
-                    if (g instanceof UUID && ctx.mayRead(IDGs.UUIDV7.encode((UUID) g), owned ? ownerOf(rs.getObject(2)) : null)) {
-                        count++;
+                    if (g instanceof UUID) {
+                        String[] owners = ownersOf(rs, owned, appOwned);
+                        if (ctx.mayRead(nvce, IDGs.UUIDV7.encode((UUID) g), owners[0], owners[1])) count++;
                     }
                 }
                 return count;
@@ -2694,8 +2783,9 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             if (tableExists(con, nvce)) {
                 ReadCtx ctx = accessChecked() ? new ReadCtx() : null;
                 boolean owned = ctx != null && hasOwnerColumn(nvce);
+                boolean appOwned = ctx != null && hasAppColumn(nvce);
                 StringBuilder sql = new StringBuilder("SELECT ").append(H2PUtil.q(MetaToken.GUID.getName()));
-                if (owned) sql.append(", ").append(H2PUtil.q(MetaToken.SUBJECT_GUID.getName()));
+                sql.append(ownerColumns(nvce, owned, appOwned));
                 sql.append(" FROM ").append(H2PUtil.q(tableName(nvce)));
                 String where = H2PQueryFormatter.formatWhere(queryCriteria);
                 if (!where.isEmpty()) sql.append(" WHERE ").append(where);
@@ -2706,9 +2796,10 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
                 rs = ps.executeQuery();
                 while (rs.next()) {
                     UUID guid = rs.getObject(1, UUID.class);
-                    if (ctx != null && (guid == null
-                            || !ctx.mayRead(IDGs.UUIDV7.encode(guid), owned ? ownerOf(rs.getObject(2)) : null))) {
-                        continue;
+                    if (ctx != null) {
+                        if (guid == null) continue;
+                        String[] owners = ownersOf(rs, owned, appOwned);
+                        if (!ctx.mayRead(nvce, IDGs.UUIDV7.encode(guid), owners[0], owners[1])) continue;
                     }
                     @SuppressWarnings("unchecked")
                     T id = (T) guid;

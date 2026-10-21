@@ -3,6 +3,7 @@ package io.xlogistx.datastore.h2p.test;
 import org.zoxweb.server.security.CryptoUtil;
 import org.zoxweb.server.security.KeyMakerProvider;
 import org.zoxweb.shared.api.APIDataStore;
+import org.zoxweb.shared.app.AppIDDefault;
 import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.filters.BytesValueFilter;
 import org.zoxweb.shared.filters.ChainedFilter;
@@ -10,11 +11,13 @@ import org.zoxweb.shared.filters.FilterType;
 import org.zoxweb.shared.filters.ValueFilter;
 import org.zoxweb.shared.security.AccessSecurityException;
 import org.zoxweb.shared.security.SecurityController;
+import org.zoxweb.shared.security.model.SecurityModel;
 import org.zoxweb.shared.util.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -31,6 +34,15 @@ import java.util.function.Supplier;
  * <li>a resource without owner is reachable by a grant only;</li>
  * <li>{@link #runAsSystem} lifts every check for the calling thread (the system context).</li>
  * </ul>
+ * <b>Dual ownership (2026-10-20)</b>, modelled the same way: {@link #currentApp} is the GUID of the
+ * app record the subject logged into (null = a login without app); {@link #register} puts a class on
+ * an app's registered class list; {@link #associateResourceToSubject} stamps {@code app_guid} on an
+ * entity without GUID, owner and app whose class is registered on {@link #currentApp}. An app-owned
+ * row (its {@code app_guid} set) is judged on the app-resource token
+ * {@code app_resource:<app>:<fqcn>:<S>:<verb>} ({@link #grantApp}) in place of the owner token, then
+ * on a share, like the Shiro controller. The key chain of an app-owned row is rooted at the app
+ * record's {@code subject_guid} (the app record is a row of the store under test).
+ * <p>
  * Encryption follows the {@code ShiroSecurityController} contract: {@code encryptValue} returns an
  * {@link EncryptedData} (data_type + mask set before sealing) under the chain
  * master → owner subject key → entity key via {@link KeyMakerProvider#SINGLETON}; the decrypt
@@ -39,7 +51,11 @@ import java.util.function.Supplier;
 public class TestSecurityController implements SecurityController {
 
     public static volatile String currentSubject;
+    /** GUID of the app record the bound subject logged into; null = a login without app, nothing is app-stamped. */
+    public static volatile String currentApp;
     public static final Set<String> permissions = ConcurrentHashMap.newKeySet();
+    /** {@code <app guid>|<fqcn>}: the registered class lists of the apps, see {@link #register}. */
+    private static final Set<String> registered = ConcurrentHashMap.newKeySet();
     private static final Set<String> SELF_VERBS = Set.of("create", "read", "update", "delete", "share");
     private static final ThreadLocal<int[]> SYSTEM_DEPTH = new ThreadLocal<>();
 
@@ -73,34 +89,102 @@ public class TestSecurityController implements SecurityController {
         return ("resource:" + resourceGUID + ":" + subjectGUID + ":" + verb).toLowerCase();
     }
 
+    /** The checked app-resource token, as {@link SecurityModel#toAppResourceToken(String, String, String, String)} spells it. */
+    public static String appToken(String appGUID, String fqcn, String subjectGUID, String verb) {
+        return ("app_resource:" + appGUID + ":" + fqcn + ":" + subjectGUID + ":" + verb).toLowerCase();
+    }
+
     public static void grant(String resourceGUID, String subjectGUID, String... verbs) {
         for (String v : verbs) permissions.add(token(resourceGUID, subjectGUID, v));
     }
 
+    /** An app-resource right: {@code subject} holds {@code verbs} on the rows of class {@code fqcn} that app {@code appGUID} owns. */
+    public static void grantApp(String appGUID, String fqcn, String subjectGUID, String... verbs) {
+        for (String v : verbs) permissions.add(appToken(appGUID, fqcn, subjectGUID, v));
+    }
+
+    /** Registers a class on an app: a row of that class created in a login into the app is the app's. */
+    public static void register(String appGUID, Class<?> clazz) {
+        register(appGUID, clazz.getName());
+    }
+
+    public static void register(String appGUID, String fqcn) {
+        registered.add(appGUID.toLowerCase() + "|" + fqcn);
+    }
+
+    public static void unregister(String appGUID, Class<?> clazz) {
+        registered.remove(appGUID.toLowerCase() + "|" + clazz.getName());
+    }
+
+    public static boolean isRegistered(String appGUID, String fqcn) {
+        return appGUID != null && fqcn != null && registered.contains(appGUID.toLowerCase() + "|" + fqcn);
+    }
+
+    /** Clears the grants and the registered class lists; {@link #currentSubject} and {@link #currentApp} are the test's to reset. */
     public static void revokeAll() {
         permissions.clear();
+        registered.clear();
     }
 
     /** owner token (self permission) first, then the grant token — never a bare equality on its own. */
     public static boolean permitted(String resourceGUID, String ownerGUID, String verb) {
+        return permitted(resourceGUID, ownerGUID, null, null, verb);
+    }
+
+    /**
+     * The app-aware verdict: an app-owned row ({@code appGUID} and {@code resourceType} set) passes on
+     * the app-resource token for its class in that app, or {@code app_resource:<app>:*:<S>:*}; a row
+     * without app on the owner token; then a share of the row or the catalog wildcard.
+     */
+    public static boolean permitted(String resourceGUID, String ownerGUID, String appGUID, String resourceType, String verb) {
         if (inSystem()) return true;
         String s = currentSubject;
         if (s == null || resourceGUID == null) return false;
-        // resource:<owner>:<S>:<verb> implied by resource:S:S:create,read,update,delete,share
-        if (ownerGUID != null && s.equalsIgnoreCase(ownerGUID) && SELF_VERBS.contains(verb)) return true;
-        if (ownerGUID != null && permissions.contains(token(ownerGUID, s, verb))) return true;
+        if (appGUID != null && resourceType != null) {
+            // app_resource:<app>:<fqcn>:<S>:<verb> — the app owns the row; its creator holds nothing by subject_guid alone
+            if (permissions.contains(appToken(appGUID, resourceType, s, verb))) return true;
+            if (permissions.contains(appToken(appGUID, "*", s, "*"))) return true;
+            if (permissions.contains(appToken(appGUID, resourceType, s, "*"))) return true;
+            // creation is judged on the creating subject: the recorded creator, logged into the app that owns the row
+            if ("create".equals(verb) && ownerGUID != null && s.equalsIgnoreCase(ownerGUID) && appGUID.equalsIgnoreCase(currentApp)) return true;
+        } else {
+            // resource:<owner>:<S>:<verb> implied by resource:S:S:create,read,update,delete,share
+            if (ownerGUID != null && s.equalsIgnoreCase(ownerGUID) && SELF_VERBS.contains(verb)) return true;
+            if (ownerGUID != null && permissions.contains(token(ownerGUID, s, verb))) return true;
+        }
         return permissions.contains(token(resourceGUID, s, verb)) || permissions.contains(token("*", "*", verb));
     }
 
-    /** @return the owner's GUID (key-chain root) when any of the verbs is held */
-    private static String checkAccess(NVEntity nve, String... anyVerb) {
+    /** The access check on an entity: any of the verbs, judged on its app when it has one. */
+    private static void checkAccess(NVEntity nve, String... anyVerb) {
         if (nve.getGUID() == null || nve.getSubjectGUID() == null) {
             throw new AccessSecurityException("resource without guid/subject_guid");
         }
+        String type = SecurityModel.resourceTypeOf(nve);
         for (String v : anyVerb) {
-            if (permitted(nve.getGUID(), nve.getSubjectGUID(), v)) return nve.getSubjectGUID();
+            if (permitted(nve.getGUID(), nve.getSubjectGUID(), nve.getAppGUID(), type, v)) return;
         }
         throw new AccessSecurityException("Access denied " + token(nve.getGUID(), String.valueOf(currentSubject), anyVerb[0]));
+    }
+
+    /**
+     * The key-chain root of an entity (dual ownership): the owner subject of the app record named by
+     * {@code app_guid} — read from the store under test in the system context — else the row's own
+     * {@code subject_guid}. Mirrors {@code ShiroSecurityController.keyOwnerOf}.
+     */
+    public static String keyOwnerOf(APIDataStore<?, ?> ds, NVEntity nve) {
+        String appGUID = nve.getAppGUID();
+        if (appGUID == null || appGUID.isEmpty() || nve instanceof AppIDDefault) {
+            return nve.getSubjectGUID();
+        }
+        AppIDDefault app = system(() -> {
+            List<AppIDDefault> rows = ds.searchByID(AppIDDefault.NVC_APP_ID_DEFAULT, appGUID);
+            return rows == null || rows.isEmpty() ? null : rows.get(0);
+        });
+        if (app == null || app.getSubjectGUID() == null) {
+            throw new AccessSecurityException("unknown app or app without owner: " + appGUID);
+        }
+        return app.getSubjectGUID();
     }
 
     private static boolean encrypted(ValueFilter<?, ?> f) {
@@ -126,7 +210,8 @@ public class TestSecurityController implements SecurityController {
             return nvb.getValue();
         }
         if (!enc || nvb.getValue() == null) return nvb.getValue();
-        String owner = checkAccess(container, "update", "create");
+        checkAccess(container, "update", "create");
+        String owner = keyOwnerOf(dataStore, container);
         // the key rows are the owner's: walked in the system context, after the check on the entity
         byte[] key = system(() -> KeyMakerProvider.SINGLETON.getKey(dataStore, msKey, owner, container.getGUID()));
         try {
@@ -145,7 +230,13 @@ public class TestSecurityController implements SecurityController {
     }
 
     private static byte[] open(APIDataStore<?, ?> ds, NVEntity container, EncryptedData record, byte[] msKey, String userID) {
-        String owner = userID != null ? userID : checkAccess(container, "read");
+        String owner;
+        if (userID != null) {
+            owner = userID;
+        } else {
+            checkAccess(container, "read");
+            owner = keyOwnerOf(ds, container);
+        }
         byte[] key = system(() -> KeyMakerProvider.SINGLETON.getKey(ds, msKey, owner, container.getGUID()));
         try {
             return CryptoUtil.decryptEncryptedData(record, key);
@@ -185,11 +276,22 @@ public class TestSecurityController implements SecurityController {
         return container; // the store opens sealed values on read; a pair cannot hold a packed record
     }
 
+    /**
+     * Owner stamping: {@code subject_guid} as before; {@code app_guid} = {@link #currentApp} only when
+     * the entity has no GUID, no owner and no app yet, and its class is registered on that app (the
+     * exact class list, never a wildcard). App records are never stamped.
+     */
     @Override
     public void associateResourceToSubject(NVEntity nve, String subjectGUID) {
+        boolean fresh = nve.getGUID() == null && nve.getSubjectGUID() == null;
         if (nve.getSubjectGUID() == null) {
             String s = subjectGUID != null ? subjectGUID : currentSubject;
             if (s != null) nve.setSubjectGUID(s);
+        }
+        String app = currentApp;
+        if (fresh && app != null && nve.getAppGUID() == null && !(nve instanceof AppIDDefault)
+                && isRegistered(app, SecurityModel.resourceTypeOf(nve))) {
+            nve.setAppGUID(app);
         }
     }
 
@@ -204,6 +306,11 @@ public class TestSecurityController implements SecurityController {
     }
 
     @Override
+    public String currentAppGUID() {
+        return currentApp;
+    }
+
+    @Override
     public <V> V runAsSystem(Supplier<V> work) {
         return system(work);
     }
@@ -215,9 +322,14 @@ public class TestSecurityController implements SecurityController {
 
     @Override
     public boolean isResourceAccessible(String nveRefID, String nveUserID, CRUD... crud) {
+        return isResourceAccessible(nveRefID, nveUserID, null, null, crud);
+    }
+
+    @Override
+    public boolean isResourceAccessible(String nveRefID, String nveUserID, String appGUID, String resourceType, CRUD... crud) {
         if (crud == null || crud.length == 0) return false;
         for (CRUD c : crud) {
-            if (!permitted(nveRefID, nveUserID, c.name().toLowerCase())) return false;
+            if (!permitted(nveRefID, nveUserID, appGUID, resourceType, c.name().toLowerCase())) return false;
         }
         return true;
     }

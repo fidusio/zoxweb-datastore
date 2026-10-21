@@ -240,12 +240,11 @@ public class SubjectSwapSignUpDBTest {
             });
             assertSame(user, ThreadContext.getSubject());
 
-            // 5. the registrar may do nothing but sign up
+            // 5. the registrar creates no app and deletes no subject (since the merge of 2026-10-20 it is the app's
+            //    admin too, so a registrar made after the merge may grant roles and rotate its key; one made before holds app_registrar only)
             try (SubjectSwap swap = new SubjectSwap(reg)) {
                 assertThrows(AccessSecurityException.class, () -> m.createApp(DOMAIN, "swapx" + Long.toHexString(System.nanoTime())));
-                assertThrows(AccessSecurityException.class, () -> m.addRoleGrant(made, appAdmin, app));
                 assertThrows(AccessSecurityException.class, () -> m.deleteSubjectID(made));
-                assertThrows(AccessSecurityException.class, () -> m.rotateRegistrarKey(app));
             }
             assertSame(user, ThreadContext.getSubject());
 

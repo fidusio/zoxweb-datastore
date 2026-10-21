@@ -76,7 +76,7 @@ public class H2PDataStoreTest {
         ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
-            PropertyImpl pd = createPropertyDAO("url-cfg-" + UUID.randomUUID(), "url config", 5);
+            PropertyImpl pd = createPropertyImpl("url-cfg-" + UUID.randomUUID(), "url config", 5);
             ds.insert(pd);
             PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
             assertEquals(pd.getGUID(), read.getGUID());
@@ -99,7 +99,7 @@ public class H2PDataStoreTest {
         ds.setAPIConfigInfo(CryptoTestSupport.secure(cfg));
         ds.setAPIExceptionHandler(H2PExceptionHandler.SINGLETON);
         try {
-            PropertyImpl pd = createPropertyDAO("pg-mode-" + UUID.randomUUID(), "pg mode", 3);
+            PropertyImpl pd = createPropertyImpl("pg-mode-" + UUID.randomUUID(), "pg mode", 3);
             pd.getProperties().build(new NVLong("big", 9_000_000_000L));
             ds.insert(pd);
             PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
@@ -202,7 +202,7 @@ public class H2PDataStoreTest {
         int length = 100;
         cdst.rc.start();
         for (int i = 0; i < length; i++) {
-            h2DataStore.insert(createPropertyDAO("name " + i, "desc " + i, i));
+            h2DataStore.insert(createPropertyImpl("name " + i, "desc " + i, i));
         }
         cdst.rc.stop(length);
         System.out.println("insert " + cdst.rc);
@@ -232,7 +232,7 @@ public class H2PDataStoreTest {
         System.out.println("read all one by one: " + all.size() + " " + cdst.rc);
     }
 
-    public static PropertyImpl createPropertyDAO(String name, String description, int val) {
+    public static PropertyImpl createPropertyImpl(String name, String description, int val) {
         PropertyImpl ret = new PropertyImpl();
         ret.setName(name);
         ret.setDescription(description);
@@ -370,7 +370,7 @@ public class H2PDataStoreTest {
 
     @Test
     public void deleteTest() {
-        PropertyImpl pd = createPropertyDAO("delete-me-" + UUID.randomUUID(), "to be deleted", 9);
+        PropertyImpl pd = createPropertyImpl("delete-me-" + UUID.randomUUID(), "to be deleted", 9);
         h2DataStore.insert(pd);
 
         PropertyImpl result = (PropertyImpl) h2DataStore.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
@@ -390,7 +390,7 @@ public class H2PDataStoreTest {
     @Test
     public void testReservedIDUUIDInvariant() {
         String subjectGUID = IDGs.UUIDV7.genID();
-        PropertyImpl pd = createPropertyDAO("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
+        PropertyImpl pd = createPropertyImpl("uuid-invariant-" + UUID.randomUUID(), "reserved-id storage invariant", 7);
         pd.setSubjectGUID(subjectGUID);
         h2DataStore.insert(pd);
 
@@ -442,8 +442,8 @@ public class H2PDataStoreTest {
 
     @Test
     public void testTransactionCommit() {
-        PropertyImpl a = createPropertyDAO("tx-commit-a-" + UUID.randomUUID(), "a", 1);
-        PropertyImpl b = createPropertyDAO("tx-commit-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyImpl("tx-commit-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyImpl("tx-commit-b-" + UUID.randomUUID(), "b", 2);
 
         h2DataStore.beginTransaction();
         try {
@@ -467,8 +467,8 @@ public class H2PDataStoreTest {
 
     @Test
     public void testTransactionRollback() {
-        PropertyImpl a = createPropertyDAO("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
-        PropertyImpl b = createPropertyDAO("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
+        PropertyImpl a = createPropertyImpl("tx-rollback-a-" + UUID.randomUUID(), "a", 1);
+        PropertyImpl b = createPropertyImpl("tx-rollback-b-" + UUID.randomUUID(), "b", 2);
 
         h2DataStore.beginTransaction();
         try {
@@ -571,7 +571,7 @@ public class H2PDataStoreTest {
             String guid;
             H2PDataStore ds1 = newStore(cfg);
             try {
-                PropertyImpl pd = createPropertyDAO("enc-" + UUID.randomUUID(), "encrypted file db", 11);
+                PropertyImpl pd = createPropertyImpl("enc-" + UUID.randomUUID(), "encrypted file db", 11);
                 pd.getProperties().build("secret", "classified");
                 ds1.insert(pd);
                 guid = pd.getGUID();

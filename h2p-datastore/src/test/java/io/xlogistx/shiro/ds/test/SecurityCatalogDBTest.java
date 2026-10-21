@@ -317,6 +317,50 @@ public class SecurityCatalogDBTest {
         }
     }
 
+    private static boolean holdsToken(RoleInfo role, String token) {
+        for (PermissionInfo p : role.getPermissions()) {
+            if (token.equals(p.getPermissionToken())) return true;
+        }
+        return false;
+    }
+
+    /** An app set up before {@code app:login} existed: the token stripped from the role row directly in the store. */
+    private static void stripToken(String label, SecurityModel.Role role, String token) {
+        RoleInfo row = dsm.lookupRole(label, role.getName());
+        for (PermissionInfo p : row.getPermissions()) {
+            if (token.equals(p.getPermissionToken())) row.removePermission(p);
+        }
+        sys.update(row);
+        assertFalse(holdsToken(dsm.lookupRole(label, role.getName()), token));
+    }
+
+    @Test
+    public void bootstrap_repairsEveryAppStarterCatalog_andCreateAppOnExistingRepairsToo() {
+        bootstrap();
+        String appID = "repair" + Long.toHexString(System.nanoTime());
+        AppIDDefault app = dsm.createApp("example.com", appID);
+        String label = ShiroUtil.appScope(app);
+        assertTrue(holdsToken(dsm.lookupRole(label, SecurityModel.Role.APP_USER.getName()), SecurityModel.PERM_APP_LOGIN), "the starter catalog carries app:login");
+        assertTrue(holdsToken(dsm.lookupRole(label, SecurityModel.Role.APP_REGISTRAR.getName()), SecurityModel.PERM_APP_LOGIN));
+        assertTrue(dsm.lookupAllApps().contains(app));
+        assertTrue(dsm.lookupAllApps().contains(dsm.commonApp()));
+
+        // the bootstrap rerun repairs every app's starter catalog (persisted databases set up before 2026-10-20)
+        stripToken(label, SecurityModel.Role.APP_USER, SecurityModel.PERM_APP_LOGIN);
+        stripToken(label, SecurityModel.Role.APP_REGISTRAR, SecurityModel.PERM_APP_LOGIN);
+        SecuritySetup.Result again = SecuritySetup.bootstrapSuperAdmin(dsm, null);
+        assertTrue(again.appsRepaired >= 1, again.toString());
+        assertTrue(again.registrarsCreated.isEmpty(), "every app already had its registrar: no new secret");
+        assertTrue(holdsToken(dsm.lookupRole(label, SecurityModel.Role.APP_USER.getName()), SecurityModel.PERM_APP_LOGIN), "repaired");
+        assertTrue(holdsToken(dsm.lookupRole(label, SecurityModel.Role.APP_REGISTRAR.getName()), SecurityModel.PERM_APP_LOGIN), "repaired");
+
+        // so does createApp on an existing app (the interface's idempotent contract)
+        stripToken(label, SecurityModel.Role.APP_USER, SecurityModel.PERM_APP_LOGIN);
+        assertEquals(app.getGUID(), dsm.createApp("example.com", appID).getGUID());
+        assertTrue(holdsToken(dsm.lookupRole(label, SecurityModel.Role.APP_USER.getName()), SecurityModel.PERM_APP_LOGIN), "repaired by createApp");
+        assertTrue(dsm.deleteApp(app));
+    }
+
     @Test
     public void createApp_refusesDuplicateAndInvalid_andNeedsAppCreateUnderEnforcement() {
         bootstrap();
@@ -326,7 +370,7 @@ public class SecurityCatalogDBTest {
         assertEquals("example.com", created.getDomainID());
         assertEquals("example.com-" + appID, created.getName());
         assertEquals(created.getGUID(), dsm.lookupApp("example.com", appID).getGUID());
-        assertThrows(IllegalArgumentException.class, () -> dsm.createApp("example.com", appID), "duplicate");
+        assertEquals(created.getGUID(), dsm.createApp("example.com", appID).getGUID(), "an existing app is returned as it is (interface contract, 2026-10-20)");
         assertThrows(IllegalArgumentException.class, () -> dsm.createApp("nodot", appID), "domain needs a dot");
         assertNull(dsm.lookupApp("example.com", appID + "x"));
 
@@ -339,7 +383,7 @@ public class SecurityCatalogDBTest {
         Subject admin = login(superAdmin, PASSWORD);
         AppIDDefault bySuperAdmin = dsm.createApp("example.com", appID + "b");
         createdApps.add(bySuperAdmin);
-        assertEquals(dsm.lookupSuperAdminSubject().getGUID(), bySuperAdmin.getSubjectGUID(), "owner = the bound creator");
+        assertEquals(dsm.lookupRegistrar(bySuperAdmin).getGUID(), bySuperAdmin.getSubjectGUID(), "owner = the app's registrar, its owner subject since 2026-10-20");
         assertTrue(admin.isPermitted(SecurityModel.PERM_CREATE_APP_ID));
     }
 
@@ -415,12 +459,19 @@ public class SecurityCatalogDBTest {
 
             SecuritySetup.Result boot = SecuritySetup.bootstrapSuperAdmin(local, PASSWORD);
             assertTrue(boot.wildcardVerified, boot.toString());
-            assertEquals(boot.subject.getGUID(), local.commonApp().getSubjectGUID(), "the bootstrap hands the common app to the super-admin");
-            // the common app has no registrar (user, 2026-10-12): sign-ups go through the deployment's default app
-            assertNull(local.lookupRegistrar(common), "the bootstrap gives the common app no registrar");
-            assertNull(local.lookupSubjectID(ShiroDSDomainSecurityManager.registrarPrincipal(common)));
-            assertTrue(SecuritySetup.bootstrapSuperAdmin(local, null).wildcardVerified, "idempotent");
-            assertNull(local.lookupRegistrar(common), "not on a rerun either");
+            // the common app gets its registrar from the bootstrap (user, 2026-10-20): its owner and service subject
+            SubjectIdentifier commonRegistrar = local.lookupRegistrar(common);
+            assertNotNull(commonRegistrar, "the bootstrap gives the common app its registrar");
+            assertEquals(commonRegistrar.getGUID(), boot.registrar.getGUID());
+            assertNotNull(boot.registrarKey, "the common registrar's key secret, once");
+            assertTrue(boot.registrarCreated);
+            assertEquals(commonRegistrar.getGUID(), local.commonApp().getSubjectGUID(), "the registrar owns the common app");
+            assertEquals(commonRegistrar.getGUID(), local.lookupSubjectID(ShiroDSDomainSecurityManager.registrarPrincipal(common)).getGUID());
+            SecuritySetup.Result again = SecuritySetup.bootstrapSuperAdmin(local, null);
+            assertTrue(again.wildcardVerified, "idempotent");
+            assertEquals(commonRegistrar.getGUID(), again.registrar.getGUID(), "kept on a rerun");
+            assertNull(again.registrarKey, "no second secret");
+            assertFalse(again.registrarCreated);
         } finally {
             store.close();
         }
@@ -816,6 +867,7 @@ public class SecurityCatalogDBTest {
             ShiroDSDomainSecurityManager local = new ShiroDSDomainSecurityManager(store);
             Subject inShop = local.loginSubject(principal, PASSWORD, "xlogistx.io", "shopapp");
             assertTrue(inShop.isPermitted("subject:create"));
+            assertTrue(inShop.isPermitted(SecurityModel.PERM_APP_LOGIN), "the starter catalog carries app:login and app_admin holds it (2026-10-20)");
             assertTrue(inShop.hasRole("app_admin"));
             assertTrue(inShop.isPermitted("role:create"), "an app admin manages its app's catalog");
             assertFalse(inShop.hasRole("app_user"), "the other app's grant");
@@ -848,10 +900,8 @@ public class SecurityCatalogDBTest {
         store = SecurityAdminTool_openStore(url);
         try {
             ShiroDSDomainSecurityManager local = new ShiroDSDomainSecurityManager(store);
-            Subject inShop = local.loginSubject(principal, PASSWORD, "xlogistx.io", "shopapp");
-            assertFalse(inShop.isPermitted("subject:create"), "removed from the shop app");
-            assertFalse(inShop.hasRole("app_admin"));
-            local.logout();
+            assertThrows(AccessSecurityException.class, () -> local.loginSubject(principal, PASSWORD, "xlogistx.io", "shopapp"),
+                    "removed from the shop app: no grant there, so no app:login and no login (user rule 2026-10-20)");
             assertTrue(local.loginSubject(principal, PASSWORD, "xlogistx.io", "other").hasRole("app_user"), "the other app's assignment survives");
             local.logout();
         } finally {

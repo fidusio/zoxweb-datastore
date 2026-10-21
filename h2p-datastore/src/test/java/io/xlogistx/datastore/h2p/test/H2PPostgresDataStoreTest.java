@@ -449,9 +449,47 @@ public class H2PPostgresDataStoreTest {
         System.out.println("schema evolution verified on live PostgreSQL");
     }
 
-    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    /** {@code app_guid} is a native uuid column on PostgreSQL too, written from and read back as its String form. */
     @Test
     @Order(10)
+    public void appGuidIsUUIDColumn() throws SQLException {
+        String app = org.zoxweb.server.util.IDGs.UUIDV7.genID();
+        PropertyImpl pd = new PropertyImpl();
+        pd.setName("pg-app-guid-" + UUID.randomUUID());
+        pd.setDescription("owned by an app");
+        pd.setAppGUID(app);
+        ds.insert(pd);
+
+        PropertyImpl read = (PropertyImpl) ds.searchByID(PropertyImpl.class.getName(), pd.getGUID()).get(0);
+        assertEquals(pd.getGUID(), read.getGUID());
+        assertEquals(app, read.getAppGUID(), "read back as the canonical String form");
+
+        Connection c = ds.connect();
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?")) {
+            ps.setString(1, PropertyImpl.NVC_PROPERTY_IMPL.getName());
+            ps.setString(2, org.zoxweb.shared.util.MetaToken.APP_GUID.getName());
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "app_guid column exists");
+                assertEquals("uuid", rs.getString(1), "app_guid column type");
+            }
+            ps.setString(2, org.zoxweb.shared.util.MetaToken.GUID.getName());
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("uuid", rs.getString(1), "guid column type");
+            }
+        }
+        java.util.List<PropertyImpl> found = ds.search(PropertyImpl.NVC_PROPERTY_IMPL, null,
+                new org.zoxweb.shared.db.QueryMatch<>(org.zoxweb.shared.util.MetaToken.APP_GUID.getName(), app,
+                        org.zoxweb.shared.util.Const.RelationalOperator.EQUAL));
+        assertEquals(1, found.size());
+        assertEquals(pd.getGUID(), found.get(0).getGUID());
+        System.out.println("PG app_guid uuid OK: " + read.getGUID() + " app " + app);
+    }
+
+    /** Last: list every base table in the target database (shows the normalized schema the suite created). */
+    @Test
+    @Order(11)
     public void listAllTables() {
         java.util.List<String> tables = new java.util.ArrayList<>();
         Connection c = ds.connect();

@@ -109,7 +109,7 @@ public class H2PSetupTest {
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=print", "store=" + new File(dir, "none.store"), "store.password=x"), "missing store");
         err.reset();
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=other", "store=" + store), "unknown command");
-        assertTrue(err.toString().contains("command must be create or print"), err.toString());
+        assertTrue(err.toString().contains("command must be create, print or setup"), err.toString());
 
         // no parameter at all: the usage on out, nothing asked, nothing written, no store touched
         out.reset();
@@ -117,6 +117,7 @@ public class H2PSetupTest {
         assertEquals(H2PSetup.EXIT_USAGE, setup(out, err), "no parameter");
         assertTrue(out.toString().startsWith("Usage: H2PSetup command=create"), out.toString());
         assertTrue(out.toString().contains("command=print store=<file>"), out.toString());
+        assertTrue(out.toString().contains("command=setup store=<file>"), out.toString());
         assertEquals("", err.toString(), "nothing on err for a bare run");
         assertFalse(new File("xlogistx.store").exists(), "a bare run must not create the default store");
 
@@ -132,6 +133,93 @@ public class H2PSetupTest {
         assertNotNull(sm);
         assertEquals("xlogistx.io-setuptest", org.apache.shiro.config.Ini.fromResourcePath(ini.getPath())
                 .getSection(H2PSetup.INI_APP_SECTION).get(H2PSetup.INI_APP_ID_KEY), "the application reads the app id from its own section");
+    }
+
+    /**
+     * {@code command=setup} (user, 2026-10-19): an existing secret store, written here the way the
+     * {@code SecretStore} tool would (no app-id entry), gets its database set up: the H2 file is
+     * created, the super-admin and the common app are bootstrapped, the default app is created
+     * with its registrar and its id is added to the store. A second run is idempotent (account and
+     * app kept, nothing printed twice), a different app.id is refused, and no INI is ever written.
+     */
+    @Test
+    public void setup_existingStore_databaseOnly() throws Exception {
+        File dir = freshDirectory().getAbsoluteFile();
+        File store = new File(dir, "existing.store");
+        File data = new File(dir, "data");
+        String url = "jdbc:h2:file:" + data.getPath().replace('\\', '/') + "/setup;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;CIPHER=AES";
+        try (SecretStore vault = SecretStore.create(store, STORE_PASSWORD.toCharArray())) {
+            vault.createSecretKey(SecretStore.StoreParam.MASTER_KEY.getName());
+            vault.setSuperAdminID("setup.admin");
+            vault.put(SecretStore.StoreParam.SUPER_ADMIN_PASSWORD.getName(), "Initial-" + UUID.randomUUID());
+            vault.put(SecretStore.StoreParam.DB_URL.getName(), url);
+            vault.put(SecretStore.StoreParam.DB_USER.getName(), "sa");
+            vault.put(SecretStore.StoreParam.DB_PASSWORD.getName(), new String(H2PSetup.generatePassword()));
+            vault.put(SecretStore.StoreParam.DB_ENC_PASSWORD.getName(), new String(H2PSetup.generatePassword()));
+            vault.save();
+        }
+        assertFalse(data.exists(), "the H2 directory does not exist before the set-up");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        // the store has no app-id: app.id= is required without a console
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=setup", "store=" + store, "store.password=" + STORE_PASSWORD), err.toString());
+        assertTrue(err.toString().contains("app.id= required"), err.toString());
+        assertFalse(data.exists(), "a refused run creates nothing");
+
+        // the set-up: H2 file created, super-admin bootstrapped, default app created, app-id added to the store
+        out.reset();
+        err.reset();
+        int code = setup(out, err, "command=setup", "store=" + store, "store.password=" + STORE_PASSWORD, "app.id=xlogistx.io-setupcmd");
+        String printed = out.toString();
+        assertEquals(H2PSetup.EXIT_OK, code, err + "\n" + printed);
+        assertTrue(new File(data, "setup.mv.db").isFile(), "H2 file not created");
+        assertTrue(printed.contains("does not exist: creating it"), printed);
+        assertTrue(printed.contains("wildcard=verified"), printed);
+        assertTrue(printed.contains("registrar of xlogistx.io-setupcmd"), printed);
+        assertTrue(printed.contains("added " + H2PSetup.APP_ID_ENTRY + "=xlogistx.io-setupcmd"), printed);
+        assertTrue(printed.contains("setup complete: secret store " + store + ", database " + url + ", super-admin setup.admin, app xlogistx.io-setupcmd"), printed);
+        assertFalse(new File(dir, "shiro.ini").exists(), "setup never writes an INI");
+        try (SecretStore vault = SecretStore.open(store, STORE_PASSWORD.toCharArray())) {
+            assertEquals("xlogistx.io-setupcmd", vault.get(H2PSetup.APP_ID_ENTRY), "the app id is now in the store");
+            assertEquals(url, vault.get(SecretStore.StoreParam.DB_URL.getName()), "the URL is untouched");
+            assertFalse(printed.contains(vault.get(SecretStore.StoreParam.SUPER_ADMIN_PASSWORD.getName())), "secret printed");
+        }
+        out.reset();
+        err.reset();
+        assertEquals(SecurityAdminTool.EXIT_OK, SecurityAdminTool.run(new PrintStream(out, true), new PrintStream(err, true),
+                "store=" + store, "store.password=" + STORE_PASSWORD, "command=list-apps"), err.toString());
+        assertTrue(out.toString().contains("xlogistx.com-common"), out.toString());
+        assertTrue(out.toString().contains("xlogistx.io-setupcmd"), out.toString());
+
+        // a second run, app.id from the store: account and app kept, no registrar key printed again
+        out.reset();
+        err.reset();
+        code = setup(out, err, "command=setup", "store=" + store, "store.password=" + STORE_PASSWORD);
+        printed = out.toString();
+        assertEquals(H2PSetup.EXIT_OK, code, err + "\n" + printed);
+        assertTrue(printed.contains(" exists: setting it up"), printed);
+        assertTrue(printed.contains("account already existed"), printed);
+        assertTrue(printed.contains("app xlogistx.io-setupcmd already exists: kept"), printed);
+        assertFalse(printed.contains("registrar of"), "the registrar key must not be printed twice: " + printed);
+        assertFalse(printed.contains("added " + H2PSetup.APP_ID_ENTRY), printed);
+        assertEquals("", err.toString(), "nothing on err for an idempotent rerun");
+
+        // a different app.id contradicts the store
+        out.reset();
+        err.reset();
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=setup", "store=" + store, "store.password=" + STORE_PASSWORD, "app.id=xlogistx.io-other"), err.toString());
+        assertTrue(err.toString().contains("differs from the secret store's " + H2PSetup.APP_ID_ENTRY), err.toString());
+        // the usual refusals: wrong password, missing store, the common app
+        err.reset();
+        assertEquals(H2PSetup.EXIT_FAILURE, setup(out, err, "command=setup", "store=" + store, "store.password=wrong"), err.toString());
+        assertTrue(err.toString().contains("cannot open secret store"), err.toString());
+        err.reset();
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=setup", "store=" + new File(dir, "none.store"), "store.password=x"), err.toString());
+        assertTrue(err.toString().contains("secret store not found"), err.toString());
+        err.reset();
+        assertEquals(H2PSetup.EXIT_USAGE, setup(out, err, "command=setup", "store=" + store, "store.password=" + STORE_PASSWORD, "app.id=xlogistx.com-common"), err.toString());
+        assertTrue(err.toString().contains("is the common app"), err.toString());
     }
 
     @Test
@@ -156,10 +244,11 @@ public class H2PSetupTest {
         assertTrue(ini.contains("[" + H2PSetup.INI_APP_SECTION + "]\n" + H2PSetup.INI_APP_ID_KEY + " = xlogistx.io-given"), ini);
         String printed = out.toString();
         assertTrue(printed.contains(", app xlogistx.io-given"), printed);
-        // the registrars of the deployment: the default app's only, the common app has none (user, 2026-10-12)
+        // the registrars of the deployment: the default app's and the common app's (user, 2026-10-20: the common app
+        // gets its registrar from the bootstrap again, each key printed once)
         assertTrue(printed.contains("registrar of xlogistx.io-given"), printed);
-        assertFalse(printed.contains("registrar of " + ShiroUtil.COMMON_SCOPE), "the common app got a registrar: " + printed);
-        assertFalse(printed.contains("registrar." + ShiroUtil.COMMON_SCOPE), "the common app got a registrar: " + printed);
+        assertTrue(printed.contains("registrar of " + ShiroUtil.COMMON_SCOPE), "the common app got no registrar: " + printed);
+        assertTrue(printed.contains("registrar." + ShiroUtil.COMMON_SCOPE), "the common app got no registrar: " + printed);
     }
 
     @Test

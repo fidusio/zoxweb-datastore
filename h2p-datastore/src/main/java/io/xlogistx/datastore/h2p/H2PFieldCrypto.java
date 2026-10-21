@@ -14,6 +14,7 @@ import org.zoxweb.server.security.CipherCodecs;
 import org.zoxweb.server.util.GSONUtil;
 import org.zoxweb.shared.api.APIConfigInfo;
 import org.zoxweb.shared.api.APIException;
+import org.zoxweb.shared.app.AppIDDefault;
 import org.zoxweb.shared.crypto.EncryptedData;
 import org.zoxweb.shared.filters.ChainedFilter;
 import org.zoxweb.shared.filters.FilterType;
@@ -233,14 +234,43 @@ final class H2PFieldCrypto {
                 throw new AccessSecurityException("encrypted attribute on an entity without subject_guid: "
                         + nve.getNVConfig().getName() + " " + nve.getGUID());
             }
-            byte[] subjectKey = km.getKey(ds, null, nve.getSubjectGUID()); // "No key for <subject>" when missing
+            // chain root (dual ownership, 2026-10-20): the app's owner subject for an app-owned row, the creator otherwise
+            String owner = keyOwnerOf(nve);
+            byte[] ownerKey = km.getKey(ds, null, owner); // "No key for <subject>" when missing
             try {
-                km.createNVEntityKey(ds, nve, subjectKey);
+                km.createNVEntityKey(ds, nve, owner, ownerKey); // the key row's subject_guid is that owner
             } finally {
-                Arrays.fill(subjectKey, (byte) 0);
+                Arrays.fill(ownerKey, (byte) 0);
             }
             return null;
         });
+    }
+
+    /**
+     * The root of an entity's key chain (dual ownership, user decision 2026-10-20): the
+     * {@code subject_guid} of the app record named by the row's {@code app_guid} when set — the app's
+     * owner subject, its registrar — else the row's own {@code subject_guid}. The app record is read
+     * in the system context, the caller having passed the access check on the entity. Mirrors
+     * {@code ShiroSecurityController.keyOwnerOf}: both sides of a sealed value must agree on the root.
+     *
+     * @throws AccessSecurityException when the app record is missing or has no owner subject
+     */
+    String keyOwnerOf(NVEntity nve) {
+        String appGUID = nve.getAppGUID();
+        if (SUS.isEmpty(appGUID) || nve instanceof AppIDDefault) {
+            return nve.getSubjectGUID();
+        }
+        AppIDDefault app = controller().runAsSystem(() -> {
+            java.util.List<AppIDDefault> rows = ds.searchByID(AppIDDefault.NVC_APP_ID_DEFAULT, appGUID);
+            return rows == null || rows.isEmpty() ? null : rows.get(0);
+        });
+        if (app == null) {
+            throw new AccessSecurityException("unknown app " + appGUID + " owning " + nve.getNVConfig().getName() + " " + nve.getGUID());
+        }
+        if (SUS.isEmpty(app.getSubjectGUID())) {
+            throw new AccessSecurityException("app " + appGUID + " has no owner subject: no key chain for " + nve.getGUID());
+        }
+        return app.getSubjectGUID();
     }
 
     /**
@@ -249,7 +279,7 @@ final class H2PFieldCrypto {
      */
     byte[] entityKey(NVEntity nve) {
         SUS.checkIfNulls("guid and subject_guid required", nve.getGUID(), nve.getSubjectGUID());
-        return controller().runAsSystem(() -> keyMaker().getKey(ds, null, nve.getSubjectGUID(), nve.getGUID()));
+        return controller().runAsSystem(() -> keyMaker().getKey(ds, null, keyOwnerOf(nve), nve.getGUID()));
     }
 
     // ------------------------------------------------------------------ fields: write
@@ -438,6 +468,23 @@ final class H2PFieldCrypto {
         }
         try {
             return sc.isResourceAccessible(resourceGUID, ownerGUID, crud);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * The controller's app-aware verdict (dual ownership, 2026-10-20): a row with {@code appGUID} is
+     * judged on the caller's app-resource right for {@code resourceType} in that app, a row without
+     * on its subject owner; a share of the row counts for both. False without a controller or on any failure.
+     */
+    boolean accessAllowed(String resourceGUID, String ownerGUID, String appGUID, String resourceType, CRUD crud) {
+        SecurityController sc = controller();
+        if (sc == null || resourceGUID == null) {
+            return false;
+        }
+        try {
+            return sc.isResourceAccessible(resourceGUID, ownerGUID, appGUID, resourceType, crud);
         } catch (RuntimeException e) {
             return false;
         }

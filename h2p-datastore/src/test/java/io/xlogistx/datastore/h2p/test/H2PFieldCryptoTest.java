@@ -59,8 +59,73 @@ public class H2PFieldCryptoTest {
     @AfterEach
     public void reset() {
         TestSecurityController.currentSubject = null;
+        TestSecurityController.currentApp = null;
         TestSecurityController.revokeAll();
         KeyMakerProvider.SINGLETON.setMasterSecretKey(CryptoTestSupport.masterKey());
+    }
+
+    /**
+     * Dual ownership (2026-10-20): a sealed field on a row an app owns hangs off the key of the app's
+     * owner subject (its registrar), not the creator's; the creator reads it only through an app
+     * right, a share opens it through the app's chain, and the creator's key is not in the chain.
+     */
+    @Test
+    public void appOwnedRow_sealedUnderTheAppOwnerKey_creatorNeedsAppRight_shareOpens() throws Exception {
+        String registrar = CryptoTestSupport.newSubjectWithKey(ds);
+        org.zoxweb.shared.app.AppIDDefault app = new org.zoxweb.shared.app.AppIDDefault("fc" + Long.toHexString(System.nanoTime()) + ".com", "app");
+        app.setSubjectGUID(registrar);
+        TestSecurityController.system(() -> ds.insert(app));
+        String appGUID = app.getGUID();
+        String fqcn = CreditCardInfo.class.getName();
+
+        String creator = login(ds);
+        TestSecurityController.currentApp = appGUID;
+        TestSecurityController.register(appGUID, CreditCardInfo.class);
+        CreditCardInfo c = ds.insert(card(CARD));
+        assertEquals(appGUID, c.getAppGUID(), "the app owns the row");
+        assertEquals(creator, c.getSubjectGUID());
+        assertEquals(1, CryptoTestSupport.countKeyRows(ds, c.getGUID()), "one entity key row");
+        EncapsulatedKey key = TestSecurityController.system(() -> KeyMakerProvider.SINGLETON.lookupEncapsulatedKey(ds, c.getGUID()));
+        assertEquals(registrar, key.getSubjectGUID(), "the entity key is wrapped under the app owner's key, not the creator's");
+        Object raw = CryptoTestSupport.rawColumn(ds, CreditCardInfo.NVC_CREDIT_CARD_INFO.getName(), "card_number", c.getGUID());
+        assertTrue(raw instanceof byte[] && !new String((byte[]) raw, StandardCharsets.UTF_8).equals(CARD), "sealed in the column");
+
+        // the creator holds nothing by subject_guid: the row is not there until it holds read on the class in the app
+        assertTrue(ds.searchByID(CreditCardInfo.NVC_CREDIT_CARD_INFO, c.getGUID()).isEmpty());
+        TestSecurityController.grantApp(appGUID, fqcn, creator, "read");
+        assertEquals(CARD, cardById(ds, c.getGUID()).getCardNumber(), "opened through the app's chain");
+
+        // a third subject with a share of the row reads it clear through the app's chain
+        String third = login(ds);
+        TestSecurityController.currentApp = null;
+        TestSecurityController.grant(c.getGUID(), third, "read");
+        assertEquals(CARD, cardById(ds, c.getGUID()).getCardNumber(), "a share decrypts through the owner's chain, as today");
+        // the registrar itself, in a login without app and without any grant, does not reach the row: owning the key chain is not a right
+        TestSecurityController.currentSubject = registrar;
+        assertTrue(ds.searchByID(CreditCardInfo.NVC_CREDIT_CARD_INFO, c.getGUID()).isEmpty());
+
+        // the creator's subject key is not in the chain: without it the row still opens
+        EncapsulatedKey creatorKey = TestSecurityController.system(() -> KeyMakerProvider.SINGLETON.lookupEncapsulatedKey(ds, creator));
+        assertNotNull(creatorKey);
+        TestSecurityController.systemRun(() -> ds.delete(creatorKey, false));
+        TestSecurityController.currentSubject = third;
+        assertEquals(CARD, cardById(ds, c.getGUID()).getCardNumber(), "readable without the creator's key");
+
+        // an editor with update on the class re-seals under the same chain
+        String editor = login(ds);
+        TestSecurityController.currentApp = appGUID;
+        TestSecurityController.grantApp(appGUID, fqcn, editor, "read", "update");
+        CreditCardInfo edit = cardById(ds, c.getGUID());
+        edit.setCardNumber(CARD2);
+        ds.update(edit);
+        assertEquals(CARD2, cardById(ds, c.getGUID()).getCardNumber());
+        assertEquals(1, CryptoTestSupport.countKeyRows(ds, c.getGUID()), "still one key row");
+
+        // the row and its key go together; the app record is cleaned up
+        TestSecurityController.grantApp(appGUID, fqcn, editor, "delete");
+        assertTrue(ds.delete(edit, false));
+        assertEquals(0, CryptoTestSupport.countKeyRows(ds, c.getGUID()));
+        TestSecurityController.systemRun(() -> ds.delete(app, false));
     }
 
     private static String login(H2PDataStore store) {
@@ -262,7 +327,7 @@ public class H2PFieldCryptoTest {
         CreditCardInfo c = ds.insert(card(CARD));
         // a row written by a non-encrypting store: UTF-8 clear text in the bytea column
         try (Connection con = ds.newConnection();
-             PreparedStatement ps = con.prepareStatement("UPDATE \"credit_card_dao\" SET \"card_number\" = ? WHERE \"guid\" = ?")) {
+             PreparedStatement ps = con.prepareStatement("UPDATE \"" + CreditCardInfo.NVC_CREDIT_CARD_INFO.getName() + "\" SET \"card_number\" = ? WHERE \"guid\" = ?")) {
             ps.setBytes(1, CARD2.getBytes(StandardCharsets.UTF_8));
             ps.setObject(2, IDGs.UUIDV7.decode(c.getGUID()));
             ps.executeUpdate();

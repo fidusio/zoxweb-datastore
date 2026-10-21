@@ -1,5 +1,7 @@
 # App-owned resources — plan (decided 2026-10-16; NOT built, to be applied on the user's word)
 
+> **SUPERSEDED 2026-10-19/20** by the dual-ownership design (Claude Docs https://claude.ai/artifact/KZKeKvNh7mpj44oe8EJu4a): ownership by `app_guid` of role-registered classes, key chain rooted at the app's registrar `registrar.<domain>-<app>`, which since 2026-10-20 evening is also the app's owner subject (merged, user); no registrar swap. Kept for history only.
+
 Status: **decided, nothing built.** Six decisions taken by the user on 2026-10-16 (table below),
 design and test written out here so a later session can apply them as dictated. No line of code,
 no document other than the ones listed under "Docs to update when built" has changed. The plan
