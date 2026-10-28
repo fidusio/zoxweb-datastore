@@ -27,11 +27,6 @@
         <!--        <module>common</module>-->
     </modules>
 
-
-    <properties>
-        <h2.version>2.4.240</h2.version>
-    </properties>
-
     <url>http://maven.apache.org</url>
 
 

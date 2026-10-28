@@ -14,6 +14,7 @@
     <properties>
         <postgres.version>42.7.13</postgres.version>
         <hikaricp.version>5.1.0</hikaricp.version>
+        <h2.version>2.5.252</h2.version>
         <jdk.version>25</jdk.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
