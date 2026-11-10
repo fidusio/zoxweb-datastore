@@ -177,7 +177,7 @@ public class DerbyDBMeta {
     public static void mapValue(ResultSet rs, NVConfig nvc, NVBase<?> nvb) throws SQLException, IOException {
         //Object value = rs.getObject(nvb.getName());
         if (nvb instanceof NVGenericMap) {
-            NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null, true);
+            NVGenericMap nvgm = GSONUtil.fromJSONGenericMap(rs.getString(nvb.getName()), null, null, true, null);
             ((NVGenericMap) nvb).setValue(nvgm.getValue());
         } else if (MetaToken.isPrimitiveArray(nvb)) {
             String strValue = rs.getString(nvb.getName());

@@ -44,6 +44,7 @@ JDBC driver + URL.
 | `H2PExceptionHandler.java` | SQLState → `APIException` mapping |
 | `H2PMetaManager.java` | Per-instance table registry (case-insensitive; backs `getStoreTables()`; cleared on reconfigure) |
 | `H2PDialect.java` | **Dialect codec** for schemaless columns (H2 `varchar` vs Postgres `jsonb`) |
+| `H2PEntityCodec.java` | **Entity identity codec** (`org.zoxweb.shared.util.EntityCodec`, built 2026-11-10 on the user's dictation): an entity embedded in an `NVGenericMap` is **stored** by `encode` (`H2PDataStore.insert`, the guid-keyed upsert: a new entity gets its row and guid, an existing one has its row updated) and written as `{"class_type", "guid"}`, and decoded from its own table through `searchByID` (missing, denied, unknown type or malformed guid ⇒ `null`); `gson()` = `GSONUtil.createDefaultGson(codec)`; reached by `H2PDataStore.entityCodec()`. **Wired** (2026-11-10, user dictation) into `encodeSchemaless` / `decodeSchemaless` / `H2PFieldCrypto.encodeSchemaless` through `GSONUtil.toJSONDefault(Gson, Object)` / `fromJSONDefault(Gson, String, Class)` — see "Schemaless JSON" |
 | `H2PDumpRestore.java` | **JSON dump/restore engine** (JSONL) behind `H2PDataStore.dump(...)`/`restore(...)` — see the dedicated section |
 | `H2PFieldCrypto.java` | **Encryption at rest** (package-private): ENCRYPT* field records via the `SecurityController`, AESCrypt VX file content, entity-key lifecycle on the `KeyMaker` chain, raw mode for dumps — see the dedicated section |
 | `H2PSetup.java` | **Deployment set-up CLI** (2026-10-09, user dictation): `key=value` args, everything else asked on the console in this order (user, 2026-10-09): database type `h2`/`postgres`, for H2 the file location (`db.path`, a directory) and the database name (`db.name`), for PostgreSQL `db.host=host[:port]` (no port = 5432) and `db.name`, then credentials, super-admin, the default app id (`app.id`, `<domain>-<app>`, **mandatory since 2026-10-12**), store, INI; creates the opsec `SecretStore` (generated `master-key`, `super-admin-id`, `super-admin-password`, `db.*`; empty passwords generated), builds the URL (H2 file `jdbc:h2:file:<dir>/<name>;DB_CLOSE_DELAY=-1;MODE=PostgreSQL[;CIPHER=AES]` or `jdbc:postgresql://host:port/db`, or `db.url=`), creates the H2 file when it does not exist (reported before, verified after; an existing file is set up) / connects to PostgreSQL and sets the database up through `SecurityAdminTool bootstrap-super-admin` on the new vault, then creates the default app (`create-app`, registrar key printed once; since 2026-10-20 the bootstrap gives the common app **its registrar as well**, key printed once by `bootstrap-super-admin` — the 2026-10-12 no-common-registrar rule is reversed, the registrar being the app's owner subject) and keeps its id as the store's `app-id` entry and as `[xlogistx] app.id` in the INI (a section Shiro ignores; the application reads it with `Ini.getSection`), writes `shiro.ini` (same content as the test `shiro-ds.ini`; no data store, no super-admin id) and loads it once as a check. Never overwrites a store or an INI; refuses in-memory/tcp H2, other engines, a PostgreSQL URL without database and an implicitly relative H2 path (a typed location becomes `./…`). `command=create` (default when `command=` is absent) is the set-up; `command=print store= [store.password=]` opens an existing store and displays its parameters, only `super-admin-id=` and `db.url=` (2026-10-09 as `mode=read`, renamed 2026-10-12 on the user's word); a run **without any parameter prints the usage** on stdout and exits 1, nothing asked, nothing written (2026-10-12); `command=setup store= [store.password=] [app.id=]` (user dictation 2026-10-19) takes an **existing** secret store and runs the database step alone: mandatory entries checked, `app.id` = given (must equal the store's `app-id` when it has one) else the store's entry else asked, a missing `app-id` entry is added to the store (the only write to it), the H2 directory/file created when absent, `bootstrap-super-admin` (idempotent) then `create-app`, where an app that already exists is kept and reported (`create` still fails on it); no INI is written. The database step is the shared `setupDatabase(...)`. First compile-time use of opsec/shiro in this module's main code (both are parent-pom dependencies). Test: `H2PSetupTest` |
@@ -147,6 +148,22 @@ enums-inside-maps by name (no Gson reflection crash). Special cases kept in `H2P
 Fidelity is at the **JSON level** (re-serializing a read-back value yields the same JSON). JSON can't
 distinguish `long` from `int` or `NVGenericMapList` from `NVPairList`, so the schemaless tests assert
 JSON-stability, not exact NV subtypes.
+
+**Entities inside a map (wired 2026-11-10).** Before: an `NVEntityReference` value inside the map was
+written as a **full inline copy** of the entity (no `class_type`, no row in the entity's table) and read
+back as a nested `NVGenericMap` — a detached duplicate that could diverge from the entity's row. The user's zoxweb-core change
+(`EntityCodec`, `GSONUtil.createDefaultGson(codec)`, the codec-aware `NVGenericMapSerDeserializer`)
+encodes such a value as `{"class_type": fqcn, "guid": guid}` and resolves it through the codec on read.
+`H2PEntityCodec` is the store's implementation (test `H2PEntityCodecTest`): `encode` stores the entity
+through the upsert before writing its identity. Now **wired**: `encodeSchemaless` / `decodeSchemaless` /
+`H2PFieldCrypto.encodeSchemaless` use `GSONUtil.toJSONDefault(codec.gson(), …)` /
+`fromJSONDefault(codec.gson(), …)`, so inserting a parent stores the embedded child as its own row and the
+column holds `{"class_type","guid"}`; a read resolves the row (the table is the truth, no FK by the user's
+decision); a **deleted child disappears from the map** (core, user fix 2026-11-10: the decode branch adds
+nothing when `codec.decode` returns null and consumes the identity), and the next write of the parent drops
+the dead identity from the column — the map cleans itself. Rows written before 2026-11-10 keep their inline
+copies and still decode as nested maps (no migration). Test:
+`H2PEntityCodecTest.datastore_mapHoldingEntity_storesIdentityAndResolvesOrNulls`.
 
 ## Dual-target dialect (H2 vs native PostgreSQL)
 
@@ -925,3 +942,31 @@ Run: zoxweb-core, io-xlogistx and the whole zoxweb-datastore reactor install off
 `H2PDomainSecurityManagerDBTest` 11/11 through `h2mem.store`; `SecurityCatalogDBTest` 21/21 and
 `ShiroDSDomainSecurityManagerDBTest` 72/72 through `h2mem.store`; no-sneak-core and no-sneak-app
 compile against the new core jar. Nothing committed.
+
+## Session log — 2026-11-10 (`EntityCodec` implementation, user dictation)
+
+The user revisited how an `NVEntity` embedded in an `NVGenericMap` (e.g. `PropertyImpl.properties`)
+is stored: today a full inline JSON copy without `class_type` and without a row in the entity's
+table, read back as a nested `NVGenericMap` (`GSONUtil.toJSONGenericMap` `NVEntityReference` branch,
+reached from `encodeSchemaless` → `GSONUtil.toJSONDefault`; `decodeSchemaless` →
+`fromJSONDefault`). The user added `EntityCodec` + `GSONUtil.createDefaultGson(EntityCodec)` to
+zoxweb-core (installed 2.4.0 jar carries it) and dictated: *build the implementation first*.
+Built: `H2PEntityCodec` (encode = `ds.insert(nve)` then its identity — the user's correction: an entity without guid is **stored**, never refused, that is the point of the change; an existing one is upserted so the table matches the map;
+decode = `resolveNVCE` + `searchByID`, absent/denied/unknown/malformed ⇒ `null`; cached codec Gson),
+`H2PDataStore.entityCodec()`; then, dictated the same day, the codec Gson wired into `encodeSchemaless`,
+`decodeSchemaless` and `H2PFieldCrypto.encodeSchemaless` (the two `Gson`-taking `GSONUtil` overloads).
+In-memory H2: `H2PDataStoreTest` 26, `H2PFieldCryptoTest` 12, `H2PDumpRestoreTest` 12, `H2PRegressionTest` 26
+all green; `H2PEntityCodecTest` 10/10 after the user's core fix (a deleted child: `decode` null ⇒ key absent,
+identity consumed; before that fix the `NVEntityReference(name, null)` constructor NPEd into the nested-map
+fallback). The user's decision: no FK for map-embedded entities, the table is the truth. The runner cp files were repointed to gson 2.15.0 and
+H2 2.5.252 (the user's dependency bump; the old jars are gone from `.m2`). Rows stored before the wiring keep their inline copies.
+Live run the same day (user dictation, "run it on h2persist and testdb and test the restore/backup"): new
+`H2PEntityCodecLiveTest` (target from the vault: PostgreSQL `db.url`, or an H2-file `db.url` with
+`db.enc-password`, else in-memory) — the column path (row + identity in the column, parsed as JSON since
+jsonb respaces, resolve, update of the child row seen by the parent, deleted child gone from map and column)
+and the backup: per-type JSONL dump (parent line inlines the child with `class_type`), restore into a fresh
+H2 store and zip restore into another (reference resolves, child is its own row, column holds the identity),
+MERGE back into the live store (one child row, column unchanged). 2/2 on in-memory H2, on the encrypted
+`h2persist` file and on lax-2 testdb (jsonb); `H2PPostgresDataStoreTest` 10/10 and `H2PFieldCryptoTest`
+12/12 on testdb. Rows created by the suite are deleted at the end; row check after the run: 0 `codec-live-%`
+rows on both targets.

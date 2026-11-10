@@ -150,12 +150,20 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
     /** Encryption at rest (fields + files); a SecurityController AND a KeyMaker with its master key are required to connect at all ({@link #requireMasterKey}). */
     private final H2PFieldCrypto crypto = new H2PFieldCrypto(this);
 
+    /** Entity identity codec for entities embedded in {@code NVGenericMap} values (2026-11-10, user dictation); not yet used by the schemaless column path. */
+    private final H2PEntityCodec entityCodec = new H2PEntityCodec(this);
+
     public H2PDataStore() {
     }
 
     /** @return true when this store encrypts ENCRYPT* attributes and file content (controller + key maker configured). */
     public boolean isEncryptionActive() {
         return crypto.active();
+    }
+
+    /** @return the codec that represents an entity embedded in an {@code NVGenericMap} by class + guid and resolves it from its table. */
+    public H2PEntityCodec entityCodec() {
+        return entityCodec;
     }
 
     /** @return true when this store checks every read and write against its {@link SecurityController} (one is configured). */
@@ -1744,8 +1752,12 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
         }
     }
 
-    /** JSON for a schemaless container. Enum lists convert to names (Gson can't reflect enums). */
-    private static String encodeSchemaless(NVBase<?> nvb) {
+    /**
+     * JSON for a schemaless container. Enum lists convert to names (Gson can't reflect enums). Through the
+     * codec Gson ({@link H2PEntityCodec#gson()}, 2026-11-10): an entity embedded in the container is stored
+     * (insert/upsert of its own row) and written as its identity {@code {"class_type","guid"}}, never inlined.
+     */
+    private String encodeSchemaless(NVBase<?> nvb) {
         if (nvb == null) return null;
         if (nvb instanceof NVEnumList) {
             List<String> names = new ArrayList<>();
@@ -1754,7 +1766,7 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             }
             return GSONUtil.toJSONDefault(names);
         }
-        return GSONUtil.toJSONDefault(nvb);
+        return GSONUtil.toJSONDefault(entityCodec.gson(), nvb);
     }
 
     /** Rewrite an entity's collection join rows (delete-then-insert on update; insert-only on insert). */
@@ -2029,7 +2041,8 @@ public class H2PDataStore extends APIServiceProviderBase<Connection, Connection>
             }
             return;
         }
-        NVBase<?> parsed = GSONUtil.fromJSONDefault(json, target.getClass());
+        // codec Gson: an embedded entity identity resolves to its row (null when deleted or not readable)
+        NVBase<?> parsed = GSONUtil.fromJSONDefault(entityCodec.gson(), json, target.getClass());
         parsed.setName(ai.name);
         // JSON doesn't encode a nested map's own name; restore it so the value re-serializes cleanly.
         if (parsed instanceof NamedValue && target instanceof NamedValue) {

@@ -393,7 +393,8 @@ final class H2PFieldCrypto {
         if (plainJson == null || !active() || !hasEncryptedPairs(nvb)) {
             return plainJson;
         }
-        NVBase<?> copy = GSONUtil.fromJSONDefault(plainJson, nvb.getClass());
+        // codec Gson (2026-11-10): an embedded entity identity in plainJson stays an identity on the copy
+        NVBase<?> copy = GSONUtil.fromJSONDefault(ds.entityCodec().gson(), plainJson, nvb.getClass());
         copy.setName(nvb.getName());
         walkPairs(copy, p -> {
             if (!isEncrypted(p.getValueFilter()) || !needsSealing(p.getValue())) {
@@ -406,7 +407,7 @@ final class H2PFieldCrypto {
                 p.setValue(packedText(pack((EncryptedData) sealed)));
             }
         });
-        return GSONUtil.toJSONDefault(copy);
+        return GSONUtil.toJSONDefault(ds.entityCodec().gson(), copy);
     }
 
     /** Opens the sealed ENCRYPT* pairs of a decoded schemaless container in place (denied ⇒ null / mask). */
